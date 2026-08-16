@@ -1,0 +1,62 @@
+# Template for config/league.toml (which is gitignored).
+#
+# You normally do NOT hand-write this — run:
+#     ffa config init --league-id 123456 --year 2026
+# which pulls team count, roster slots, budget, and scoring from ESPN's
+# mSettings view and writes the real file. This template documents the shape
+# and lets you run the tool fully offline if ESPN is unreachable.
+
+[league]
+league_id = 123456
+year = 2026
+# Private leagues require ESPN_S2 / ESPN_SWID in .env.
+private = true
+name = "My League"
+
+[draft]
+# "AUCTION" or "SNAKE". This tool is built for AUCTION.
+type = "AUCTION"
+# Per-team auction budget in whole dollars.
+budget = 200
+
+[teams]
+count = 12
+# ESPN's numeric team id for YOUR team. `ffa config init` fills this in when it
+# can identify you from the cookies; otherwise set it manually.
+my_team_id = 0
+
+# Starting lineup slots. Bench and IR are counted separately because they
+# change the max-bid math (a bench slot still costs you at least $1).
+[roster]
+QB = 1
+RB = 2
+WR = 2
+TE = 1
+FLEX = 1
+K = 1
+DST = 1
+BE = 7
+IR = 1
+
+# FLEX eligibility — which positions can fill a FLEX slot.
+flex_positions = ["RB", "WR", "TE"]
+
+[scoring]
+# Informational: "STANDARD", "PPR", "HALF_PPR". Drives nothing in the
+# integration layer; the advisory layer uses it to pick a default value curve.
+type = "PPR"
+
+[reference]
+# Your auction values were computed for a league of this shape. Values get
+# rescaled to YOUR league via:
+#     scaled = value * (teams.count * draft.budget) / (baseline_teams * baseline_budget)
+baseline_teams = 12
+baseline_budget = 200
+
+[polling]
+# Seconds between ESPN polls during a live draft. Keep this conservative —
+# ESPN's internal API is undocumented and unrate-limited only by their goodwill.
+interval_seconds = 3.0
+# Consecutive failures before the source flips to DEGRADED and manual entry
+# takes over.
+failure_threshold = 4
