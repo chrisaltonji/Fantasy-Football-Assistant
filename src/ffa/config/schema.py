@@ -74,6 +74,11 @@ class LeagueConfig:
 
     scoring_type: str = "PPR"
 
+    # Manager nicknames keyed by ESPN team id. This is what you actually type
+    # mid-draft (`sold barkley 62 dave`), so short beats formal. Teams without
+    # a nickname stay addressable as `t3`/`team3`/`3`.
+    managers: Mapping[int, str] = field(default_factory=dict)
+
     baseline_teams: int = 12
     baseline_budget: int = 200
 
@@ -144,6 +149,22 @@ class LeagueConfig:
             problems.append(
                 f"draft.budget (${self.budget}) is less than the {self.draftable_slots} "
                 "draftable roster slots — every team needs at least $1 per slot"
+            )
+
+        for team_id, nickname in self.managers.items():
+            if not 1 <= team_id <= max(self.team_count, team_id):
+                problems.append(f"[managers] has team id {team_id}, which is not positive")
+            if not str(nickname).strip():
+                problems.append(f"[managers] entry for team {team_id} is empty")
+
+        duplicates = {
+            name.lower() for name in self.managers.values()
+            if list(n.lower() for n in self.managers.values()).count(name.lower()) > 1
+        }
+        if duplicates:
+            problems.append(
+                "[managers] nicknames must be unique so they can be typed "
+                f"unambiguously; repeated: {', '.join(sorted(duplicates))}"
             )
 
         if not self.is_auction:

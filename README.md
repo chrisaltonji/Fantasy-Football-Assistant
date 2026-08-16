@@ -9,10 +9,11 @@ RB, and the tool should say so.
 Built to degrade gracefully: if ESPN's API gives us nothing on draft day, you
 type picks in by hand and every downstream calculation works identically.
 
-> **Status: Checkpoint 1 of 5.** The scaffold, config layer, and the ESPN probe
-> are done. The draft REPL, reference data, advisory engine, simulator, and the
-> production ESPN adapter land in later checkpoints. See
-> [Roadmap](#roadmap) below.
+> **Status: Checkpoint 2 of 5.** The scaffold, config layer, ESPN probe, state
+> engine, event journal, and manual-entry REPL are done — you can run a
+> complete draft by hand today, crash it, and resume it exactly. Reference
+> data, the advisory layer, the simulator, and the production ESPN adapter land
+> in later checkpoints. See [Roadmap](#roadmap) below.
 
 ---
 
@@ -125,6 +126,74 @@ can settle.
 
 ---
 
+## Running a draft
+
+```bash
+ffa draft --new        # start; prints the draft id
+ffa draft --resume     # pick up the most recent draft for this league
+```
+
+Everything is fsynced before the next prompt appears, so Ctrl-C, a closed
+laptop, or a dead battery lose exactly nothing. Resume restores the board
+precisely.
+
+### Commands
+
+| Command | Does |
+|---|---|
+| `sold <player...> <price\|?> <team> [pos]` | Record a sale. `?` means "sold, price unknown". |
+| `nominate <player...> [team]` | Flag who's up for bid. |
+| `price <player...> <amount>` | Fill in or correct a price. |
+| `amend <entity> <field> <value>` | General correction, e.g. `amend team:3 manager dave`. |
+| `undo [#id]` / `redo` | Undo the last event, or a specific one. |
+| `budgets [team]` | Remaining money, max bid, and starter gaps per team. |
+| `state` / `log [n]` | Full board / recent events with their ids. |
+| `help [verb]` / `quit` | |
+
+Player names are free text and multi-word names need no quoting — price and
+team are read as the **last two tokens**, so `sold patrick mahomes 45 dave`
+parses correctly. Fuzzy matching against real rankings arrives in CP3.
+
+Teams are addressed by the nicknames in your `[managers]` config block
+(`dave`, or any unique prefix like `dav`), and always by slot as `t3` /
+`team3` / `3`.
+
+```
+> sold ceedee lamb 55 dave wr
+#3 ceedee lamb -> dave $55
+> sold mahomes ? sam
+#4 mahomes -> sam $? (price unknown)
+> budgets
+TEAM      SPENT  REMAINING  MAX BID  SLOTS  NEEDS
+*chris    $0     $200       $185     0/16   DST FLEX K QB RBx2 TE WRx2
+ dave     $55    $145       $131     1/16   DST FLEX K QB RBx2 TE WR
+ sam      $0     $199+      $185     1/16   DST FLEX K QB RBx2 TE WRx2
++ = at most; some prices unknown (fill in with: price <player> <amount>)
+> price mahomes 45
+#5 mahomes price set to $45
+```
+
+`$199+` is the important detail: a sale with an unknown price is charged at the
+$1 minimum, so that team's remaining budget is a **floor, not a fact**, and the
+tool says so rather than presenting a guess as a number.
+
+Runs live in `runs/<draft_id>/events.jsonl` — an append-only log that *is* the
+draft. It's plain JSON lines; you can read it, grep it, and hand it to anyone
+debugging a discrepancy.
+
+### Feeding the dashboard
+
+```bash
+ffa export-state --out docs/sample_state.json
+```
+
+Emits the JSON view model that the dashboard, ambient feed, and chat layer all
+read. See **[`docs/dashboard_requirements.md`](docs/dashboard_requirements.md)**
+for the panel-by-panel spec and **`docs/sample_state.json`** for a realistic
+mid-draft payload.
+
+---
+
 ## Design in one page
 
 **There is no "API mode" and no "manual mode."** There are event *producers*,
@@ -132,14 +201,22 @@ and every individual field carries its own provenance:
 
 ```
 Sourced[T] = { value | None, provenance, confidence, observed_at }
-Provenance = MANUAL > ESPN_API > SIM > INFERRED > UNKNOWN
+Provenance:  MANUAL > ESPN_API > SIM > INFERRED > UNKNOWN
 ```
 
 `value=None` is legal and meaningful — *"a sale happened, we don't know the
-price."* One merge function (higher provenance wins; same provenance, newer
-wins; **a `None` never overwrites a known value**) is the entire fallback
-feature. ESPN can tell us *who won* while you type *for how much*, on the same
-pick, and a later poll can never stomp your correction.
+price."* One merge function is the entire fallback feature:
+
+1. **Knowledge beats ignorance, in both directions** — a known value always
+   wins over an unknown one, *regardless of provenance*.
+2. Both known: higher provenance wins, so a later poll can never stomp your
+   manual correction.
+3. Same provenance: newer wins; on an exact tie, journal order.
+
+Rule 1 is the one that's easy to get wrong and expensive to omit. Without its
+second half, typing `sold mahomes ? t3` (MANUAL, unknown) would make the real
+ESPN price lose on precedence — permanently rejecting the correct number and
+inverting the feature the whole design exists to provide.
 
 Everything computable is computed, never stored — `remaining_budget`,
 `max_bid`, `open_slots` are pure functions of state. That kills the whole class
@@ -173,8 +250,8 @@ exists**. Adding a web UI later is one new `DraftStore` subscriber plus one new
 | CP | Scope | Status |
 |----|-------|--------|
 | 1 | Scaffold, config layer, ESPN probe | **done** — needs your Practice Draft |
-| 2 | State engine, event journal, manual entry REPL, undo, crash-resume | next |
-| 3 | Reference data loader + advisory layer | needs your rankings files |
+| 2 | State engine, event journal, manual REPL, undo, crash-resume, dashboard contract | **done** |
+| 3 | Reference data loader + deterministic advisory layer | next — needs your rankings files |
 | 4 | Auction simulator with budget-aware bots (the real acceptance test) | |
 | 5 | Production ESPN adapter, graceful degradation, draft-day kit | |
 

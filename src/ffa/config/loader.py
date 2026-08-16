@@ -85,6 +85,7 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
     teams = data.get("teams", {})
     roster_raw = dict(data.get("roster", {}))
     scoring = data.get("scoring", {})
+    managers_raw = data.get("managers", {})
     reference = data.get("reference", {})
     polling = data.get("polling", {})
 
@@ -111,6 +112,17 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
     if not roster:
         raise ConfigError("[roster] is empty — the tool cannot compute roster needs")
 
+    managers: dict[int, str] = {}
+    for raw_id, nickname in managers_raw.items():
+        # TOML keys are strings; team ids are ints everywhere else.
+        try:
+            managers[int(raw_id)] = str(nickname).strip()
+        except ValueError as exc:
+            raise ConfigError(
+                f"[managers] keys must be ESPN team ids, got {raw_id!r}. "
+                'Example: 3 = "dave"'
+            ) from exc
+
     config = LeagueConfig(
         league_id=int(_require(league, "league", "league_id")),
         year=int(_require(league, "league", "year")),
@@ -123,6 +135,7 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
         roster=roster,
         flex_positions=flex,
         scoring_type=str(scoring.get("type", "PPR")).upper(),
+        managers=managers,
         baseline_teams=int(reference.get("baseline_teams", 12)),
         baseline_budget=int(reference.get("baseline_budget", 200)),
         poll_interval_seconds=float(polling.get("interval_seconds", 3.0)),
@@ -163,6 +176,7 @@ def config_to_dict(config: LeagueConfig) -> dict[str, Any]:
         "teams": {"count": config.team_count, "my_team_id": config.my_team_id},
         "roster": roster,
         "scoring": {"type": config.scoring_type},
+        "managers": {str(k): v for k, v in sorted(config.managers.items())},
         "reference": {
             "baseline_teams": config.baseline_teams,
             "baseline_budget": config.baseline_budget,

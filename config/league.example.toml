@@ -41,6 +41,15 @@ IR = 1
 # FLEX eligibility — which positions can fill a FLEX slot.
 flex_positions = ["RB", "WR", "TE"]
 
+# What you type to name a rival mid-draft: `sold barkley 62 dave`. Keys are
+# ESPN team ids. Short beats formal — you will type these ~180 times on draft
+# day. Nicknames must be unique. Any team you leave out is still addressable as
+# `t3` / `team3` / `3`, and unique prefixes work too (`dav` -> dave).
+[managers]
+1 = "chris"
+2 = "dave"
+3 = "sam"
+
 [scoring]
 # Informational: "STANDARD", "PPR", "HALF_PPR". Drives nothing in the
 # integration layer; the advisory layer uses it to pick a default value curve.
