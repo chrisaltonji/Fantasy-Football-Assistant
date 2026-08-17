@@ -47,9 +47,31 @@ before the draft starts. The advisory capability spec flagged this as an open
 Phase-1 question; it's answered, and capability 4 (nomination strategy) is
 unblocked.
 
+## ESPN's Practice Draft is sandboxed — confirmed 2026-08-17
+
+Observed directly: with a Practice Draft several picks along in the real
+league, `?view=mDraftDetail` returned a payload **byte-identical to the
+pre-draft baseline** — all 180 picks still `playerId: -1`, `bidAmount: 0`,
+`teamId: -1`, and `draftDetail.inProgress` still `false`.
+
+`inProgress: false` during an active Practice Draft is the decisive signal: the
+Practice Draft does not touch the league's real draft state. It is a rehearsal
+surface for the manager, not a data source.
+
+**Consequences:**
+
+- A Practice Draft cannot be used to verify the live-price path. Anyone
+  reaching for it as a test will get a false negative — an empty `picks[]` that
+  looks exactly like "ESPN never populates prices."
+- The probe's verdict logic already separates these: zero *filled* picks
+  reports INCONCLUSIVE rather than concluding anything. That distinction exists
+  because of this finding.
+- Verifying `bidAmount` requires a draft ESPN considers real — a throwaway
+  private auction league drafted against autopick is the cheap way.
+
 ## Still unverified
 
-Whether ESPN populates `bidAmount` with the real winning price during a live
-auction. `mDraftDetail_inprogress.json` shows what we *expect*; it is a
-hypothesis until a real auction is observed. `price=None` is a first-class
-state throughout the engine precisely because this may not hold.
+Whether ESPN populates `bidAmount` with the real winning price during a genuine
+auction. `mDraftDetail_inprogress.json` encodes what we *expect* a filled pick
+to look like; it remains a hypothesis. `price=None` is a first-class state
+throughout the engine precisely because this may not hold.

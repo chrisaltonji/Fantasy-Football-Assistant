@@ -39,6 +39,29 @@ def teams():
     return load("mTeam_predraft.json")
 
 
+@pytest.fixture
+def sandboxed():
+    return load("mDraftDetail_practice_sandboxed.json")
+
+
+def test_a_practice_draft_leaves_the_real_draft_state_untouched(sandboxed, predraft):
+    """Captured several picks into an active Practice Draft.
+
+    It came back identical to the pre-draft baseline. That identity is the
+    whole finding: Practice Drafts are a rehearsal surface, not a data source,
+    so they cannot be used to verify the live-price path. Anyone who tries will
+    read the empty picks as "ESPN never populates prices" and conclude the
+    opposite of the truth.
+    """
+    live, base = sandboxed["draftDetail"], predraft["draftDetail"]
+
+    # inProgress stays false even while a Practice Draft is actively running.
+    assert live["inProgress"] is False
+    assert live["drafted"] is False
+    assert live["picks"] == base["picks"]
+    assert all(p["playerId"] == -1 for p in live["picks"])
+
+
 # --- settings -----------------------------------------------------------------
 
 
