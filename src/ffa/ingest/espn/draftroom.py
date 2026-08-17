@@ -285,10 +285,20 @@ class DraftRoomReader:
                     return page
         return None
 
-    def snapshot(self) -> RoomSnapshot:
+    def snapshot_raw(self) -> dict[str, Any]:
+        """The untouched dict `SNAPSHOT_JS` returned.
+
+        Exposed so a caller wanting both the raw and the parsed view can derive
+        them from *one* evaluate. Two evaluates would sample the board at two
+        different instants, and a pick landing between them would look like a
+        raw/parsed disagreement that is not real.
+        """
         if self._page is None:
             raise DraftRoomError("not connected — call connect() first")
-        return parse_snapshot(self._page.evaluate(SNAPSHOT_JS))
+        return self._page.evaluate(SNAPSHOT_JS)
+
+    def snapshot(self) -> RoomSnapshot:
+        return parse_snapshot(self.snapshot_raw())
 
     def close(self) -> None:
         if self._browser is not None:

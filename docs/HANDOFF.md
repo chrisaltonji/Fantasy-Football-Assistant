@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 489 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 504 tests pass. Everything below is
 pushed.
 
 ---

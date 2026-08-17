@@ -140,12 +140,53 @@ python tools/draft_room_probe.py --catalog     # verify it can see the board
 Then draft in that Chrome window as normal. The tool attaches read-only and
 never opens a connection of its own, so it cannot evict you.
 
+## Watching it live
+
+```
+python tools/draft_watch.py                    # attaches over CDP, opens a page
+python tools/draft_watch.py --fixture tests/fixtures/espn/draftroom_snapshot_live.json
+```
+
+A throwaway diagnostic that serves one local page showing what `SNAPSHOT_JS`
+returned next to what `parse_snapshot` made of it, polling once a second and
+flashing whatever changed. Both panels come from a *single* evaluate, so a
+disagreement between them is real rather than two different instants.
+
+Use it to confirm the things a test cannot show you: that picks appear as they
+land, that prices and positions match the board, and above all that each pick is
+credited to the **right team** — the column on ESPN's board should match
+`team_index` on the page.
+
 ---
+
+## A completed practice draft is deleted
+
+Observed 2026-08-17. A practice draft ran to completion — 180/180 picks, $2,299
+spent, still fully rendered in the DOM. The moment it finished, its shadow
+league returned **HTTP 404**:
+
+```
+/apis/v3/games/ffl/seasons/2026/segments/0/leagues/639481650?view=mDraftDetail
+  -> 404
+```
+
+Not a credentials problem: the real league answered 200 on the same run with the
+same cookies. ESPN reaps the ephemeral league when the practice draft ends.
+
+Three consequences:
+
+- **The DOM is the only record of a practice draft.** Capture anything you want
+  from it *before* the draft finishes, because afterwards there is nothing to
+  go back to.
+- **Practice drafts can never test the post-draft REST path.** Not "we haven't
+  tried" — it is structurally impossible, because the league ceases to exist.
+- **Whether a *real* draft backfills is still unknown.** The real league is not
+  ephemeral, so it may well populate on completion the way the 2025 season did.
+  That can only be settled on draft day, and nothing depends on it: the live
+  path is the DOM either way.
 
 ## Still unknown
 
-**Does REST backfill once a draft completes?** An abandoned practice draft sits
-at `inProgress: true` forever and never autodrafts to completion, so this could
-not be tested. If it does backfill it is a useful end-of-draft reconciliation
-pass; if not, the DOM is the only record. Either way it does not affect the
-live path.
+Whether the **real** league's `mDraftDetail` backfills when the real draft
+completes. Only draft day can answer it. It would be a nice end-of-draft
+reconciliation pass; it is not on the critical path.
