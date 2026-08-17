@@ -225,7 +225,8 @@ def _gap_summary(gaps: dict[RosterSlot, int]) -> str:
     )
 
 
-def _describe(event: BaseEvent) -> str:
+def describe(event: BaseEvent) -> str:
+    """One human line for an event. Used by the log view and the live feed."""
     if isinstance(event, DraftInitialized):
         return f"draft started ({event.league.team_count} teams, ${event.league.budget})"
     if isinstance(event, PlayerSold):
@@ -248,3 +249,9 @@ def _table(rows: list[tuple[str, ...]]) -> str:
         "  ".join(str(cell).ljust(widths[i]) for i, cell in enumerate(row)).rstrip()
         for row in rows
     )
+
+
+# The live draft loop announces incoming picks with the same wording the log
+# uses, so a pick reads identically whether you watched it land or scrolled
+# back to it later.
+_describe = describe

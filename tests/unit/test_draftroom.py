@@ -288,3 +288,102 @@ def test_the_fixture_carries_no_real_team_names(raw):
     blob = json.dumps(raw)
     assert "Finkelstein" not in blob
     assert "Gibbs Me Dat" not in blob
+
+
+# --- team resolution: the most dangerous mapping in the live path -----------
+
+
+def test_board_position_is_not_team_id(snap):
+    """The bug this resolver exists to prevent, stated as a test.
+
+    The draft room's DOM carries no team id, and its columns are in draft
+    order. In the real league, team 3 sits in column 1. `column + 1` therefore
+    credits picks to the wrong manager — and in a league with an id gap it
+    invents a team 6 that does not exist while never mentioning team 13.
+    """
+    from ffa.ingest.espn.source import TeamResolver
+
+    real_ids = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13]
+    names = {tid: snap.team_name(i) for i, tid in enumerate(real_ids)}
+    # Shuffle the board relative to id order, the way ESPN actually does.
+    shuffled = {real_ids[0]: names[real_ids[2]], real_ids[2]: names[real_ids[0]]}
+    names.update(shuffled)
+
+    resolver = TeamResolver(names, real_ids)
+    resolved = {resolver.resolve(snap, p) for p in snap.picks}
+
+    assert 6 not in resolved, "never invent a team the league does not have"
+    assert resolved <= set(real_ids)
+
+
+def test_every_pick_resolves_to_a_real_league_team_id(snap):
+    from ffa.ingest.espn.source import TeamResolver
+
+    real_ids = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13]
+    names = {tid: snap.team_name(i) for i, tid in enumerate(real_ids)}
+    resolver = TeamResolver(names, real_ids)
+
+    assert {resolver.resolve(snap, p) for p in snap.picks} == set(real_ids)
+    assert resolver.warning is None
+
+
+def test_matching_ignores_case_and_punctuation():
+    from ffa.ingest.espn.draftroom import RoomPick, RoomSnapshot, RoomTeam
+    from ffa.ingest.espn.source import TeamResolver, normalize_team_name
+
+    assert normalize_team_name("Chase'n the Chip!") == normalize_team_name("chasen the chip")
+
+    snapshot = RoomSnapshot(
+        teams=(RoomTeam(index=0, name="Chase'N  The Chip", cash=None, bid=None),),
+        slots_per_team=15,
+    )
+    pick = RoomPick(grid_index=0, team_index=0, player="X", price=1,
+                    position="RB", roster_slot="RB", pro_team="DET")
+    assert TeamResolver({8: "Chase'n the Chip"}, [8]).resolve(snapshot, pick) == 8
+
+
+def test_an_unmatched_team_falls_back_and_says_so():
+    """A rename mid-draft breaks the join. It must be loud, not silent."""
+    from ffa.ingest.espn.draftroom import RoomPick, RoomSnapshot, RoomTeam
+    from ffa.ingest.espn.source import TeamResolver
+
+    snapshot = RoomSnapshot(
+        teams=(RoomTeam(index=0, name="Renamed Overnight", cash=None, bid=None),),
+        slots_per_team=15,
+    )
+    pick = RoomPick(grid_index=0, team_index=0, player="X", price=1,
+                    position="RB", roster_slot="RB", pro_team="DET")
+
+    resolver = TeamResolver({3: "Gibbs Me Dat"}, [3, 5, 7])
+    assert resolver.resolve(snapshot, pick) == 3  # positional fallback
+    assert "Renamed Overnight" in resolver.warning
+    assert "config init" in resolver.warning
+
+
+def test_with_no_names_at_all_it_still_uses_league_ids_not_positions():
+    """Even the fallback must not invent ids."""
+    from ffa.ingest.espn.draftroom import RoomPick, RoomSnapshot, RoomTeam
+    from ffa.ingest.espn.source import TeamResolver
+
+    snapshot = RoomSnapshot(
+        teams=tuple(RoomTeam(index=i, name=f"T{i}", cash=None, bid=None) for i in range(3)),
+        slots_per_team=15,
+    )
+    resolver = TeamResolver({}, [1, 7, 13])
+    picks = [RoomPick(grid_index=i, team_index=i, player=f"P{i}", price=1,
+                      position="RB", roster_slot="RB", pro_team="DET") for i in range(3)]
+
+    assert [resolver.resolve(snapshot, p) for p in picks] == [1, 7, 13]
+
+
+def test_a_sale_carries_the_resolved_team_id(snap):
+    from ffa.ingest.espn.source import TeamResolver, events_for
+
+    real_ids = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13]
+    names = {tid: snap.team_name(i) for i, tid in enumerate(real_ids)}
+    resolver = TeamResolver(names, real_ids)
+
+    pick = snap.picks[0]
+    event = events_for(pick, snap, resolver)
+    assert event.team.value == resolver.resolve(snap, pick)
+    assert event.team.value in real_ids

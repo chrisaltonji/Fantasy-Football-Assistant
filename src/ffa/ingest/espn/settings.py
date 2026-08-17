@@ -104,8 +104,8 @@ def _members_by_id(payload: Mapping[str, Any]) -> dict[str, str]:
 
 def teams_from_payload(
     payload: Mapping[str, Any]
-) -> tuple[tuple[int, ...], dict[int, str], dict[int, str]]:
-    """Return (team_ids, owners_by_team, managers_by_team).
+) -> tuple[tuple[int, ...], dict[int, str], dict[int, str], dict[int, str]]:
+    """Return (team_ids, owners, managers, team_names).
 
     Ids come back sorted and exactly as ESPN reports them. Never generate them:
     the real league runs 1-5 and 7-13, and `range(1, count + 1)` would invent a
@@ -115,6 +115,7 @@ def teams_from_payload(
     team_ids: list[int] = []
     owners: dict[int, str] = {}
     managers: dict[int, str] = {}
+    names: dict[int, str] = {}
 
     for team in payload.get("teams") or []:
         try:
@@ -123,6 +124,10 @@ def teams_from_payload(
             continue
         team_ids.append(team_id)
 
+        name = (team.get("name") or "").strip()
+        if name:
+            names[team_id] = name
+
         owner = team.get("primaryOwner")
         if owner:
             owners[team_id] = str(owner)
@@ -130,7 +135,7 @@ def teams_from_payload(
             if nickname:
                 managers[team_id] = nickname
 
-    return tuple(sorted(team_ids)), owners, managers
+    return tuple(sorted(team_ids)), owners, managers, names
 
 
 def my_team_id(owners: Mapping[int, str], swid: str | None) -> int:
@@ -177,7 +182,7 @@ def config_from_payloads(
             "size and max-bid arithmetic cannot be derived."
         )
 
-    team_ids, owners, managers = teams_from_payload(teams_payload)
+    team_ids, owners, managers, team_names = teams_from_payload(teams_payload)
     mine = my_team_id(owners, swid)
     if not mine:
         warnings.append(
@@ -216,6 +221,7 @@ def config_from_payloads(
         scoring_type=str(scoring.get("scoringType") or "PPR"),
         managers=managers,
         owners=owners,
+        team_names=team_names,
     )
     return config, warnings
 

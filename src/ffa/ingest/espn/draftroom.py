@@ -292,9 +292,17 @@ class DraftRoomReader:
         them from *one* evaluate. Two evaluates would sample the board at two
         different instants, and a pick landing between them would look like a
         raw/parsed disagreement that is not real.
+
+        Connects on first use if it has to. **Playwright's sync API is
+        greenlet-based and not thread-safe**: a connection made on one thread
+        raises on every call from another ("Current/Expected greenlet"). The
+        live draft loop polls from a worker thread, so the connection has to be
+        established *there*, which is what this lazy connect is for. Connecting
+        eagerly on the main thread and handing the object over looks fine and
+        fails on every single poll.
         """
         if self._page is None:
-            raise DraftRoomError("not connected — call connect() first")
+            self.connect()
         return self._page.evaluate(SNAPSHOT_JS)
 
     def snapshot(self) -> RoomSnapshot:

@@ -92,6 +92,15 @@ class LeagueConfig:
     # the wrong manager.
     owners: Mapping[int, str] = field(default_factory=dict)
 
+    # Team names keyed by team id. A **matching hint, not identity** — the one
+    # place a name is unavoidable. ESPN's draft room board carries no team id
+    # anywhere in its DOM, and its column order is draft order rather than id
+    # order (the real league's team 3 sits in column 1), so the name is the
+    # only join between a board column and a team id. A rename mid-draft breaks
+    # the match, which is why the reader falls back and says so loudly rather
+    # than guessing.
+    team_names: Mapping[int, str] = field(default_factory=dict)
+
     # Where your exported auction values live. Unset falls back to the sample
     # fixture, with a loud banner — sample values are invented.
     reference_path: str = ""

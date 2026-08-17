@@ -90,6 +90,30 @@ def cmd_config_init(args: argparse.Namespace) -> int:
         swid=creds.swid if creds else None,
         private=not args.public,
     )
+
+    # Carry forward the settings ESPN knows nothing about. Regenerating is the
+    # documented fix for a lost config, so it must not silently undo local
+    # choices — wiping [reference].path in particular would drop the draft back
+    # onto invented sample values with no symptom until the numbers looked odd.
+    if args.path.is_file():
+        from dataclasses import replace as _replace
+
+        try:
+            previous = load_config(args.path)
+        except ConfigError:
+            previous = None
+        if previous is not None:
+            config = _replace(
+                config,
+                reference_path=previous.reference_path or config.reference_path,
+                baseline_teams=previous.baseline_teams,
+                baseline_budget=previous.baseline_budget,
+                poll_interval_seconds=previous.poll_interval_seconds,
+                poll_failure_threshold=previous.poll_failure_threshold,
+            )
+            if previous.reference_path:
+                print(f"  kept [reference].path = {previous.reference_path}")
+
     write_config(config, args.path)
 
     print(f"wrote {args.path}")
@@ -171,6 +195,12 @@ def cmd_data_validate(args: argparse.Namespace) -> int:
 def cmd_draft(args: argparse.Namespace) -> int:
     config = load_config(args.config)
 
+    # Attach to the browser *before* touching the run directory. Doing it after
+    # leaves an orphan run behind on failure — journal written, lockfile held —
+    # and a later `--resume` would find that empty draft instead of the real
+    # one. A failed attach should cost nothing.
+    source = _build_source(args, config)
+
     if args.resume or args.resume_id:
         directory = _resolve_resume_dir(args, config)
         print(f"resuming {directory}")
@@ -190,9 +220,58 @@ def cmd_draft(args: argparse.Namespace) -> int:
         store = DraftStore.create(directory, _init_event(config, draft_id))
 
     try:
-        return run_repl(store, stdin=sys.stdin, stdout=sys.stdout, book=load_book(config))
+        return run_repl(
+            store, stdin=sys.stdin, stdout=sys.stdout,
+            book=load_book(config), source=source,
+        )
     finally:
         store.close()
+        if source is not None:
+            source.stop()
+
+
+def _build_source(args: argparse.Namespace, config: LeagueConfig):
+    """Resolve --source into an EventSource, or None for manual entry.
+
+    Manual stays the default on purpose. It is the fallback that always works,
+    and draft day is the wrong time to discover that a browser attach failed.
+    """
+    if getattr(args, "source", "manual") != "espn":
+        return None
+
+    from ffa.ingest.espn.draftroom import DraftRoomError, DraftRoomReader
+    from ffa.ingest.espn.source import DraftRoomSource
+
+    # Attach once here purely to fail fast — a bad port or a missing draft tab
+    # should be a clear message now, not ten silent poll failures later.
+    try:
+        DraftRoomReader(port=args.cdp_port).connect().close()
+    except DraftRoomError as exc:
+        raise ConfigError(
+            f"{exc}\n\nManual entry still works: re-run without --source espn."
+        ) from None
+
+    print(f"attached to the draft room on port {args.cdp_port}")
+
+    # Hand over an *unconnected* reader. Playwright's sync API is
+    # greenlet-based and not thread-safe, so the connection must be made on the
+    # thread that polls it; the source connects lazily on its first snapshot.
+    # Passing the already-connected reader above raises on every poll.
+    from ffa.ingest.espn.source import TeamResolver
+
+    if not config.team_names:
+        print(
+            "! config has no [team_names], so draft-room columns can only be "
+            "matched by position — which is not team-id order. Re-run "
+            "`ffa config init --force` to pick them up.",
+            file=sys.stderr,
+        )
+
+    return DraftRoomSource(
+        DraftRoomReader(port=args.cdp_port),
+        interval=config.poll_interval_seconds,
+        resolver=TeamResolver(config.team_names, config.effective_team_ids),
+    )
 
 
 def cmd_sim(args: argparse.Namespace) -> int:
@@ -461,8 +540,12 @@ def build_parser() -> argparse.ArgumentParser:
     draft.add_argument("--new", action="store_true", help="start a new draft")
     draft.add_argument("--resume", action="store_true", help="resume the most recent draft")
     draft.add_argument("--resume-id", metavar="DRAFT_ID", help="resume a specific draft")
-    draft.add_argument("--source", choices=["manual"], default="manual",
-                       help="where picks come from (espn arrives in CP5)")
+    draft.add_argument("--source", choices=["manual", "espn"], default="manual",
+                       help="where picks come from. espn reads the draft room you "
+                            "have open in the Chrome started by "
+                            "tools/draft_room_probe.py --launch")
+    draft.add_argument("--cdp-port", type=int, default=9222,
+                       help="Chrome remote-debugging port for --source espn")
     draft.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     draft.add_argument("--runs", type=Path, default=RUNS_DIR)
     draft.set_defaults(func=cmd_draft)

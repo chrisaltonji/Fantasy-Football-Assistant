@@ -12,7 +12,7 @@ changes. ESPN pre-creates the whole board, so cell count never moves.
 from __future__ import annotations
 
 import queue
-from typing import Iterator
+from typing import Iterator, Mapping, Sequence
 
 from ffa.domain.enums import Position, Provenance
 from ffa.domain.events import BaseEvent, PlayerSold
@@ -44,7 +44,68 @@ def diff_picks(
     return tuple(p for p in current.picks if p.key not in seen)
 
 
-def events_for(pick: RoomPick, snapshot: RoomSnapshot) -> BaseEvent:
+def normalize_team_name(raw: str | None) -> str:
+    """Fold a team name for matching. Case and punctuation are noise."""
+    text = "".join(c.lower() for c in (raw or "") if c.isalnum() or c.isspace())
+    return " ".join(text.split())
+
+
+class TeamResolver:
+    """Board column -> ESPN team id.
+
+    This is the single most dangerous mapping in the live path, and the obvious
+    implementation is wrong. The draft room's DOM carries **no team id
+    anywhere**, and its column order is draft order, not id order — the real
+    league's team 3 sits in column 1. So `column + 1` credits picks to the
+    wrong manager, and in a league with an id gap it invents a team 6 that does
+    not exist while never mentioning team 13.
+
+    The only join available is the team name, which ESPN reports identically in
+    `mTeam` and on the board. Names are explicitly not identity in this
+    codebase, so a miss is never guessed around: it falls back to the ordered
+    league ids and records a warning the caller must surface.
+    """
+
+    def __init__(self, team_names: Mapping[int, str] | None = None,
+                 team_ids: Sequence[int] = ()) -> None:
+        self._by_name = {
+            normalize_team_name(name): team_id
+            for team_id, name in (team_names or {}).items()
+            if normalize_team_name(name)
+        }
+        self._ids = tuple(team_ids)
+        self.unmatched: set[str] = set()
+
+    def resolve(self, snapshot: RoomSnapshot, pick: RoomPick) -> int:
+        board_name = snapshot.team_name(pick.team_index)
+        matched = self._by_name.get(normalize_team_name(board_name))
+        if matched is not None:
+            return matched
+
+        if board_name:
+            self.unmatched.add(board_name)
+        if 0 <= pick.team_index < len(self._ids):
+            return self._ids[pick.team_index]
+        return pick.team_index + 1
+
+    @property
+    def warning(self) -> str | None:
+        if not self.unmatched:
+            return None
+        return (
+            "could not match these draft-room teams to a league team id: "
+            + ", ".join(sorted(self.unmatched))
+            + ". Picks for them are attributed by board position, which may be "
+            "wrong — check with `budgets`, and re-run `ffa config init` if a "
+            "team was renamed."
+        )
+
+
+def events_for(
+    pick: RoomPick,
+    snapshot: RoomSnapshot,
+    resolver: "TeamResolver | None" = None,
+) -> BaseEvent:
     """One completed cell becomes one `PlayerSold`.
 
     A missing price is recorded as an explicit unknown rather than skipped or
@@ -59,14 +120,12 @@ def events_for(pick: RoomPick, snapshot: RoomSnapshot) -> BaseEvent:
         else unknown(at, note="draft room showed no winning price")
     )
     position = _position(pick.position)
+    resolver = resolver or TeamResolver()
     return PlayerSold(
         at=at,
         source=Provenance.ESPN_API.value,
         player=PlayerRef.from_raw(pick.player),
-        # team_index is 0-based across the board; team ids are 1-based and may
-        # be non-contiguous, so this is resolved against the snapshot's own
-        # ordering rather than assumed to equal the ESPN team id.
-        team=known(pick.team_index + 1, Provenance.ESPN_API, at),
+        team=known(resolver.resolve(snapshot, pick), Provenance.ESPN_API, at),
         price=price,
         position=known(position, Provenance.ESPN_API, at) if position else None,
     )
@@ -78,8 +137,11 @@ class DraftRoomSource:
     name = "espn-draftroom"
 
     def __init__(self, reader: DraftRoomReader, *, interval: float = 2.0,
-                 max_failures: int = 10) -> None:
+                 max_failures: int = 10,
+                 resolver: "TeamResolver | None" = None) -> None:
         self._reader = reader
+        self._resolver = resolver or TeamResolver()
+        self._warned_unmatched = False
         self._interval = interval
         self._max_failures = max_failures
         self._failures = 0
@@ -133,8 +195,16 @@ class DraftRoomSource:
 
             for pick in diff_picks(self._previous, snapshot):
                 self._emitted += 1
-                yield events_for(pick, snapshot)
+                yield events_for(pick, snapshot, self._resolver)
             self._previous = snapshot
+
+            # Surface a bad team match once, through the status line the REPL
+            # already shows. Silently misattributing picks is the failure this
+            # whole resolver exists to prevent, so it must not stay quiet.
+            if not self._warned_unmatched and self._resolver.warning:
+                self._warned_unmatched = True
+                self._detail = self._resolver.warning
+                self._health = SourceHealth.DEGRADED
 
             if self._health is SourceHealth.STOPPED:
                 return

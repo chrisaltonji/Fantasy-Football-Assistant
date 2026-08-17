@@ -101,7 +101,7 @@ def test_team_ids_are_read_never_generated(teams_payload):
     `range(1, count + 1)` would invent one and drop team 13 — silently
     attributing picks to a team that does not exist.
     """
-    team_ids, owners, _ = teams_from_payload(teams_payload)
+    team_ids, owners, _, _ = teams_from_payload(teams_payload)
     assert 6 not in team_ids
     assert team_ids == tuple(sorted(team_ids)), "ids come back sorted"
     assert len(owners) == len(team_ids)
@@ -109,7 +109,7 @@ def test_team_ids_are_read_never_generated(teams_payload):
 
 def test_managers_resolve_through_member_swids(teams_payload):
     """Nicknames come from `members[]`, joined on `primaryOwner`."""
-    _, owners, managers = teams_from_payload(teams_payload)
+    _, owners, managers, _ = teams_from_payload(teams_payload)
     assert managers, "expected at least one resolved manager"
     for team_id in managers:
         assert team_id in owners
@@ -117,7 +117,7 @@ def test_managers_resolve_through_member_swids(teams_payload):
 
 def test_a_team_with_no_owner_still_gets_an_id():
     payload = {"teams": [{"id": 4}], "members": []}
-    team_ids, owners, managers = teams_from_payload(payload)
+    team_ids, owners, managers, _ = teams_from_payload(payload)
     assert team_ids == (4,)
     assert owners == {} and managers == {}
 
@@ -224,3 +224,21 @@ def test_the_rebuilt_config_round_trips_through_the_writer(
     assert reloaded.roster == config.roster
     assert tuple(reloaded.effective_team_ids) == tuple(config.effective_team_ids)
     assert reloaded.owners == config.owners
+
+
+def test_team_names_are_captured_for_draft_room_matching(teams_payload):
+    """The draft room board carries no team id, so the name is the only join.
+
+    Stored as a hint rather than identity — see `TeamResolver`.
+    """
+    team_ids, _, _, names = teams_from_payload(teams_payload)
+    assert names, "expected ESPN to report team names"
+    assert set(names) <= set(team_ids)
+
+
+def test_the_rebuilt_config_carries_team_names(settings_payload, teams_payload):
+    config, _ = config_from_payloads(
+        settings_payload, teams_payload, league_id=1, year=2026,
+    )
+    assert config.team_names
+    assert set(config.team_names) <= set(config.effective_team_ids)

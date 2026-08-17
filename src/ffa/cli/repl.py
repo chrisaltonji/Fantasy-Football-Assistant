@@ -11,6 +11,8 @@ Ctrl-C, a closed laptop, or a kernel panic all lose exactly nothing.
 
 from __future__ import annotations
 
+import queue
+import threading
 from typing import Callable, TextIO
 
 from ffa.advice.engine import advise
@@ -27,10 +29,55 @@ from ffa.ingest.manual.grammar import (
     ViewCommand,
     parse_command,
 )
+from ffa.ingest.source import EventSource, SourceHealth
 from ffa.state.store import DraftStore
 from ffa.util.clock import now_utc
 
 PROMPT = "> "
+
+# Tags on the single inbound queue. Both producers - your keyboard and the
+# ESPN reader - post here, and the main thread is the only thing that ever
+# writes to the store. That is the whole concurrency story: no locks, no
+# shared mutable state, one writer by construction.
+LINE = "line"
+EVENT = "event"
+EOF = "eof"
+
+
+class _TaggingQueue(queue.Queue):
+    """Looks like a plain queue to an `EventSource`, tags on the way through.
+
+    `EventSource.start(out)` puts bare events. Wrapping the queue rather than
+    adapting afterwards keeps the Protocol honest — the source has no idea it
+    is being multiplexed, which is what lets `ManualSource`, `SimSource` and
+    `DraftRoomSource` all drop into the same loop.
+    """
+
+    def __init__(self, target: "queue.Queue", tag: str) -> None:
+        super().__init__()
+        self._target = target
+        self._tag = tag
+
+    def put(self, item, block=True, timeout=None):  # noqa: D102 - stdlib signature
+        self._target.put((self._tag, item), block=block, timeout=timeout)
+
+
+def _pump_stdin(stdin: TextIO, out: "queue.Queue") -> None:
+    """Move blocking reads off the main thread.
+
+    Without this the loop sits in `readline()` and a pick that lands while you
+    are not typing would not appear until you pressed Enter — which is exactly
+    when you are least able to press it.
+    """
+    try:
+        while True:
+            line = stdin.readline()
+            if line == "":
+                out.put((EOF, None))
+                return
+            out.put((LINE, line))
+    except Exception:  # noqa: BLE001 - a dead stdin is an EOF, not a crash
+        out.put((EOF, None))
 
 
 def run_repl(
@@ -41,8 +88,21 @@ def run_repl(
     now_fn: Callable[[], object] = now_utc,
     prompt: str = PROMPT,
     book=None,
+    source: EventSource | None = None,
 ) -> int:
-    """Drive a draft until quit, EOF, or Ctrl-C. Returns an exit code."""
+    """Drive a draft until quit, EOF, or Ctrl-C. Returns an exit code.
+
+    With no `source` this is the original loop, unchanged: a blocking read on
+    the calling thread. That is what every integration test drives, and what a
+    piped transcript needs.
+
+    With a `source`, the same loop runs off a queue that both your keyboard and
+    the source post to. Picks land on their own and you type only to correct
+    them.
+    """
+    if source is not None:
+        return _run_live(store, stdin=stdin, stdout=stdout, now_fn=now_fn,
+                         prompt=prompt, book=book, source=source)
     emit = _writer(stdout)
 
     if store.load_warnings:
@@ -65,43 +125,10 @@ def run_repl(
             emit("")
             return 0
 
-        try:
-            command = parse_command(
-                line,
-                ParseContext(
-                    state=store.state, now=now_fn(), events=store.events, book=book
-                ),
-            )
-        except CommandError as exc:
-            emit(f"error: {exc}")
-            continue
-
-        if isinstance(command, NoopCommand):
-            continue
-        if isinstance(command, QuitCommand):
-            emit("saved.")
-            return 0
-        if isinstance(command, ViewCommand):
-            emit(_view(store, command, book))
-            continue
-
-        if isinstance(command, EmitCommand):
-            try:
-                for event in command.events:
-                    store.dispatch(event)
-            except Exception as exc:  # pragma: no cover - journal failures only
-                emit(f"error: could not record that: {exc}")
-                continue
-            # Echo what was written, with the id that `undo #id` takes.
-            emit(f"#{store.events[-1].id} {command.echo}")
-            seen_warnings = _emit_new_warnings(emit, store.state, seen_warnings)
-
-            # Capability 2: the bid readout auto-fires on nomination. That is
-            # the moment it's needed, and asking for it costs seconds you
-            # don't have while the auctioneer is counting.
-            if book is not None and store.state.current_nomination is not None:
-                if any(isinstance(e, PlayerNominated) for e in command.events):
-                    emit(render.render_guidance(advise(store.state, book).guidance))
+        outcome = _handle_line(line, store, emit, book, now_fn, seen_warnings)
+        if outcome.exit_code is not None:
+            return outcome.exit_code
+        seen_warnings = outcome.seen_warnings
 
 
 def _emit_new_warnings(emit, state: DraftState, seen: int) -> int:
@@ -188,3 +215,166 @@ def _writer(stdout: TextIO):
             stdout.flush()
 
     return emit
+
+
+def _run_live(
+    store: DraftStore,
+    *,
+    stdin: TextIO,
+    stdout: TextIO,
+    now_fn: Callable[[], object],
+    prompt: str,
+    book,
+    source: EventSource,
+) -> int:
+    """The same draft loop, fed by two producers instead of one."""
+    emit = _writer(stdout)
+    inbox: "queue.Queue" = queue.Queue()
+
+    if store.load_warnings:
+        emit(render.render_warnings(store.load_warnings))
+    emit(_banner(store.state))
+    emit(_reference_banner(book))
+    emit(f"live source: {source.name} — picks arrive on their own. "
+         "Type to correct them, `quit` to stop.")
+
+    threading.Thread(target=_pump_stdin, args=(stdin, inbox), daemon=True).start()
+    threading.Thread(
+        target=_run_source, args=(source, inbox, emit), daemon=True
+    ).start()
+
+    seen_warnings = len(store.state.warnings)
+    try:
+        while True:
+            stdout.write(prompt)
+            stdout.flush()
+            tag, payload = inbox.get()
+
+            if tag is EOF or tag == EOF:
+                emit("")
+                return 0
+
+            if tag == EVENT:
+                # Async output lands where the prompt was, so start a fresh
+                # line before printing and let the loop redraw the prompt.
+                emit("")
+                try:
+                    store.dispatch(payload)
+                except Exception as exc:  # pragma: no cover - journal failures
+                    emit(f"error: could not record an incoming pick: {exc}")
+                    continue
+                emit(f"#{store.events[-1].id} {render.describe(payload)}")
+                seen_warnings = _emit_new_warnings(emit, store.state, seen_warnings)
+                _maybe_guidance(emit, store, book, [payload])
+                continue
+
+            outcome = _handle_line(
+                payload, store, emit, book, now_fn, seen_warnings
+            )
+            if outcome.exit_code is not None:
+                _drain(inbox, store, emit)
+                return outcome.exit_code
+            seen_warnings = outcome.seen_warnings
+    finally:
+        source.stop()
+
+
+def _drain(inbox: "queue.Queue", store: DraftStore, emit) -> None:
+    """Record whatever the source already posted before we quit.
+
+    Only what is *already* queued — a blocking drain would hang against a
+    source still producing. Without this, typing `quit` the instant after a
+    sale lands throws that sale away: it was observed, it is in hand, and
+    dropping it would leave the journal disagreeing with what ESPN showed.
+    """
+    recorded = 0
+    while True:
+        try:
+            tag, payload = inbox.get_nowait()
+        except queue.Empty:
+            break
+        if tag != EVENT:
+            continue
+        try:
+            store.dispatch(payload)
+            recorded += 1
+        except Exception:  # pragma: no cover - journal failures only
+            break
+    if recorded:
+        emit(f"recorded {recorded} pick(s) that arrived as you quit.")
+
+
+def _run_source(source: EventSource, inbox: "queue.Queue", emit) -> None:
+    """Drive one source on its own thread, reporting how it ends.
+
+    A source that dies quietly is the worst outcome on draft day: the board
+    would simply stop updating and look like a lull in the bidding.
+    """
+    try:
+        source.start(_TaggingQueue(inbox, EVENT))
+    except Exception as exc:  # noqa: BLE001 - surfaced, never swallowed
+        inbox.put((LINE, "\n"))
+        emit(f"\n! {source.name} failed: {type(exc).__name__}: {exc}")
+        return
+
+    status = source.status()
+    if status.health is not SourceHealth.STOPPED or status.detail:
+        emit(f"\n! {source.name} stopped: {status.detail or status.health.value}")
+
+
+class _LineOutcome:
+    __slots__ = ("exit_code", "seen_warnings")
+
+    def __init__(self, exit_code: int | None, seen_warnings: int) -> None:
+        self.exit_code = exit_code
+        self.seen_warnings = seen_warnings
+
+
+def _handle_line(
+    line: str, store: DraftStore, emit, book, now_fn, seen_warnings: int
+) -> _LineOutcome:
+    """One typed command. Shared by both loops so they cannot drift."""
+    try:
+        command = parse_command(
+            line,
+            ParseContext(
+                state=store.state, now=now_fn(), events=store.events, book=book
+            ),
+        )
+    except CommandError as exc:
+        emit(f"error: {exc}")
+        return _LineOutcome(None, seen_warnings)
+
+    if isinstance(command, NoopCommand):
+        return _LineOutcome(None, seen_warnings)
+    if isinstance(command, QuitCommand):
+        emit("saved.")
+        return _LineOutcome(0, seen_warnings)
+    if isinstance(command, ViewCommand):
+        emit(_view(store, command, book))
+        return _LineOutcome(None, seen_warnings)
+
+    if isinstance(command, EmitCommand):
+        try:
+            for event in command.events:
+                store.dispatch(event)
+        except Exception as exc:  # pragma: no cover - journal failures only
+            emit(f"error: could not record that: {exc}")
+            return _LineOutcome(None, seen_warnings)
+        emit(f"#{store.events[-1].id} {command.echo}")
+        seen_warnings = _emit_new_warnings(emit, store.state, seen_warnings)
+        _maybe_guidance(emit, store, book, command.events)
+
+    return _LineOutcome(None, seen_warnings)
+
+
+def _maybe_guidance(emit, store: DraftStore, book, events) -> None:
+    """Capability 2: the bid readout auto-fires on nomination.
+
+    That is the moment it is needed, and asking for it costs seconds you do not
+    have while the auctioneer is counting.
+    """
+    if book is None or store.state.current_nomination is None:
+        return
+    if any(isinstance(e, PlayerNominated) for e in events):
+        emit(render.render_guidance(advise(store.state, book).guidance))
