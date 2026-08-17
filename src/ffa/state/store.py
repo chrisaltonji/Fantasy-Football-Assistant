@@ -160,10 +160,21 @@ def _pid_alive(raw: str) -> bool:
         pid = int(raw)
     except ValueError:
         return False
+    if pid <= 0:
+        return False
+
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:  # pragma: no cover - exists, owned by someone else
         return True
+    except OSError:
+        # Windows reports a nonexistent pid as OSError(EINVAL / WinError 87),
+        # not ProcessLookupError. Uncaught, that escaped `_acquire_lock` and
+        # meant a stale lock could never be reclaimed here: after any crash the
+        # run directory stayed locked until the file was deleted by hand, mid
+        # draft. Verified on 3.14 that signal 0 is a pure probe on Windows and
+        # does not terminate the target.
+        return False
     return True

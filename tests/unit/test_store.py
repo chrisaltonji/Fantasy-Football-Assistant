@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -9,7 +12,7 @@ from ffa.domain.events import EventUndone
 from ffa.domain.projections import remaining_budget
 from ffa.domain.reducers import replay
 from ffa.state.journal import read_events
-from ffa.state.store import LOCK_NAME, DraftStore, LockError
+from ffa.state.store import LOCK_NAME, DraftStore, LockError, _pid_alive
 from tests.conftest import at, sold
 
 
@@ -123,3 +126,72 @@ def test_closing_releases_the_lock(tmp_path: Path, init_event):
     assert (run / LOCK_NAME).read_text() == str(os.getpid())
     store.close()
     assert not (run / LOCK_NAME).exists()
+
+
+# --- pid liveness: platform-specific and easy to get subtly wrong ------------
+
+
+def test_a_dead_pid_reads_as_dead_on_every_platform():
+    """The stale-lock path depends entirely on this returning False.
+
+    POSIX raises ProcessLookupError for a missing pid; Windows raises a plain
+    OSError (WinError 87). Only the first was handled, so on Windows a crashed
+    session left a lock that could never be reclaimed — the run directory
+    stayed locked until the file was deleted by hand.
+    """
+    assert _pid_alive("999999") is False
+
+
+def test_our_own_pid_reads_as_alive():
+    assert _pid_alive(str(os.getpid())) is True
+
+
+@pytest.mark.parametrize("raw", ["", "nonsense", "-1", "0", "1.5"])
+def test_unusable_pid_values_read_as_dead(raw):
+    """A truncated or garbage lockfile must not wedge the next session."""
+    assert _pid_alive(raw) is False
+
+
+def test_probing_a_live_process_does_not_disturb_it(tmp_path: Path):
+    """`os.kill(pid, 0)` must stay a probe, never a signal.
+
+    Windows implements `os.kill` as OpenProcess + TerminateProcess for real
+    signals and special-cases 0. If anyone ever "simplifies" this to a real
+    signal, the lock check would terminate the very session it was asked to
+    detect — so pin it.
+
+    The child announces readiness through a file rather than a sleep. Probing
+    a process that is still loading its DLLs races with Windows process
+    startup, and a child that dies with STATUS_DLL_INIT_FAILED looks exactly
+    like a probe that killed it.
+    """
+    ready = tmp_path / "ready"
+    child = subprocess.Popen([
+        sys.executable, "-c",
+        f"import pathlib,time; pathlib.Path(r'{ready}').touch(); time.sleep(30)",
+    ])
+    try:
+        deadline = time.monotonic() + 15
+        while not ready.exists() and child.poll() is None:
+            if time.monotonic() > deadline:
+                pytest.fail("child never signalled readiness")
+            time.sleep(0.05)
+
+        if child.poll() is not None:
+            pytest.skip(f"child failed to start (exit {child.returncode})")
+
+        assert _pid_alive(str(child.pid)) is True
+        time.sleep(0.3)
+        assert child.poll() is None, "the liveness probe terminated the process"
+    finally:
+        if child.poll() is None:
+            child.terminate()
+        child.wait(timeout=10)
+
+    # Deliberately not asserting the pid reads dead here. Windows keeps a pid
+    # valid while any handle to it remains open, and Popen holds one for the
+    # lifetime of this object — so a just-reaped child can still probe as
+    # alive. That is handle lifetime, not the probe's contract, and it does not
+    # arise for the case that matters (a crashed session with no parent left to
+    # hold a handle). `test_a_dead_pid_reads_as_dead_on_every_platform` covers
+    # the real path.

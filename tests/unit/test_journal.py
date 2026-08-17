@@ -16,6 +16,39 @@ def write_journal(path: Path, events, *, trailing_newline: bool = True) -> Path:
     return path
 
 
+def test_the_journal_is_lf_on_every_platform(tmp_path: Path, init_event):
+    """The wire format is LF, not the platform separator.
+
+    Python's text mode rewrites "\\n" to "\\r\\n" on Windows, which broke the
+    codec's byte-identical round-trip contract and made a journal written on
+    Windows differ from the same draft written on Linux. The journal is the
+    draft and is meant to be a portable audit artifact, so this is pinned.
+    """
+    path = tmp_path / "events.jsonl"
+    with Journal.open(path) as journal:
+        journal.append(init_event)
+        journal.append(sold(0, "mahomes", 3, 45))
+
+    raw = path.read_bytes()
+    assert b"\r\n" not in raw
+    assert raw.count(b"\n") == 2
+    assert raw.endswith(b"}\n")
+
+
+def test_a_resumed_journal_round_trips_byte_identically(tmp_path: Path, init_event):
+    """Reopening and appending must not switch line endings mid-file."""
+    path = tmp_path / "events.jsonl"
+    with Journal.open(path) as journal:
+        journal.append(init_event)
+    with Journal.open(path) as journal:
+        journal.append(sold(0, "mahomes", 3, 45))
+
+    events, warnings = read_events(path)
+    assert warnings == []
+    rebuilt = ("\n".join(dump_event(e) for e in events) + "\n").encode("utf-8")
+    assert rebuilt == path.read_bytes()
+
+
 def test_empty_and_missing_files_are_not_errors(tmp_path: Path):
     assert read_events(tmp_path / "nope.jsonl") == ([], [])
     empty = tmp_path / "events.jsonl"

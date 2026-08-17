@@ -99,7 +99,13 @@ class Journal:
     def __init__(self, path: Path, next_id: int) -> None:
         self.path = path
         self._next_id = next_id
-        self._handle = path.open("a", encoding="utf-8")
+        # newline="\n" is load-bearing, not style. Python's text mode
+        # translates "\n" to the platform separator, so on Windows every line
+        # would land as CRLF — breaking the codec's byte-identical round-trip
+        # contract and making a journal written on Windows differ from the same
+        # draft written on Linux. The journal is the draft and is meant to be a
+        # portable audit artifact, so the wire format is LF everywhere.
+        self._handle = path.open("a", encoding="utf-8", newline="\n")
 
     @classmethod
     def open(cls, path: Path, *, next_id: int | None = None) -> "Journal":
@@ -141,8 +147,24 @@ class Journal:
             self._handle.close()
 
     def _fsync_parent(self) -> None:
-        """Make a newly created journal's directory entry durable too."""
-        fd = os.open(self.path.parent, os.O_RDONLY)
+        """Make a newly created journal's directory entry durable too.
+
+        Best-effort, and POSIX-only in practice. Windows has no directory file
+        descriptor — `os.open` on one raises PermissionError — so this is a
+        no-op there. Nothing is lost: NTFS journals its own metadata, which is
+        the guarantee this call buys on ext4/APFS.
+
+        The `os.open` must stay inside the try. It was outside once, and since
+        PermissionError is an OSError that the handler below would have
+        swallowed, the effect was that `Journal.open` raised on Windows and the
+        entire state engine could not create a journal on the machine the draft
+        actually runs on.
+        """
+        try:
+            fd = os.open(self.path.parent, os.O_RDONLY)
+        except OSError:
+            return
+
         try:
             os.fsync(fd)
         except OSError:  # pragma: no cover - not all filesystems allow this
