@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 376 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 449 tests pass. Everything below is
 pushed.
 
 ---
@@ -22,7 +22,7 @@ the running build plan.
 
 ---
 
-## Done: CP1–CP3
+## Done: CP1–CP4
 
 **CP1 — scaffold, config, ESPN probe.** `tools/espn_probe.py` fetches and
 analyses raw ESPN views, and now also runs offline via `--analyse FILE` (the dev
@@ -38,8 +38,11 @@ pasted TSV, header-row search, combined-cell splitting), PlayerBook with fuzzy
 matching that refuses to guess, scarcity tiering, market inflation, and
 `max_advisable_bid`.
 
+**CP4 — simulator.** `ffa sim` runs a full budget-aware auction into a real
+journal, with fault injection. Details under Next.
+
 You can run a complete draft by hand today, with live bid guidance, and crash
-and resume it exactly.
+and resume it exactly — and you can rehearse one end to end without ESPN.
 
 ---
 
@@ -218,10 +221,39 @@ regenerate it from the captured settings.
 
 ## Next
 
-**CP4 — simulator.** Budget-aware bots as just another `EventSource`, no
-`if simulating:` anywhere in the engine. Fault injection (`--drop-prices 0.3`)
-exercises the partial-provenance path. This is the real acceptance test and
-needs no ESPN access, so it is the obvious next move.
+**CP4 — simulator. DONE 2026-08-17.** `ffa sim --seed 42 --drop-prices 0.3`
+runs a full auction into a real journal. Budget-aware bots in five archetypes
+bid against the same `projections` the advisory layer reads, so a bug in
+`max_legal_bid` or `open_slots_by_pos` shows up as a visibly illegal draft
+instead of a draft-day surprise. `SimSource` satisfies `EventSource` — there is
+no `if simulating:` anywhere in the engine.
+
+Clearing price is second-price-plus-one, the way an English auction actually
+ends. A clean run fills 12/12 rosters with no warnings and no overspend, and a
+seed reproduces a run exactly.
+
+**Two things the simulator found immediately:**
+
+1. **Bidding on floored budget information over-commits.** `remaining_budget`
+   charges an unknown price at the $1 minimum, which *over*-estimates what a
+   team has left. With `--drop-prices 0.3`, teams bid against that inflated
+   figure and finish over budget once the real prices land — the engine flags
+   it (`mgr1 is $8 over budget`) rather than corrupting state, which is correct,
+   but it means **our own** `max_legal_bid` is unsafe whenever our own prices
+   are incomplete. The $1 floor is the safe direction for judging a rival's
+   ammunition and the dangerous direction for setting our own ceiling.
+   `Threat.remaining_is_floor` exposes this for rivals; `BidGuidance` does not
+   expose it for us. Worth closing before draft day.
+
+2. **Truncating the player pool by value strands money.** Kickers and defenses
+   are the cheapest rows in any auction-value export, so a pool capped at
+   "enough bodies" cuts them first, teams cannot fill K/DST, and the run looks
+   like a bidding bug. The pool is now the whole board.
+
+Bots clear ~92% of the money vs. the real 2025 auction's 99.5%. The gap is
+structural, not a tuning failure: a bot outbid early cannot retroactively
+reallocate, so it fills its roster cheaply and carries cash. Raising the
+aggression clamps changes nothing, which is how we know.
 
 **CP5 — production ESPN adapter.** Config bootstrap from raw `mSettings`, poller
 with backoff and circuit breaker, queue wiring, degradation, draft-day runbook.

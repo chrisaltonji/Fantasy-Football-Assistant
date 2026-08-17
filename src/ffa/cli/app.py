@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -130,6 +131,104 @@ def cmd_draft(args: argparse.Namespace) -> int:
         store.close()
 
 
+def cmd_sim(args: argparse.Namespace) -> int:
+    """Run a simulated auction into a real journal.
+
+    This is the acceptance test the build has been missing: bots bid against
+    the same projections the advisory layer reads, every event goes through
+    the same store, and the result is a journal that resumes and replays like
+    any other. Needs no ESPN access, which is why it can run today.
+    """
+    from ffa.sim.engine import AuctionSim
+    from ffa.sim.faults import FaultProfile
+    from ffa.sim.source import SimSource
+
+    config = load_config(args.config)
+    if not config.my_team_id:
+        raise ConfigError(
+            "teams.my_team_id is not set in your config, so the tool cannot "
+            "tell which team is yours. Set it before simulating a draft."
+        )
+
+    draft_id = f"sim-{args.seed}-{make_draft_id(config.league_id, config.year)}"
+    directory = run_dir(draft_id, args.runs)
+    if directory.exists() and not args.force:
+        raise ConfigError(
+            f"{directory} already exists. Use --force to overwrite, or a "
+            "different --seed."
+        )
+    if directory.exists():
+        shutil.rmtree(directory)
+
+    try:
+        profile = FaultProfile(
+            drop_prices=args.drop_prices,
+            drop_positions=args.drop_positions,
+            late_prices=args.late_prices,
+        )
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from None
+
+    init = _init_event(config, draft_id)
+    sim = AuctionSim(
+        league=init,
+        book=load_book(config),
+        seed=args.seed,
+        faults=profile,
+        human_team=config.my_team_id if args.against_me else None,
+    )
+    source = SimSource(sim)
+
+    print(f"simulating {draft_id}")
+    print(f"  seed     {args.seed}")
+    print(f"  faults   {profile.describe()}")
+    print(f"  seat     {'you bid manually' if args.against_me else 'bots fill every seat'}")
+
+    store = DraftStore.create(directory, init)
+    try:
+        for event in source.events():
+            store.dispatch(event)
+        state = store.state
+    finally:
+        store.close()
+
+    print(f"\n{source.status().detail}")
+    print(f"journal  {directory / 'events.jsonl'}")
+    _print_sim_summary(state, sim)
+    return 0
+
+
+def _print_sim_summary(state, sim) -> int:
+    """Per-team outcome, plus the invariants a bad run would violate."""
+    from ffa.domain import projections as proj
+
+    league = state.league
+    if league is None:  # pragma: no cover - store always applies the init event
+        return 0
+
+    print(f"\n{'team':>6}  {'roster':>6}  {'spent':>6}  {'left':>5}  {'unknown':>7}")
+    overspent = []
+    for team_id in sorted(state.teams):
+        spent = proj.spent(state, team_id)
+        left = proj.remaining_budget(state, team_id)
+        unknown_n = proj.unknown_price_count(state, team_id)
+        print(f"{team_id:>6}  {proj.roster_count(state, team_id):>6}  "
+              f"${spent:>5}  ${left:>4}  {unknown_n:>7}")
+        if left < 0:
+            overspent.append(team_id)
+
+    totals = proj.league_totals(state)
+    print(f"\n{totals['sales']} sale(s), ${totals['dollars_spent']} spent, "
+          f"{totals['unknown_prices']} price(s) still unknown")
+    print(f"faults: {sim._injector.summary()}")
+
+    if overspent:
+        print(f"! teams over budget: {overspent}", file=sys.stderr)
+    for warning in state.warnings[:5]:
+        print(f"! {warning}", file=sys.stderr)
+    return 0
+
+
 def cmd_export_state(args: argparse.Namespace) -> int:
     """Emit the JSON view model every surface reads.
 
@@ -231,6 +330,21 @@ def build_parser() -> argparse.ArgumentParser:
     draft.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     draft.add_argument("--runs", type=Path, default=RUNS_DIR)
     draft.set_defaults(func=cmd_draft)
+
+    sim = sub.add_parser("sim", help="run a simulated auction (no ESPN needed)")
+    sim.add_argument("--seed", type=int, default=0, help="reproduces a run exactly")
+    sim.add_argument("--drop-prices", type=float, default=0.0, metavar="RATE",
+                     help="fraction of sales that arrive with no price (0-1)")
+    sim.add_argument("--drop-positions", type=float, default=0.0, metavar="RATE",
+                     help="fraction of sales that arrive with no position (0-1)")
+    sim.add_argument("--late-prices", type=float, default=1.0, metavar="RATE",
+                     help="fraction of dropped prices that arrive later (0-1)")
+    sim.add_argument("--against-me", action="store_true",
+                     help="leave your seat empty instead of filling it with a bot")
+    sim.add_argument("--force", action="store_true", help="overwrite an existing run")
+    sim.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+    sim.add_argument("--runs", type=Path, default=RUNS_DIR)
+    sim.set_defaults(func=cmd_sim)
 
     data = sub.add_parser("data", help="inspect reference data")
     data_sub = data.add_subparsers(dest="data_command", required=True)
