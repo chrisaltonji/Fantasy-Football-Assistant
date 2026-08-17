@@ -21,9 +21,15 @@ budget = 200
 
 [teams]
 count = 12
-# ESPN's numeric team id for YOUR team. `ffa config init` fills this in when it
-# can identify you from the cookies; otherwise set it manually.
+# ESPN's numeric team id for YOUR team. It's the `teamId=` in your team URL.
 my_team_id = 0
+
+# ESPN team ids are NOT guaranteed contiguous — a league that ever removed and
+# re-added a team leaves a hole (a real one observed: 1-5 and 7-13, no 6).
+# Read them from ?view=mTeam. Leave empty for 1..count if your league is clean;
+# get it wrong and the tool invents a team that doesn't exist while dropping
+# one that does.
+ids = []
 
 # Starting lineup slots. Bench and IR are counted separately because they
 # change the max-bid math (a bench slot still costs you at least $1).

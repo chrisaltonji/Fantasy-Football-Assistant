@@ -86,6 +86,7 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
     roster_raw = dict(data.get("roster", {}))
     scoring = data.get("scoring", {})
     managers_raw = data.get("managers", {})
+    owners_raw = data.get("owners", {})
     reference = data.get("reference", {})
     polling = data.get("polling", {})
 
@@ -123,6 +124,15 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
                 'Example: 3 = "dave"'
             ) from exc
 
+    owners: dict[int, str] = {}
+    for raw_id, swid in owners_raw.items():
+        try:
+            owners[int(raw_id)] = str(swid).strip()
+        except ValueError as exc:
+            raise ConfigError(
+                f"[owners] keys must be ESPN team ids, got {raw_id!r}"
+            ) from exc
+
     config = LeagueConfig(
         league_id=int(_require(league, "league", "league_id")),
         year=int(_require(league, "league", "year")),
@@ -132,10 +142,12 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
         budget=int(draft.get("budget", 200)),
         team_count=int(_require(teams, "teams", "count")),
         my_team_id=int(teams.get("my_team_id", 0)),
+        team_ids=tuple(int(i) for i in teams.get("ids", ())),
         roster=roster,
         flex_positions=flex,
         scoring_type=str(scoring.get("type", "PPR")).upper(),
         managers=managers,
+        owners=owners,
         reference_path=str(reference.get("path", "")),
         baseline_teams=int(reference.get("baseline_teams", 12)),
         baseline_budget=int(reference.get("baseline_budget", 200)),
@@ -174,10 +186,15 @@ def config_to_dict(config: LeagueConfig) -> dict[str, Any]:
             "name": config.name,
         },
         "draft": {"type": config.draft_type, "budget": config.budget},
-        "teams": {"count": config.team_count, "my_team_id": config.my_team_id},
+        "teams": {
+            "count": config.team_count,
+            "my_team_id": config.my_team_id,
+            "ids": list(config.team_ids),
+        },
         "roster": roster,
         "scoring": {"type": config.scoring_type},
         "managers": {str(k): v for k, v in sorted(config.managers.items())},
+        "owners": {str(k): v for k, v in sorted(config.owners.items())},
         "reference": {
             "path": config.reference_path,
             "baseline_teams": config.baseline_teams,

@@ -108,8 +108,11 @@ def _team_view(state: DraftState, team_id: int, book: Any = None) -> dict[str, A
     unknowns = proj.unknown_price_count(state, team_id)
     return {
         "team_id": team_id,
-        "name": _sourced_value(team.name) if team else None,
+        # owner_id is the stable identity; name is volatile display text and
+        # must not be used as a key by any surface.
+        "owner_id": _sourced_value(team.owner_id) if team else None,
         "manager": _sourced_value(team.manager) if team else None,
+        "name": _sourced_value(team.name) if team else None,
         "label": team.label if team else f"team{team_id}",
         "is_me": state.league is not None and team_id == state.league.my_team_id,
         "spent": proj.spent(state, team_id),

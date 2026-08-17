@@ -49,7 +49,12 @@ def init_event(league) -> DraftInitialized:
         at=at(),
         draft_id="2026-123456-20260816T190000",
         league=league,
-        teams=tuple(TeamSeed(i, f"Team {i}") for i in range(1, 13)),
+        # Non-contiguous on purpose: the real league this was built against
+        # has no team 6, and every test should exercise that.
+        teams=tuple(
+            TeamSeed(team_id=i, owner_id=f"{{OWNER-{i:02d}}}", manager=f"mgr{i}")
+            for i in (1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13)
+        ),
     )
 
 

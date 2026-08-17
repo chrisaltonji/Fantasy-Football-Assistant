@@ -57,6 +57,13 @@ class LeagueConfig:
     team_count: int = 12
     my_team_id: int = 0
 
+    # ESPN team ids are NOT contiguous. A league that has ever removed and
+    # re-added a team leaves a hole — the real league this was built against
+    # runs 1-5 and 7-13, with no team 6. Assuming range(1, count+1) invents a
+    # phantom team and silently drops a real one, so the ids are explicit.
+    # Empty falls back to 1..team_count, which is right for untouched leagues.
+    team_ids: tuple[int, ...] = ()
+
     roster: Mapping[RosterSlot, int] = field(
         default_factory=lambda: {
             RosterSlot.QB: 1,
@@ -79,6 +86,12 @@ class LeagueConfig:
     # a nickname stay addressable as `t3`/`team3`/`3`.
     managers: Mapping[int, str] = field(default_factory=dict)
 
+    # ESPN member SWIDs keyed by team id. The stable anchor for who a team
+    # actually is — team names change constantly, so nothing keys off them.
+    # Lets CP5 detect a team-id shift instead of silently attributing picks to
+    # the wrong manager.
+    owners: Mapping[int, str] = field(default_factory=dict)
+
     # Where your exported auction values live. Unset falls back to the sample
     # fixture, with a loud banner — sample values are invented.
     reference_path: str = ""
@@ -90,6 +103,11 @@ class LeagueConfig:
     poll_failure_threshold: int = 4
 
     # --- derived, never stored ---
+
+    @property
+    def effective_team_ids(self) -> tuple[int, ...]:
+        """The league's actual team ids, in order."""
+        return self.team_ids or tuple(range(1, self.team_count + 1))
 
     @property
     def draftable_slots(self) -> int:
@@ -155,9 +173,30 @@ class LeagueConfig:
                 "draftable roster slots — every team needs at least $1 per slot"
             )
 
+        ids = self.effective_team_ids
+        if self.team_ids:
+            if len(set(self.team_ids)) != len(self.team_ids):
+                problems.append("[teams].ids contains duplicates")
+            if len(self.team_ids) != self.team_count:
+                problems.append(
+                    f"[teams].ids has {len(self.team_ids)} entries but teams.count "
+                    f"is {self.team_count} — they must agree"
+                )
+            if any(i <= 0 for i in self.team_ids):
+                problems.append("[teams].ids must all be positive")
+
+        if self.my_team_id and self.my_team_id not in ids:
+            problems.append(
+                f"teams.my_team_id is {self.my_team_id}, which is not one of the "
+                f"league's team ids: {', '.join(str(i) for i in ids)}"
+            )
+
         for team_id, nickname in self.managers.items():
-            if not 1 <= team_id <= max(self.team_count, team_id):
-                problems.append(f"[managers] has team id {team_id}, which is not positive")
+            if team_id not in ids:
+                problems.append(
+                    f"[managers] names team {team_id}, which is not in this league. "
+                    f"Valid ids: {', '.join(str(i) for i in ids)}"
+                )
             if not str(nickname).strip():
                 problems.append(f"[managers] entry for team {team_id} is empty")
 

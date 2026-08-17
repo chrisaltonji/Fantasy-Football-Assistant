@@ -40,8 +40,11 @@ def resolve_team(state: DraftState, token: str) -> int:
         team_id = int(slot.group(1))
         if team_id in state.teams:
             return team_id
+        # Don't say "1-12": ESPN ids have holes, so listing the real ones is
+        # the difference between a useful error and a misleading one.
         raise CommandError(
-            f"no team {team_id} in this league (teams are 1-{len(state.teams)})"
+            f"no team {team_id} in this league. Team ids: "
+            + ", ".join(str(i) for i in sorted(state.teams))
         )
 
     lowered = text.lower()
@@ -65,11 +68,16 @@ def resolve_team(state: DraftState, token: str) -> int:
 
 
 def _team_aliases(team) -> set[str]:
-    aliases = set()
-    for sourced in (team.manager, team.name):
-        if sourced is not None and sourced.is_known:
-            aliases.add(str(sourced.value).lower())
-    return aliases
+    """Only the manager nickname — deliberately not the team name.
+
+    Team names change constantly, including mid-draft. Resolving against one
+    means `sold barkley 62 boogie` silently stops working the moment somebody
+    renames, or worse, starts matching a different team. The nickname you set
+    in [managers] is stable because you control it.
+    """
+    if team.manager is not None and team.manager.is_known:
+        return {str(team.manager.value).lower()}
+    return set()
 
 
 def _team_list(state: DraftState) -> str:

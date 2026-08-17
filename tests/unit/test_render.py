@@ -24,7 +24,7 @@ def test_money_formatting(amount, unknowns, expected):
 
 def test_budgets_marks_my_team(init_event):
     out = render.render_budgets(state_of(init_event))
-    assert "*Team 4" in out
+    assert "*mgr4" in out
 
 
 def test_budgets_shows_the_floor_marker_and_explains_it(init_event):
@@ -40,7 +40,7 @@ def test_budgets_omits_the_footnote_when_everything_is_known(init_event):
 
 def test_budgets_can_be_filtered_to_one_team(init_event):
     out = render.render_budgets(state_of(init_event, sold(2, "mahomes", 3, 45)), only_team=3)
-    assert "Team 3" in out and "Team 5" not in out
+    assert "mgr3" in out and "mgr5" not in out
 
 
 def test_starter_gaps_render_compactly(init_event):
@@ -56,7 +56,7 @@ def test_a_filled_position_drops_out_of_needs(init_event):
 
 def test_state_lists_rosters_by_team(init_event):
     out = render.render_state(state_of(init_event, sold(2, "mahomes", 3, 45)))
-    assert "Team 3: mahomes $45" in out
+    assert "mgr3: mahomes $45" in out
     assert "1 player(s) sold" in out
 
 

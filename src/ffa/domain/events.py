@@ -53,11 +53,16 @@ class BaseEvent:
 
 @dataclass(frozen=True)
 class TeamSeed:
-    """A team as known at draft start."""
+    """A team as known at draft start.
+
+    `owner_id` is ESPN's member SWID and is the stable anchor; `name` is
+    volatile display text that managers change on a whim.
+    """
 
     team_id: int
-    name: str = ""
+    owner_id: str = ""
     manager: str = ""
+    name: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -92,7 +97,11 @@ class DraftInitialized(BaseEvent):
                 "flex_positions": [p.value for p in self.league.flex_positions],
             },
             "teams": [
-                {"team_id": t.team_id, "name": t.name, "manager": t.manager} for t in self.teams
+                {
+                    "team_id": t.team_id, "owner_id": t.owner_id,
+                    "manager": t.manager, "name": t.name,
+                }
+                for t in self.teams
             ],
         }
 
@@ -114,7 +123,10 @@ class DraftInitialized(BaseEvent):
             draft_id=obj["draft_id"],
             league=league,
             teams=tuple(
-                TeamSeed(t["team_id"], t.get("name", ""), t.get("manager", ""))
+                TeamSeed(
+                    team_id=t["team_id"], owner_id=t.get("owner_id", ""),
+                    manager=t.get("manager", ""), name=t.get("name", ""),
+                )
                 for t in obj.get("teams", [])
             ),
             schema_version=obj.get("schema_version", SCHEMA_VERSION),
@@ -259,6 +271,7 @@ FIELD_DECODERS: dict[str, Callable[[Any], Any]] = {
     "position": Position.parse,
     "name": str,
     "manager": str,
+    "owner_id": str,
     "player_id": str,
 }
 
@@ -266,7 +279,7 @@ AMENDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     "player": ("price", "team", "position", "name", "player_id"),
     # `draft` is deliberately absent: changing the budget mid-draft would
     # invalidate every calculation already made against it.
-    "team": ("name", "manager"),
+    "team": ("manager", "owner_id", "name"),
 }
 
 # Explicit registry rather than metaclass magic or `__init_subclass__`, so it

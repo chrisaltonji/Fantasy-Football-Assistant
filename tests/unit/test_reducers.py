@@ -157,7 +157,44 @@ def test_naming_a_manager_changes_the_team_label(init_event):
     assert state.teams[3].label == "dave"
 
 
-def test_team_label_falls_back_through_name_then_slot(init_event):
-    state = reducers.replay([init_event])
-    assert state.teams[3].label == "Team 3"
+def test_label_never_uses_the_team_name(init_event):
+    """Team names change constantly, including mid-draft.
+
+    A readout that silently starts calling someone by a new team name — or
+    worse, matches the wrong team — is a real failure mode. Falling back to
+    `team3` is the honest answer.
+    """
+    state = reducers.replay([
+        init_event,
+        amend(2, "team:3", "name", "Gibbs Me Dat"),
+        amend(3, "team:3", "manager", ""),
+    ])
+    assert state.teams[3].name.value == "Gibbs Me Dat"
+    assert "Gibbs" not in state.teams[3].label
+
+
+def test_label_falls_back_to_the_slot_when_no_manager_is_set(init_event):
+    from ffa.domain.models import TeamEntity
+
+    assert TeamEntity(team_id=7).label == "team7"
     assert DraftState.empty().teams == {}
+
+
+def test_owner_id_is_the_stable_anchor(init_event):
+    """Identity keys off the ESPN member SWID, not anything renameable."""
+    state = reducers.replay([init_event])
+    assert state.teams[3].owner_id.value == "{OWNER-03}"
+
+
+def test_owner_id_is_amendable(init_event):
+    state = reducers.replay([init_event, amend(2, "team:3", "owner_id", "{NEW-SWID}")])
+    assert state.teams[3].owner_id.value == "{NEW-SWID}"
+
+
+def test_team_ids_are_not_assumed_contiguous(init_event):
+    """The real league has no team 6. Seeding range(1, count+1) would invent
+    a phantom team and drop a real one."""
+    assert 6 not in init_event.league.roster  # sanity: not confusing slots with ids
+    state = reducers.replay([init_event])
+    assert sorted(state.teams) == [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13]
+    assert len(state.teams) == 12

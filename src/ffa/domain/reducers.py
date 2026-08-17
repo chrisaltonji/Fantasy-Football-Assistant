@@ -100,8 +100,9 @@ def _apply_initialized(state: DraftState, event: DraftInitialized) -> DraftState
     teams = {
         seed.team_id: TeamEntity(
             team_id=seed.team_id,
-            name=_seed_value(seed.name, event),
+            owner_id=_seed_value(seed.owner_id, event),
             manager=_seed_value(seed.manager, event),
+            name=_seed_value(seed.name, event),
         )
         for seed in event.teams
     }
@@ -191,10 +192,12 @@ def _amend_player(state: DraftState, event: FieldAmended, key: str) -> DraftStat
 def _amend_team(state: DraftState, event: FieldAmended, team_id: int) -> DraftState:
     team = state.teams.get(team_id) or TeamEntity(team_id=team_id)
     field = event.field_name
-    if field == "name":
-        team = replace(team, name=merge(team.name, event.value))
-    elif field == "manager":
+    if field == "manager":
         team = replace(team, manager=merge(team.manager, event.value))
+    elif field == "owner_id":
+        team = replace(team, owner_id=merge(team.owner_id, event.value))
+    elif field == "name":
+        team = replace(team, name=merge(team.name, event.value))
     else:
         return state.with_warning(f"event #{event.id}: teams have no field {field!r}")
 

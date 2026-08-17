@@ -175,10 +175,15 @@ def _init_event(config: LeagueConfig, draft_id: str) -> DraftInitialized:
     teams = tuple(
         TeamSeed(
             team_id=team_id,
-            name=f"Team {team_id}",
+            owner_id=config.owners.get(team_id, ""),
             manager=config.managers.get(team_id, ""),
+            # Recorded for reference only. Nothing keys off it — team names
+            # change too often to be identity.
+            name="",
         )
-        for team_id in range(1, config.team_count + 1)
+        # Never range(1, count+1): ESPN team ids skip holes, and inventing a
+        # phantom team while dropping a real one is silent and catastrophic.
+        for team_id in config.effective_team_ids
     )
     return DraftInitialized(draft_id=draft_id, league=snapshot, teams=teams,
                             app_version=__version__)

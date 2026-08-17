@@ -64,18 +64,29 @@ class LeagueSnapshot:
 
 @dataclass(frozen=True)
 class TeamEntity:
-    """A team. Note the absence of budget and roster — see the module docstring."""
+    """A team. Note the absence of budget and roster — see the module docstring.
+
+    **Identity anchors on `owner_id` (ESPN's member SWID), never on `name`.**
+    Managers rename their teams constantly — mid-season, sometimes mid-draft —
+    so a team name is display text with a short shelf life, not a key. The
+    owner id is what actually persists.
+    """
 
     team_id: int
-    name: Sourced[str] | None = None
+    owner_id: Sourced[str] | None = None
     manager: Sourced[str] | None = None
+    name: Sourced[str] | None = None
 
     @property
     def label(self) -> str:
-        """What to call this team in output, preferring the human's own word for it."""
-        for candidate in (self.manager, self.name):
-            if candidate is not None and candidate.is_known:
-                return str(candidate.value)
+        """What to call this team in output.
+
+        Deliberately never falls through to `name`: a readout that silently
+        starts calling a manager by whatever they just renamed their team to is
+        worse than one that says `team11`. Set nicknames in [managers].
+        """
+        if self.manager is not None and self.manager.is_known:
+            return str(self.manager.value)
         return f"team{self.team_id}"
 
 

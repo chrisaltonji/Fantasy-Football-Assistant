@@ -43,8 +43,8 @@ def test_the_cp2_demo(run_path, init_event):
         ]))
         state = store.state
 
-    assert "#2 mahomes -> Team 3 $45" in output
-    assert "#3 barkley -> Team 1 $62" in output
+    assert "#2 mahomes -> mgr3 $45" in output
+    assert "#3 barkley -> mgr1 $62" in output
     assert "#4 undid #3" in output
 
     # team3 keeps mahomes; team1's pick was undone.

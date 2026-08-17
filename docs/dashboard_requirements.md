@@ -222,6 +222,8 @@ Per team:
 ```jsonc
 {
   "team_id": 2, "label": "dave", "manager": "dave", "is_me": false,
+  "owner_id": "{A1B2C3D4-...}",   // stable identity — key off THIS
+  "name": "Some Team Name",       // volatile display text — never a key
   "spent": 55, "remaining": 145,
   "remaining_is_floor": false,     // true => render as "$145+"
   "unknown_price_count": 0,
@@ -237,6 +239,17 @@ Per team:
 **`open_slots_by_pos` vs `starter_gaps`:** the first includes bench and is
 almost always non-zero; the second is starting slots only and is what makes a
 rival a genuine threat at a position. **Panels should key off `starter_gaps`.**
+
+**Never key off `name`, and never assume team ids are contiguous.** Two things
+learned from the real league:
+
+- Managers rename teams constantly, sometimes mid-draft. `owner_id` (the ESPN
+  member SWID) is the stable identity; `label` is what to *show* (the manager
+  nickname, falling back to `teamN` — deliberately never the team name). `name`
+  is in the payload for reference only.
+- Team ids have gaps. The source league runs `1-5, 7-13` — there is no team 6.
+  Any layout that assumes ids are `1..N`, or that uses a team id as an array
+  index, will render the wrong manager's budget.
 
 Everything above is deterministic and computed by the engine. The advisory
 layer never recomputes it — it consumes it and adds judgment. Owner dossiers
