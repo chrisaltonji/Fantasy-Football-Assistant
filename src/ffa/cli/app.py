@@ -293,6 +293,70 @@ def _print_sim_summary(state, sim) -> int:
     return 0
 
 
+def cmd_data_fetch(args: argparse.Namespace) -> int:
+    """Pull auction values from ESPN into a reference file.
+
+    Replaces the manual FantasyPros export. ESPN's own consensus is arguably
+    the better baseline for this league anyway: the league drafts on ESPN, so
+    ESPN's number reflects what this population actually pays.
+    """
+    from ffa.config.loader import load_dotenv
+    from ffa.ingest.espn.players import fetch_players, rows_from_payload, write_rows
+
+    env = load_dotenv()
+    league_id = args.league_id or int(env.get("ESPN_LEAGUE_ID") or 0)
+    year = args.year or int(env.get("ESPN_SEASON_YEAR") or 0)
+    if not league_id or not year:
+        raise ConfigError(
+            "need --league-id and --year (or ESPN_LEAGUE_ID / ESPN_SEASON_YEAR "
+            "in .env)"
+        )
+
+    creds = None if args.public else load_credentials()
+    print(f"fetching players for league {league_id} ({year})")
+    players = fetch_players(
+        league_id, year,
+        cookies=creds.as_cookies() if creds else None,
+        limit=args.limit,
+    )
+    rows, warnings = rows_from_payload(players, year=year)
+    if not rows:
+        raise ConfigError(
+            f"ESPN returned {len(players)} player(s) but none carried an "
+            "auction value. Nothing written."
+        )
+
+    written = write_rows(rows, args.out)
+    total = sum(r["auction_value"] for r in rows)
+    print(f"wrote {written} players to {args.out}")
+    print(f"  values ${min(r['auction_value'] for r in rows):.2f}"
+          f" - ${max(r['auction_value'] for r in rows):.2f}, ${total:,.0f} total")
+    by_pos: dict[str, int] = {}
+    for row in rows:
+        by_pos[row["position"]] = by_pos.get(row["position"], 0) + 1
+    print(f"  {', '.join(f'{p}:{n}' for p, n in sorted(by_pos.items()))}")
+
+    for warning in warnings:
+        print(f"! {warning}", file=sys.stderr)
+
+    # Point the config at what we just wrote. Skipping this is the one mistake
+    # with no visible symptom at fetch time: `load_book` falls back to the
+    # sample fixture, and the draft runs on invented numbers. The REPL does
+    # warn, but a banner you have to notice is a weaker guarantee than a config
+    # that is simply correct.
+    if args.set_path and args.config.is_file():
+        from ffa.config.loader import write_config
+        from dataclasses import replace as _replace
+
+        current = load_config(args.config)
+        if current.reference_path != str(args.out):
+            write_config(_replace(current, reference_path=str(args.out)), args.config)
+            print(f"  set [reference].path in {args.config}")
+
+    print(f"\nvalidate it with:  ffa data validate {args.out}")
+    return 0
+
+
 def cmd_export_state(args: argparse.Namespace) -> int:
     """Emit the JSON view model every surface reads.
 
@@ -423,6 +487,17 @@ def build_parser() -> argparse.ArgumentParser:
     validate = data_sub.add_parser("validate", help="check a rankings/auction-value export")
     validate.add_argument("path", type=Path)
     validate.set_defaults(func=cmd_data_validate)
+
+    fetch = data_sub.add_parser("fetch", help="pull auction values from ESPN")
+    fetch.add_argument("--out", type=Path, default=Path("data/reference/espn_values.csv"))
+    fetch.add_argument("--league-id", type=int, default=None)
+    fetch.add_argument("--year", type=int, default=None)
+    fetch.add_argument("--limit", type=int, default=900, help="player universe size to request")
+    fetch.add_argument("--public", action="store_true", help="skip cookie auth")
+    fetch.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+    fetch.add_argument("--no-set-path", dest="set_path", action="store_false",
+                       help="don't point [reference].path at the file just written")
+    fetch.set_defaults(func=cmd_data_fetch)
 
     export = sub.add_parser("export-state", help="write the JSON view model for a run")
     export.add_argument("--run-dir", type=Path, default=None)

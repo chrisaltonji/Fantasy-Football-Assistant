@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 504 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 547 tests pass. Everything below is
 pushed.
 
 ---
@@ -227,7 +227,7 @@ draft day.
 
 | # | Item | Blocks |
 |---|---|---|
-| A1 | **FantasyPros auction values** at real settings → `data/reference/`, then `ffa data validate <path>` | Every number is currently invented sample data |
+| A1 | ~~FantasyPros auction values~~ **DONE 2026-08-17 — and no longer a user task.** `ffa data fetch` pulls ESPN's own `ownership.auctionValueAverage` for 355 players. Arguably the better source: the league drafts on ESPN, so ESPN's consensus is what this room actually pays. | — |
 | A4 | ~~ESPN cookies~~ **DONE 2026-08-17** — `.env` is populated and working against the live API | — |
 | A5 | ~~Prior-season capture~~ **DONE 2026-08-17.** Still open: a DevTools HAR during a *running* draft, for the live-timing half | B1 second half |
 | C1 | **Owner dossiers** — a ~20–30 min interview, 12 managers | Capability 2's bid forecasting reads them; v1 |
