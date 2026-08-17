@@ -177,20 +177,35 @@ def analyse_draft(payload: Any) -> list[str]:
             f"{len(nonzero)} non-zero, sample={values[:8]}"
         )
 
-    bids = [p.get("bidAmount") for p in picks if p.get("bidAmount")]
+    # ESPN pre-creates the whole pick skeleton before anyone drafts, so
+    # `len(picks)` says nothing about progress. A pick is *filled* when its
+    # playerId stops being the -1 sentinel. Without this distinction an
+    # untouched skeleton looks identical to "ESPN never populates prices" —
+    # opposite conclusions from the same zeros.
+    filled = [p for p in picks if p.get("playerId", -1) not in (-1, None)]
+    bids = [p.get("bidAmount") for p in filled if p.get("bidAmount")]
+
+    out.append(f"  filled picks          = {len(filled)}/{len(picks)} (playerId != -1)")
     out.append("")
-    if bids:
+
+    if not filled:
         out.append(
-            f"  VERDICT: bidAmount IS populated ({len(bids)} picks, "
-            f"${min(bids)}-${max(bids)}, total ${sum(bids)}). "
+            "  VERDICT: INCONCLUSIVE — the pick skeleton exists but nothing has "
+            "sold yet. This is the expected pre-draft baseline, not evidence "
+            "either way. Sell 2-3 players and capture again."
+        )
+    elif bids:
+        out.append(
+            f"  VERDICT: bidAmount IS populated ({len(bids)}/{len(filled)} filled "
+            f"picks, ${min(bids)}-${max(bids)}, total ${sum(bids)}). "
             "The live-price path is viable."
         )
     else:
         out.append(
-            "  VERDICT: bidAmount is present but ZERO/empty on every pick. "
-            "Either this is a snake draft, or ESPN does not fill prices in this "
-            "view. Prices will need manual entry — which the state layer already "
-            "supports as a first-class case."
+            f"  VERDICT: {len(filled)} pick(s) are filled but every bidAmount is "
+            "ZERO. ESPN gives us who won, not for how much. Prices need manual "
+            "entry — already a first-class path, since price=None is a supported "
+            "state and merge fills it in later."
         )
 
     out.append("")
@@ -305,8 +320,48 @@ def run_once(
     return report
 
 
+def analyse_file(path: Path) -> list[str]:
+    """Run the analysers over a payload someone already captured.
+
+    The whole point: any machine that can't reach ESPN — this development
+    sandbox included — can still get the full verdict from a payload pasted or
+    saved out of a browser. The view is detected from the payload's shape
+    rather than the filename, so a file called `paste.json` works fine.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return [f"cannot read {path}: {exc}"]
+    except ValueError as exc:
+        return [f"{path} is not valid JSON: {exc}"]
+
+    report = ["=" * 72, f"FILE {path}", "=" * 72]
+
+    detail = payload.get("draftDetail") if isinstance(payload, dict) else None
+    if isinstance(detail, dict) and "picks" in detail:
+        report.extend(analyse_draft(payload))
+    if isinstance(payload, dict) and payload.get("settings"):
+        report.append("")
+        report.extend(analyse_settings(payload))
+    if isinstance(payload, dict) and payload.get("teams"):
+        report.append("")
+        report.extend(analyse_teams(payload))
+
+    if len(report) == 3:
+        report.append(
+            "  Nothing recognizable here — expected a draftDetail, settings, or "
+            "teams key. Is this the right view?"
+        )
+    return report
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--analyse", "--analyze", type=Path, nargs="+", dest="analyse", default=None,
+        metavar="FILE",
+        help="Analyse already-captured JSON instead of fetching. No network, no cookies.",
+    )
     parser.add_argument("--league-id", type=int, default=None, help="ESPN league id (or set ESPN_LEAGUE_ID)")
     parser.add_argument("--year", type=int, default=None, help="Season year (or set ESPN_SEASON_YEAR)")
     parser.add_argument("--view", action="append", dest="views", help="View to fetch; repeatable. Default: all four.")
@@ -320,6 +375,13 @@ def main() -> int:
         help="Re-probe on an interval. Use during a live draft to catch picks as they land.",
     )
     args = parser.parse_args()
+
+    # Offline mode runs before anything touches credentials or the network.
+    if args.analyse:
+        for path in args.analyse:
+            print("\n".join(analyse_file(path)))
+            print()
+        return 0
 
     try:
         creds = None if args.public else load_credentials()

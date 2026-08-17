@@ -60,10 +60,34 @@ def test_populated_bids_produce_a_viable_verdict():
     assert "bidAmount" in report and "present on 3/3 picks" in report
 
 
-def test_all_zero_bids_produce_a_fallback_verdict():
+def test_filled_picks_with_zero_bids_produce_a_fallback_verdict():
     report = "\n".join(probe.analyse_draft(draft_payload(bids=[0, 0, 0])))
-    assert "ZERO/empty on every pick" in report
+    assert "every bidAmount is ZERO" in report
     assert "manual entry" in report
+
+
+def test_an_untouched_skeleton_is_inconclusive_not_a_failure():
+    """ESPN pre-creates all 180 picks, so zeros before the draft prove nothing.
+
+    Without separating "nothing sold yet" from "sold but unpriced", the
+    pre-draft baseline reads as evidence that ESPN never populates prices —
+    the opposite conclusion from the same zeros.
+    """
+    payload = draft_payload(bids=[0, 0, 0])
+    for pick in payload["draftDetail"]["picks"]:
+        pick["playerId"] = -1  # the unfilled sentinel
+    report = "\n".join(probe.analyse_draft(payload))
+    assert "INCONCLUSIVE" in report
+    assert "filled picks          = 0/3" in report
+
+
+def test_only_filled_picks_count_toward_the_verdict():
+    """One real sale among a skeleton of placeholders is still a positive."""
+    payload = draft_payload(bids=[45, 0, 0])
+    for pick in payload["draftDetail"]["picks"][1:]:
+        pick["playerId"] = -1
+    report = "\n".join(probe.analyse_draft(payload))
+    assert "bidAmount IS populated (1/1 filled picks" in report
 
 
 def test_missing_bid_field_is_reported_as_absent():
