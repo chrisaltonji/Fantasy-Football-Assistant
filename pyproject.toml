@@ -20,6 +20,13 @@ dev = [
     "pytest>=8.0",
 ]
 
+# The live ESPN draft-room reader attaches to a running Chrome over CDP.
+# Optional: everything else — manual entry, the simulator, replay — works
+# without it, and the draft must not be blocked on an install.
+espn = [
+    "playwright>=1.40",
+]
+
 [project.scripts]
 ffa = "ffa.cli.app:main"
 

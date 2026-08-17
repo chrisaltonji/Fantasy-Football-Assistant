@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 452 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 489 tests pass. Everything below is
 pushed.
 
 ---
@@ -275,7 +275,21 @@ structural, not a tuning failure: a bot outbid early cannot retroactively
 reallocate, so it fills its roster cheaply and carries cash. Raising the
 aggression clamps changes nothing, which is how we know.
 
-**CP5 — production ESPN adapter. Now an SSE reader, not a poller.** The
+**CP5 — live ESPN reader. WORKING against a real draft, 2026-08-17.**
+`src/ffa/ingest/espn/` attaches to a Chrome you started with
+`--remote-debugging-port` and reads the draft room's DOM. Verified live: 80
+picks parsed with prices, positions, and correct team attribution.
+
+Not an SSE client, and not a poller — see `docs/ESPN_DATA_ACCESS.md` for the
+full catalogue and the three observations that rule both out. The short version
+is that ESPN allows **one connection per team**, so any client of our own would
+evict the user from their own draft. Reading the page they are already in is
+the only non-disruptive channel.
+
+Remaining CP5 work: config bootstrap from raw `mSettings`, wiring
+`DraftRoomSource` into `ffa draft`, and the draft-day runbook.
+
+**Superseded — the earlier SSE plan.** The
 draft room streams from `fantasydraft.espn.com/.../sse/JOIN`; REST returns an
 empty skeleton for the whole draft (see B1 above). Config bootstrap from raw
 `mSettings` is unchanged. The reader needs: `draftSecurity` for a token, the
