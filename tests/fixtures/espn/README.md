@@ -47,31 +47,36 @@ before the draft starts. The advisory capability spec flagged this as an open
 Phase-1 question; it's answered, and capability 4 (nomination strategy) is
 unblocked.
 
-## ESPN's Practice Draft is sandboxed — confirmed 2026-08-17
+## Practice Draft picks are not at `segments/0` — observed 2026-08-17
 
-Observed directly: with a Practice Draft several picks along in the real
-league, `?view=mDraftDetail` returned a payload **byte-identical to the
-pre-draft baseline** — all 180 picks still `playerId: -1`, `bidAmount: 0`,
-`teamId: -1`, and `draftDetail.inProgress` still `false`.
+With a Practice Draft several picks along in the real league,
+`/segments/0/leagues/<id>?view=mDraftDetail` returned a payload
+**byte-identical to the pre-draft baseline** — all 180 picks still
+`playerId: -1`, `bidAmount: 0`, `teamId: -1`, and `inProgress` still `false`.
 
-`inProgress: false` during an active Practice Draft is the decisive signal: the
-Practice Draft does not touch the league's real draft state. It is a rehearsal
-surface for the manager, not a data source.
+**State the finding narrowly.** What this shows is that Practice Draft picks do
+not land in the `segments/0` draft detail for that league id. It does *not*
+show they're unreachable — ESPN's own draft room renders those picks from
+somewhere, so an endpoint carrying them exists. Candidates, untested:
 
-**Consequences:**
+- a different **segment id** (the path is `/segments/0/`; practice may use another)
+- a **shadow league id** minted for the practice draft, visible in the draft-room URL
+- a **different view** or a draft-specific service the room's client calls
+- a real-time channel the REST views only mirror after completion
 
-- A Practice Draft cannot be used to verify the live-price path. Anyone
-  reaching for it as a test will get a false negative — an empty `picks[]` that
-  looks exactly like "ESPN never populates prices."
-- The probe's verdict logic already separates these: zero *filled* picks
-  reports INCONCLUSIVE rather than concluding anything. That distinction exists
-  because of this finding.
-- Verifying `bidAmount` requires a draft ESPN considers real — a throwaway
-  private auction league drafted against autopick is the cheap way.
+The way to settle it is DevTools → Network while a practice draft runs: whatever
+the draft room fetches *is* the answer. The original handoff doc anticipated
+this ("extended/reverse-engineered as needed").
 
 ## Still unverified
 
-Whether ESPN populates `bidAmount` with the real winning price during a genuine
-auction. `mDraftDetail_inprogress.json` encodes what we *expect* a filled pick
-to look like; it remains a hypothesis. `price=None` is a first-class state
-throughout the engine precisely because this may not hold.
+**Whether `bidAmount` populates during a live auction at all.**
+`mDraftDetail_inprogress.json` encodes what we *expect* a filled pick to look
+like; it is a hypothesis, not an observation.
+
+**Whether the real draft updates `mDraftDetail` live, or only on completion.**
+This is the bigger risk of the two and is equally untested. If ESPN's draft
+room is driven by a real-time channel and the REST view is written only at the
+end, live polling gets nothing on draft day regardless of what `bidAmount`
+does. `price=None` and manual entry are first-class throughout the engine
+precisely because of this.

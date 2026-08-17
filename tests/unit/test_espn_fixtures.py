@@ -44,14 +44,18 @@ def sandboxed():
     return load("mDraftDetail_practice_sandboxed.json")
 
 
-def test_a_practice_draft_leaves_the_real_draft_state_untouched(sandboxed, predraft):
+def test_practice_draft_picks_are_absent_from_segment_zero(sandboxed, predraft):
     """Captured several picks into an active Practice Draft.
 
-    It came back identical to the pre-draft baseline. That identity is the
-    whole finding: Practice Drafts are a rehearsal surface, not a data source,
-    so they cannot be used to verify the live-price path. Anyone who tries will
-    read the empty picks as "ESPN never populates prices" and conclude the
-    opposite of the truth.
+    It came back identical to the pre-draft baseline. Stated narrowly: practice
+    picks are not in the `segments/0` draft detail for that league id. They are
+    presumably readable *somewhere* — ESPN's own draft room renders them — but
+    not here.
+
+    Why this matters more than it looks: the payload is indistinguishable from
+    "ESPN never populates bidAmount". Reading it that way inverts the truth and
+    would strand the build on manual entry forever. Hence the probe reports
+    INCONCLUSIVE on zero filled picks rather than concluding anything.
     """
     live, base = sandboxed["draftDetail"], predraft["draftDetail"]
 
