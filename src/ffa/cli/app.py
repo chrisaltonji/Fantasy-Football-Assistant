@@ -53,6 +53,70 @@ def cmd_config_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_config_init(args: argparse.Namespace) -> int:
+    """Rebuild config/league.toml from ESPN.
+
+    `config/league.toml` is gitignored — it carries the real league id, member
+    SWIDs and manager nicknames — so it is *expected* to be absent on a new
+    machine. Losing it should cost one command, not an afternoon of
+    hand-editing against a fixture.
+    """
+    from ffa.config.loader import load_dotenv, write_config
+    from ffa.ingest.espn.settings import config_from_payloads, fetch_league_payloads
+
+    env = load_dotenv()
+    league_id = args.league_id or int(env.get("ESPN_LEAGUE_ID") or 0)
+    year = args.year or int(env.get("ESPN_SEASON_YEAR") or 0)
+    if not league_id or not year:
+        raise ConfigError(
+            "need --league-id and --year (or ESPN_LEAGUE_ID / ESPN_SEASON_YEAR "
+            "in .env)"
+        )
+
+    if args.path.exists() and not args.force:
+        raise ConfigError(
+            f"{args.path} already exists. Use --force to overwrite it."
+        )
+
+    creds = None if args.public else load_credentials()
+    print(f"reading league {league_id} ({year}) from ESPN")
+    settings_payload, teams_payload = fetch_league_payloads(
+        league_id, year, cookies=creds.as_cookies() if creds else None
+    )
+
+    config, warnings = config_from_payloads(
+        settings_payload, teams_payload,
+        league_id=league_id, year=year,
+        swid=creds.swid if creds else None,
+        private=not args.public,
+    )
+    write_config(config, args.path)
+
+    print(f"wrote {args.path}")
+    print(f"  league       {config.name or '(unnamed)'} #{config.league_id} ({config.year})")
+    print(f"  draft        {config.draft_type}, ${config.budget}/team")
+    print(f"  teams        {config.team_count}  ids={list(config.effective_team_ids)}")
+    print(f"  you          team {config.my_team_id or 'UNSET'}"
+          f"{' (' + config.managers[config.my_team_id] + ')' if config.my_team_id in config.managers else ''}")
+    print(f"  roster       {config.draftable_slots} draftable slots, "
+          f"{config.starting_slots} starters")
+    print(f"  managers     {_manager_summary(config)}")
+
+    for warning in warnings:
+        print(f"! {warning}", file=sys.stderr)
+
+    # Not fatal here — `config check` and `draft` both enforce it — but it is
+    # the one field nothing can work around, so say so plainly.
+    if not config.my_team_id:
+        print(
+            "! set [teams].my_team_id before drafting: every projection keys "
+            "off it, and advice about the wrong team is worse than none.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 SAMPLE_REFERENCE = Path("data/fixtures/sample_rankings.csv")
 
 
@@ -320,6 +384,14 @@ def build_parser() -> argparse.ArgumentParser:
     check = config_sub.add_parser("check", help="validate config/league.toml and credentials")
     check.add_argument("--path", type=Path, default=DEFAULT_CONFIG_PATH)
     check.set_defaults(func=cmd_config_check)
+
+    init = config_sub.add_parser("init", help="generate config/league.toml from ESPN")
+    init.add_argument("--league-id", type=int, default=None, help="(or set ESPN_LEAGUE_ID)")
+    init.add_argument("--year", type=int, default=None, help="(or set ESPN_SEASON_YEAR)")
+    init.add_argument("--path", type=Path, default=DEFAULT_CONFIG_PATH)
+    init.add_argument("--force", action="store_true", help="overwrite an existing config")
+    init.add_argument("--public", action="store_true", help="skip cookie auth (public leagues)")
+    init.set_defaults(func=cmd_config_init)
 
     draft = sub.add_parser("draft", help="run a live draft session")
     draft.add_argument("--new", action="store_true", help="start a new draft")
