@@ -15,10 +15,15 @@ import queue
 from typing import Iterator, Mapping, Sequence
 
 from ffa.domain.enums import Position, Provenance
-from ffa.domain.events import BaseEvent, PlayerSold
+from ffa.domain.events import BaseEvent, PlayerNominated, PlayerSold
 from ffa.domain.ids import PlayerRef
 from ffa.domain.sourced import known, unknown
-from ffa.ingest.espn.draftroom import DraftRoomReader, RoomPick, RoomSnapshot
+from ffa.ingest.espn.draftroom import (
+    DraftRoomReader,
+    RoomNomination,
+    RoomPick,
+    RoomSnapshot,
+)
 from ffa.ingest.source import SourceHealth, SourceStatus
 from ffa.util.clock import now_utc
 
@@ -152,6 +157,32 @@ def events_for(
     )
 
 
+def nomination_event(nomination: RoomNomination) -> BaseEvent:
+    """The player on the block becomes a `PlayerNominated`.
+
+    This is what makes bid guidance fire at the moment it is worth anything.
+    Without it the engine only ever learns about *completed* sales, and
+    `advice` with no argument has nothing to talk about — which is exactly how
+    it behaved before this existed.
+
+    The current bid is deliberately *not* recorded as the sale price. It is a
+    bid in progress, not an outcome, and the price event has to come from the
+    completed pick or a later observation would be overwritten by a number
+    that was never paid.
+    """
+    at = now_utc()
+    return PlayerNominated(
+        at=at,
+        source=Provenance.ESPN_API.value,
+        player=PlayerRef.from_raw(nomination.player),
+        opening_bid=(
+            known(nomination.current_bid, Provenance.ESPN_API, at)
+            if nomination.current_bid is not None
+            else None
+        ),
+    )
+
+
 class DraftRoomSource:
     """Polls the draft room and emits what changed."""
 
@@ -167,6 +198,7 @@ class DraftRoomSource:
         self._max_failures = max_failures
         self._failures = 0
         self._previous: RoomSnapshot | None = None
+        self._nominated_key: str | None = None
         self._health = SourceHealth.OK
         self._detail = ""
         self._emitted = 0
@@ -213,6 +245,17 @@ class DraftRoomSource:
                 self._health = SourceHealth.DEGRADED
                 time.sleep(self._interval)
                 continue
+
+            # Nomination first: the board shows the new player on the block
+            # before the previous sale clears, and guidance is worth more the
+            # earlier it lands.
+            nomination = snapshot.nominated
+            if nomination is not None and nomination.key != self._nominated_key:
+                self._nominated_key = nomination.key
+                self._emitted += 1
+                yield nomination_event(nomination)
+            elif nomination is None:
+                self._nominated_key = None
 
             for pick in diff_picks(self._previous, snapshot):
                 self._emitted += 1

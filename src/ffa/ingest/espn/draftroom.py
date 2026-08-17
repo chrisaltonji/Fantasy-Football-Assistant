@@ -86,6 +86,22 @@ class RoomPick:
 
 
 @dataclass(frozen=True)
+class RoomNomination:
+    """The player currently up for bid."""
+
+    player: str
+    position: str | None = None
+    pro_team: str | None = None
+    current_bid: int | None = None
+
+    @property
+    def key(self) -> str:
+        from ffa.domain.ids import normalize_player_key
+
+        return normalize_player_key(self.player)
+
+
+@dataclass(frozen=True)
 class RoomSnapshot:
     """Everything the board says at one instant."""
 
@@ -94,6 +110,7 @@ class RoomSnapshot:
     slots_per_team: int = 0
     pick_header: str | None = None
     clock: str | None = None
+    nominated: "RoomNomination | None" = None
 
     @property
     def filled(self) -> int:
@@ -144,11 +161,21 @@ SNAPSHOT_JS = r"""
     });
   });
 
+  // The player currently up for bid. This is the moment bid guidance is
+  // worth anything, so it is read every poll rather than inferred from sales.
+  const nomName = t(document.querySelector(".player-selected .playerinfo__playername"));
+  const nominated = nomName ? {
+    player: nomName,
+    position: t(document.querySelector(".player-selected .playerinfo__playerpos")),
+    proTeam: t(document.querySelector(".player-selected .playerinfo__playerteam")),
+    currentBid: t(document.querySelector(".current-amount")),
+  } : null;
+
   const body = document.body ? document.body.innerText : "";
   const pickHeader = (body.match(/PK\s+\d+\s+OF\s+\d+/i) || [])[0] || null;
   const clock = (body.match(/\b\d{1,2}:\d{2}\b/) || [])[0] || null;
 
-  return { headers, teams, picks, cellCount: cells.length, pickHeader, clock };
+  return { headers, teams, picks, nominated, cellCount: cells.length, pickHeader, clock };
 }
 """
 
@@ -222,12 +249,25 @@ def parse_snapshot(raw: dict[str, Any]) -> RoomSnapshot:
         if str(entry.get("player") or "").strip()
     )
 
+    raw_nom = raw.get("nominated") or None
+    nominated = None
+    if isinstance(raw_nom, dict) and str(raw_nom.get("player") or "").strip():
+        nominated = RoomNomination(
+            player=str(raw_nom["player"]).strip(),
+            position=(raw_nom.get("position") or None),
+            pro_team=(raw_nom.get("proTeam") or None),
+            # "Current offer: $36" -> 36. Absent before the first bid lands.
+            current_bid=_money(raw_nom.get("currentBid", "").split("$")[-1]
+                               if isinstance(raw_nom.get("currentBid"), str) else None),
+        )
+
     return RoomSnapshot(
         teams=teams,
         picks=picks,
         slots_per_team=slots,
         pick_header=raw.get("pickHeader"),
         clock=raw.get("clock"),
+        nominated=nominated,
     )
 
 

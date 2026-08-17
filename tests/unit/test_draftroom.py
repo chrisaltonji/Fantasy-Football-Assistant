@@ -426,3 +426,107 @@ def test_the_audit_does_not_leave_the_resolver_already_warning(snap):
     resolver = TeamResolver({}, [1, 2, 3])
     resolver.audit(snap)
     assert resolver.warning is None
+
+
+# --- the player on the block ------------------------------------------------
+
+
+def test_a_snapshot_with_no_nomination_block_is_fine(snap):
+    """The committed fixture predates nomination capture.
+
+    An older payload, or a gap between nominations, must parse cleanly rather
+    than raise — there are seconds of every auction with nobody up.
+    """
+    assert snap.nominated is None
+
+
+def test_the_nominated_player_is_parsed():
+    parsed = parse_snapshot({
+        "teams": [{"index": 0, "name": "1. A"}],
+        "picks": [],
+        "cellCount": 15,
+        "nominated": {
+            "player": "Chase Brown",
+            "position": "RB",
+            "proTeam": "CIN",
+            "currentBid": "Current offer: $31",
+        },
+    })
+    nom = parsed.nominated
+    assert nom.player == "Chase Brown"
+    assert nom.position == "RB"
+    assert nom.pro_team == "CIN"
+    assert nom.current_bid == 31
+    assert nom.key == "chase-brown"
+
+
+def test_a_nomination_before_any_bid_has_no_current_bid():
+    parsed = parse_snapshot({
+        "teams": [{"index": 0, "name": "1. A"}], "picks": [], "cellCount": 15,
+        "nominated": {"player": "Derrick Henry", "currentBid": None},
+    })
+    assert parsed.nominated.current_bid is None
+
+
+def test_a_blank_nominated_player_is_treated_as_nobody_up():
+    parsed = parse_snapshot({
+        "teams": [{"index": 0, "name": "1. A"}], "picks": [], "cellCount": 15,
+        "nominated": {"player": "   "},
+    })
+    assert parsed.nominated is None
+
+
+def test_a_nomination_becomes_a_player_nominated_event():
+    from ffa.domain.events import PlayerNominated
+    from ffa.ingest.espn.draftroom import RoomNomination
+    from ffa.ingest.espn.source import nomination_event
+
+    event = nomination_event(RoomNomination("Chase Brown", "RB", "CIN", 31))
+
+    assert isinstance(event, PlayerNominated)
+    assert event.player.key == "chase-brown"
+    assert event.opening_bid.value == 31
+    assert event.source == Provenance.ESPN_API.value
+
+
+def test_the_live_bid_is_not_recorded_as_a_sale_price():
+    """A bid in progress is not an outcome.
+
+    Recording it as the price would let a number nobody actually paid win the
+    merge against the real winning price that arrives moments later.
+    """
+    from ffa.domain.events import PlayerSold
+    from ffa.ingest.espn.draftroom import RoomNomination
+    from ffa.ingest.espn.source import nomination_event
+
+    event = nomination_event(RoomNomination("Chase Brown", "RB", "CIN", 31))
+    assert not isinstance(event, PlayerSold)
+    assert not hasattr(event, "price")
+
+
+def test_the_source_emits_one_nomination_per_player_not_per_poll():
+    """Polling once a second must not re-announce the same player 30 times."""
+    from ffa.domain.events import PlayerNominated
+    from ffa.ingest.espn.draftroom import RoomNomination, RoomSnapshot, RoomTeam
+    from ffa.ingest.espn.source import DraftRoomSource
+
+    teams = (RoomTeam(index=0, name="A", cash=None, bid=None),)
+    same = RoomSnapshot(teams=teams, slots_per_team=15,
+                        nominated=RoomNomination("Chase Brown", "RB", "CIN", 5))
+    later = RoomSnapshot(teams=teams, slots_per_team=15,
+                         nominated=RoomNomination("Derrick Henry", "RB", "BAL", 1))
+
+    class Reader:
+        def __init__(self): self._q = [same, same, same, later]
+        def snapshot(self):
+            return self._q.pop(0) if self._q else same
+
+    source = DraftRoomSource(Reader(), interval=0)
+    emitted = []
+    for event in source.events():
+        emitted.append(event)
+        if len(emitted) >= 2:
+            source.stop()
+
+    assert all(isinstance(e, PlayerNominated) for e in emitted)
+    assert [e.player.key for e in emitted] == ["chase-brown", "derrick-henry"]
