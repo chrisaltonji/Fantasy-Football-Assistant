@@ -17,6 +17,9 @@ runs/
 # Scrubbed fixtures under tests/fixtures/espn/ ARE committed on purpose.
 probe_out/
 
+# --- Browser network captures. A HAR carries live espn_s2/SWID cookies. ---
+*.har
+
 # --- Python ---
 __pycache__/
 *.py[cod]

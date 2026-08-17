@@ -9,12 +9,29 @@ can't answer from documentation:
   2. What does a team object expose for remaining budget and roster?
   3. Does cookie auth work end-to-end against a private league?
 
-Run it while an auction (ideally an ESPN "Practice Draft" in salary-cap mode)
-is in progress or just finished. The payloads it writes become the offline
-fixtures the real ESPN adapter is built and tested against.
+The payloads it writes become the offline fixtures the real ESPN adapter is
+built and tested against.
 
+    # The current season, as it always worked
     python tools/espn_probe.py --league-id 123456 --year 2026
     python tools/espn_probe.py --league-id 123456 --year 2026 --watch 5
+
+Finding a real auction to read is its own problem, since a Practice Draft does
+not write to segments/0. Four ways in, cheapest first:
+
+    # 1. A prior season's completed auction — real bids, already on ESPN
+    python tools/espn_probe.py --league-id 123456 --year 2025 --view mDraftDetail
+    python tools/espn_probe.py --league-id 123456 --year 2025 --history
+
+    # 2. Try several URL shapes at once; never aborts on a 404
+    python tools/espn_probe.py --league-id 123456 --year 2026 --sweep
+
+    # 3. Read what the draft room actually fetched (the only one that observes
+    #    rather than guesses). Never commit the .har — it holds live cookies.
+    python tools/espn_probe.py --har practice_draft.har
+
+    # 4. Anything already saved out of a logged-in browser
+    python tools/espn_probe.py --analyse saved.json
 
 Credentials come from .env / the environment, never the command line, so they
 can't end up in your shell history.
@@ -23,9 +40,12 @@ can't end up in your shell history.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import json
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -66,43 +86,109 @@ def build_session(creds: EspnCredentials | None) -> requests.Session:
     return session
 
 
+def build_url(
+    host: str,
+    league_id: int,
+    year: int,
+    view: str,
+    *,
+    segment: str = "0",
+    history: bool = False,
+) -> str:
+    """Build one ESPN read URL.
+
+    Two shapes exist. The seasonal one is what every capture so far used. The
+    history one is how ESPN serves prior seasons; it returns a JSON *array*,
+    which is why `normalize_payload` exists.
+    """
+    if history:
+        return (
+            f"{host}/apis/v3/games/ffl/leagueHistory/{league_id}"
+            f"?seasonId={year}&view={view}"
+        )
+    return (
+        f"{host}/apis/v3/games/ffl/seasons/{year}"
+        f"/segments/{segment}/leagues/{league_id}?view={view}"
+    )
+
+
+def normalize_payload(payload: Any, year: int | None = None) -> Any:
+    """Reduce a leagueHistory array to the single season object.
+
+    Every analyser assumes a top-level dict. Doing this in one place keeps the
+    fetch path and the offline `--analyse` path from diverging.
+    """
+    if not isinstance(payload, list):
+        return payload
+    if not payload:
+        return {}
+    if year is not None:
+        for entry in payload:
+            if isinstance(entry, dict) and entry.get("seasonId") == year:
+                return entry
+    return payload[-1] if isinstance(payload[-1], dict) else {}
+
+
+def fetch_url(
+    session: requests.Session, url: str, *, timeout: float = 15.0
+) -> tuple[int, Any | None, str]:
+    """Fetch one URL. Never raises.
+
+    Returns (status, payload, error). A status of -1 means the request itself
+    failed. Sweep mode needs this: a 404 on one candidate must not abort the
+    remaining candidates, which is exactly what `fetch_view` does on purpose.
+    """
+    try:
+        resp = session.get(url, timeout=timeout)
+    except requests.RequestException as exc:
+        return -1, None, f"{type(exc).__name__}: {exc}"
+
+    if resp.status_code != 200:
+        return resp.status_code, None, resp.text[:200]
+
+    try:
+        return 200, resp.json(), ""
+    except ValueError:
+        return 200, None, f"response was not JSON: {resp.text[:200]}"
+
+
 def fetch_view(
-    session: requests.Session, league_id: int, year: int, view: str, *, timeout: float = 15.0
+    session: requests.Session,
+    league_id: int,
+    year: int,
+    view: str,
+    *,
+    segment: str = "0",
+    history: bool = False,
+    timeout: float = 15.0,
 ) -> tuple[str, Any]:
     """Fetch one view, trying each host. Returns (url_used, parsed_json)."""
     last_error: str | None = None
     for host in HOSTS:
-        url = (
-            f"{host}/apis/v3/games/ffl/seasons/{year}"
-            f"/segments/0/leagues/{league_id}?view={view}"
-        )
-        try:
-            resp = session.get(url, timeout=timeout)
-        except requests.RequestException as exc:
-            last_error = f"{host}: {type(exc).__name__}: {exc}"
-            continue
+        url = build_url(host, league_id, year, view, segment=segment, history=history)
+        status, payload, error = fetch_url(session, url, timeout=timeout)
 
-        if resp.status_code == 401:
+        if status == 401:
             raise ProbeError(
                 "ESPN returned 401 Unauthorized.\n"
                 "Your espn_s2 / SWID cookies are missing, expired, or belong to an "
                 "account that can't see this league. Re-copy them from your browser "
                 "(see README.md) and try again."
             )
-        if resp.status_code == 404:
+        if status == 404:
             raise ProbeError(
                 f"ESPN returned 404 for league {league_id} in {year}.\n"
                 "Check the league id and season year. A private league with no "
                 "cookies also surfaces as 404 rather than 401."
             )
-        if resp.status_code != 200:
-            last_error = f"{host}: HTTP {resp.status_code}: {resp.text[:200]}"
+        if status != 200:
+            last_error = f"{host}: HTTP {status}: {error}"
+            continue
+        if payload is None:
+            last_error = f"{host}: {error}"
             continue
 
-        try:
-            return url, resp.json()
-        except ValueError:
-            last_error = f"{host}: response was not JSON: {resp.text[:200]}"
+        return url, payload
 
     raise ProbeError(f"all hosts failed for view {view}. Last error: {last_error}")
 
@@ -132,6 +218,15 @@ def _picks(payload: Any) -> list[dict[str, Any]]:
     detail = payload.get("draftDetail") or {}
     picks = detail.get("picks") or []
     return [p for p in picks if isinstance(p, dict)]
+
+
+def _filled(picks: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Picks that actually sold. ESPN pre-creates the skeleton with playerId -1.
+
+    Sweep and HAR modes share this with `analyse_draft` so the two answer paths
+    can never disagree about what "filled" means.
+    """
+    return [p for p in picks if p.get("playerId", -1) not in (-1, None)]
 
 
 def _key_union(records: Iterable[dict[str, Any]]) -> list[str]:
@@ -182,7 +277,7 @@ def analyse_draft(payload: Any) -> list[str]:
     # playerId stops being the -1 sentinel. Without this distinction an
     # untouched skeleton looks identical to "ESPN never populates prices" —
     # opposite conclusions from the same zeros.
-    filled = [p for p in picks if p.get("playerId", -1) not in (-1, None)]
+    filled = _filled(picks)
     bids = [p.get("bidAmount") for p in filled if p.get("bidAmount")]
 
     out.append(f"  filled picks          = {len(filled)}/{len(picks)} (playerId != -1)")
@@ -297,13 +392,20 @@ def run_once(
     views: tuple[str, ...],
     out_dir: Path,
     stamp: str,
+    *,
+    segment: str = "0",
+    history: bool = False,
+    tag: str = "",
 ) -> list[str]:
     report: list[str] = []
     for view in views:
-        url, payload = fetch_view(session, league_id, year, view)
-        clean = scrub(payload, creds)
+        url, payload = fetch_view(
+            session, league_id, year, view, segment=segment, history=history
+        )
+        clean = scrub(normalize_payload(payload, year), creds)
 
-        target = out_dir / f"{view}_{stamp}.json"
+        suffix = f"_{tag}" if tag else ""
+        target = out_dir / f"{view}{suffix}_{stamp}.json"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(clean, indent=2), encoding="utf-8")
 
@@ -317,6 +419,149 @@ def run_once(
             report.extend(analyser(clean))
         else:
             report.append(f"  (no analyser for {view}; raw payload saved)")
+    return report
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """One URL shape worth trying when hunting for practice-draft picks."""
+
+    label: str
+    segment: str = "0"
+    history: bool = False
+    view: str = "mDraftDetail"
+    league_id_override: int | None = None
+
+
+# segments/0 is the only shape ever confirmed against this API. The other
+# segment ids are a guess with no evidence behind them — they are here because
+# the search space is small and cheap, not because ESPN is known to use them.
+# The HAR path is the one that actually answers the question.
+DEFAULT_SWEEP_CANDIDATES: tuple[Candidate, ...] = (
+    Candidate("segment0", segment="0"),
+    Candidate("segment1", segment="1"),
+    Candidate("segment2", segment="2"),
+    Candidate("history", history=True),
+)
+
+
+def sweep(
+    session: requests.Session,
+    creds: EspnCredentials | None,
+    league_id: int,
+    year: int,
+    candidates: Iterable[Candidate],
+    out_dir: Path,
+    stamp: str,
+) -> list[str]:
+    """Try every candidate URL shape and report what each returned.
+
+    Deliberately has no exception path: a 404 on one candidate is a *result*,
+    not a failure, and must never stop the remaining candidates.
+    """
+    report: list[str] = ["## Sweep — which URL shape carries draft picks?", ""]
+    rows: list[tuple[str, str, str]] = []
+
+    for cand in candidates:
+        target_league = cand.league_id_override or league_id
+        outcome = "no host reachable"
+        for host in HOSTS:
+            url = build_url(
+                host,
+                target_league,
+                year,
+                cand.view,
+                segment=cand.segment,
+                history=cand.history,
+            )
+            status, payload, error = fetch_url(session, url)
+
+            if status != 200 or payload is None:
+                outcome = f"HTTP {status}" if status != -1 else f"request failed: {error}"
+                continue
+
+            clean = scrub(normalize_payload(payload, year), creds)
+            picks = _picks(clean)
+            filled = _filled(picks)
+
+            path = out_dir / f"sweep_{cand.label}_{stamp}.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(clean, indent=2), encoding="utf-8")
+
+            if not picks:
+                outcome = "200, no draftDetail.picks"
+            else:
+                outcome = f"200, {len(filled)} filled / {len(picks)} picks"
+            outcome += f"  -> {path.name}"
+            break
+
+        rows.append((cand.label, str(target_league), outcome))
+
+    width = max(len(r[0]) for r in rows)
+    for label, target_league, outcome in rows:
+        report.append(f"  {label:<{width}}  league {target_league}  {outcome}")
+
+    report.append("")
+    report.append(
+        "  Any row with a non-zero filled count is where practice-draft picks "
+        "live. All zeros means this candidate set missed — run --har next, "
+        "which observes the real endpoint instead of guessing at it."
+    )
+    return report
+
+
+def run_urls(
+    session: requests.Session,
+    creds: EspnCredentials | None,
+    urls: Iterable[str],
+    out_dir: Path,
+    stamp: str,
+) -> list[str]:
+    """Fetch literal URLs with cookies attached and analyse whatever comes back."""
+    report: list[str] = []
+    for i, url in enumerate(urls):
+        status, payload, error = fetch_url(session, url)
+        report.append("")
+        report.append("=" * 72)
+        report.append(f"URL {url}")
+        report.append("=" * 72)
+
+        if status != 200 or payload is None:
+            report.append(f"  HTTP {status}: {error}")
+            continue
+
+        clean = scrub(normalize_payload(payload), creds)
+        target = out_dir / f"url{i}_{stamp}.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(clean, indent=2), encoding="utf-8")
+        report.append(f"  saved to {target}")
+        report.extend(analyse_payload(clean))
+    return report
+
+
+def analyse_payload(payload: Any) -> list[str]:
+    """Run whichever analysers the payload's shape calls for.
+
+    Detection is by shape, not filename or view name, so this works for a
+    browser-saved file, a raw `--url` response, or a body pulled out of a HAR.
+    """
+    report: list[str] = []
+
+    detail = payload.get("draftDetail") if isinstance(payload, dict) else None
+    if isinstance(detail, dict) and "picks" in detail:
+        report.extend(analyse_draft(payload))
+    if isinstance(payload, dict) and payload.get("settings"):
+        report.append("")
+        report.extend(analyse_settings(payload))
+    if isinstance(payload, dict) and payload.get("teams"):
+        report.append("")
+        report.extend(analyse_teams(payload))
+
+    if not report:
+        report.append(
+            "  Nothing recognizable here — expected a draftDetail, settings, or "
+            "teams key. Is this the right view?"
+        )
     return report
 
 
@@ -336,22 +581,106 @@ def analyse_file(path: Path) -> list[str]:
         return [f"{path} is not valid JSON: {exc}"]
 
     report = ["=" * 72, f"FILE {path}", "=" * 72]
+    report.extend(analyse_payload(normalize_payload(payload)))
+    return report
 
-    detail = payload.get("draftDetail") if isinstance(payload, dict) else None
-    if isinstance(detail, dict) and "picks" in detail:
-        report.extend(analyse_draft(payload))
-    if isinstance(payload, dict) and payload.get("settings"):
-        report.append("")
-        report.extend(analyse_settings(payload))
-    if isinstance(payload, dict) and payload.get("teams"):
-        report.append("")
-        report.extend(analyse_teams(payload))
 
-    if len(report) == 3:
+# --------------------------------------------------------------------------
+# HAR ingestion — read what the draft room actually fetched
+# --------------------------------------------------------------------------
+
+ESPN_HOST_FRAGMENTS = ("fantasy.espn.com", "lm-api-reads.fantasy.espn.com")
+
+
+def _har_body(entry: dict[str, Any]) -> Any:
+    """Decode one HAR entry's response body to JSON, or None.
+
+    Bodies may be absent (redirects, preflights, bodies Chrome dropped) or
+    base64-encoded. Neither is an error worth stopping for.
+    """
+    content = (entry.get("response") or {}).get("content") or {}
+    text = content.get("text")
+    if not isinstance(text, str) or not text:
+        return None
+    if content.get("encoding") == "base64":
+        try:
+            text = base64.b64decode(text).decode("utf-8", errors="replace")
+        except (binascii.Error, ValueError):
+            return None
+    try:
+        return json.loads(text)
+    except ValueError:
+        return None
+
+
+def analyse_har(path: Path) -> list[str]:
+    """Report every ESPN API call in a browser capture, and which carry picks.
+
+    This is the one method that observes rather than guesses: whatever the
+    draft room fetched to render those picks is in here by construction.
+
+    Request cookies and headers are never read or echoed — a HAR carries live
+    espn_s2 / SWID, which is also why `*.har` is gitignored.
+    """
+    try:
+        har = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return [f"cannot read {path}: {exc}"]
+    except ValueError as exc:
+        return [f"{path} is not valid HAR JSON: {exc}"]
+
+    entries = ((har.get("log") or {}).get("entries") or []) if isinstance(har, dict) else []
+    report = ["=" * 72, f"HAR {path}", "=" * 72]
+
+    rows: list[tuple[str, int, int, int, str]] = []
+    best: tuple[int, str, Any] | None = None
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        request = entry.get("request") or {}
+        url = request.get("url")
+        if not isinstance(url, str) or not any(f in url for f in ESPN_HOST_FRAGMENTS):
+            continue
+
+        method = str(request.get("method", "?"))
+        status = int((entry.get("response") or {}).get("status") or 0)
+        payload = normalize_payload(_har_body(entry))
+        picks = _picks(payload) if payload is not None else []
+        filled = _filled(picks)
+
+        rows.append((method, status, len(filled), len(picks), url))
+        if filled and (best is None or len(filled) > best[0]):
+            best = (len(filled), url, payload)
+
+    if not rows:
         report.append(
-            "  Nothing recognizable here — expected a draftDetail, settings, or "
-            "teams key. Is this the right view?"
+            f"  No ESPN API calls found among {len(entries)} entries. Was the "
+            "capture taken with the draft room open, and saved *with content*?"
         )
+        return report
+
+    report.append(f"  {len(rows)} ESPN call(s) found in {len(entries)} entries.")
+    report.append("")
+    for method, status, filled_n, pick_n, url in rows:
+        marker = " <<<" if filled_n else ""
+        picks_col = f"{filled_n} filled / {pick_n} picks" if pick_n else "no picks"
+        report.append(f"  {method:<5} {status:<4} {picks_col:<24} {url}{marker}")
+
+    report.append("")
+    if best is None:
+        report.append(
+            "  ANSWER: none of these responses carried a filled pick. Either no "
+            "player had sold when the capture was taken, or the draft room is "
+            "driven by a channel this HAR did not record (a websocket shows as "
+            "a ws:// entry, not an API call). Sell 2-3 players and re-capture."
+        )
+    else:
+        count, url, payload = best
+        report.append(f"  ANSWER: {count} filled pick(s) at")
+        report.append(f"    {url}")
+        report.append("")
+        report.extend(analyse_payload(payload))
     return report
 
 
@@ -362,9 +691,31 @@ def main() -> int:
         metavar="FILE",
         help="Analyse already-captured JSON instead of fetching. No network, no cookies.",
     )
+    parser.add_argument(
+        "--har", type=Path, nargs="+", default=None, metavar="FILE",
+        help="Analyse a DevTools HAR export. No network, no cookies. Never commit the .har.",
+    )
     parser.add_argument("--league-id", type=int, default=None, help="ESPN league id (or set ESPN_LEAGUE_ID)")
     parser.add_argument("--year", type=int, default=None, help="Season year (or set ESPN_SEASON_YEAR)")
     parser.add_argument("--view", action="append", dest="views", help="View to fetch; repeatable. Default: all four.")
+    parser.add_argument("--segment", default="0", help="Path segment id. Default 0 — the only shape confirmed so far.")
+    parser.add_argument(
+        "--history", action="store_true",
+        help="Use the leagueHistory path instead of the seasonal one. For prior seasons.",
+    )
+    parser.add_argument(
+        "--sweep", action="store_true",
+        help="Try several URL shapes and report which carries draft picks. Never aborts on 404.",
+    )
+    parser.add_argument(
+        "--candidate-league-id", type=int, action="append", dest="candidate_league_ids",
+        help="Extra league id to sweep at segment 0, e.g. a shadow id from the draft-room URL.",
+    )
+    parser.add_argument(
+        "--url", action="append", dest="urls",
+        help="Fetch a literal URL with cookies, bypassing URL building. Repeatable. "
+             "For a shape found in a HAR that matches neither template.",
+    )
     parser.add_argument("--out", type=Path, default=Path("probe_out"), help="Directory for captured payloads")
     parser.add_argument("--public", action="store_true", help="Skip cookie auth (public leagues only)")
     parser.add_argument(
@@ -376,10 +727,16 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # Offline mode runs before anything touches credentials or the network.
+    # Offline modes run before anything touches credentials or the network.
     if args.analyse:
         for path in args.analyse:
             print("\n".join(analyse_file(path)))
+            print()
+        return 0
+
+    if args.har:
+        for path in args.har:
+            print("\n".join(analyse_har(path)))
             print()
         return 0
 
@@ -410,10 +767,24 @@ def main() -> int:
     print(f"auth: {'cookies loaded' if creds else 'NONE (public mode)'}")
     print(f"views: {', '.join(views)}")
 
+    candidates = DEFAULT_SWEEP_CANDIDATES + tuple(
+        Candidate(f"league{lid}", league_id_override=lid)
+        for lid in (args.candidate_league_ids or ())
+    )
+
     try:
         while True:
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            report = run_once(session, creds, league_id, year, views, args.out, stamp)
+            if args.urls:
+                report = run_urls(session, creds, args.urls, args.out, stamp)
+            elif args.sweep:
+                report = sweep(session, creds, league_id, year, candidates, args.out, stamp)
+            else:
+                report = run_once(
+                    session, creds, league_id, year, views, args.out, stamp,
+                    segment=args.segment, history=args.history,
+                    tag="history" if args.history else f"seg{args.segment}" if args.segment != "0" else "",
+                )
             print("\n".join(report))
 
             summary = args.out / f"report_{stamp}.txt"

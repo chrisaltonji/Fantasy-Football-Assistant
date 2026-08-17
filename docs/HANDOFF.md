@@ -126,10 +126,28 @@ candidates:
 - a different **view**, or a draft-specific service
 - a real-time channel the REST views only mirror after completion
 
-**The way to settle it:** DevTools → Network, filter `apis/v3`, while a practice
-draft runs. Whatever the room fetches is the answer. Failing that, a throwaway
-private auction league drafted against autopick gives a draft ESPN considers
-real.
+**The probe can now chase all of these.** `--segment`, `--history`, `--url`,
+`--candidate-league-id`, `--sweep` (tries a matrix of shapes, never aborts on a
+404) and `--har` (reads a DevTools export and names the endpoint that actually
+carried filled picks). All of it is tested offline; none of it has been run
+against ESPN, because the sandbox can't.
+
+**Cheapest path, and it needs no new code at all:** the league ran an auction in
+a **prior season**, so a completed real auction with real `bidAmount`s already
+exists on ESPN. `--year` was always parameterized:
+
+```
+python tools/espn_probe.py --league-id <id> --year 2025 --view mDraftDetail
+python tools/espn_probe.py --league-id <id> --year 2025 --history   # if that 404s
+```
+
+That answers "does `bidAmount` populate" outright. It does **not** answer
+whether picks appear live — see the bigger risk below.
+
+**Failing that:** DevTools → Network, filter `apis/v3`, while a practice draft
+runs, save as HAR *with content*, then `--har`. Whatever the room fetches is the
+answer. A throwaway private auction league drafted against autopick remains the
+last resort.
 
 **The trap:** an unfilled skeleton is indistinguishable from "ESPN never
 populates prices." Reading it that way inverts the truth and would strand the
@@ -164,7 +182,7 @@ draft day.
 |---|---|---|
 | A1 | **FantasyPros auction values** at real settings → `data/reference/`, then `ffa data validate <path>` | Every number is currently invented sample data |
 | A4 | **ESPN cookies** (`espn_s2`, `SWID`) → `.env` | The probe and CP5; the league is private |
-| A5 | **A draft ESPN considers real**, or the DevTools trace above | B1 |
+| A5 | **A prior-season capture** (`--year 2025`), or the DevTools HAR above | B1 |
 | C1 | **Owner dossiers** — a ~20–30 min interview, 12 managers | Capability 2's bid forecasting reads them; v1 |
 | C2 | **Draft strategy preset** — one archetype | v1.1 |
 
