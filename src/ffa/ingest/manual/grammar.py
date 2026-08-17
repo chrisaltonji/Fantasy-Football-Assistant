@@ -21,7 +21,7 @@ import difflib
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Sequence, Union
+from typing import Any, Sequence, Union
 
 from ffa.domain.enums import Provenance
 from ffa.domain.events import (
@@ -42,6 +42,7 @@ from ffa.ingest.manual.resolve import (
     looks_like_position,
     looks_like_price,
     looks_like_team,
+    resolve_player,
     resolve_position,
     resolve_price,
     resolve_redo_target,
@@ -63,6 +64,9 @@ class ParseContext:
     state: DraftState
     now: datetime
     events: Sequence[BaseEvent] = field(default_factory=tuple)
+    # Reference data, when loaded. Absent is a supported mode — the parser
+    # falls back to free-text names exactly as it did before CP3.
+    book: Any = None
 
 
 @dataclass(frozen=True)
@@ -112,6 +116,10 @@ VERBS: tuple[Verb, ...] = (
     Verb("undo", ("u",), "undo [#id]",
          "Undo the last recorded event, or a specific one."),
     Verb("redo", ("r",), "redo", "Reverse the most recent undo."),
+    Verb("advice", ("a",), "advice [player...]",
+         "Bid readout for the nominated player, or any player you name."),
+    Verb("scarcity", ("sc", "left"), "scarcity", "What's left per position, by tier."),
+    Verb("market", ("mkt",), "market", "Inflation vs. your reference values."),
     Verb("budgets", ("b", "bud"), "budgets [team]", "Remaining money and max bid per team."),
     Verb("state", ("st", "board"), "state [team|player]", "Full draft board."),
     Verb("log", ("hist", "events"), "log [n]",
@@ -173,8 +181,14 @@ def _sold(rest: str, ctx: ParseContext, verb: Verb) -> Command:
     name = " ".join(tokens[:-2])
     team_id = resolve_team(ctx.state, team_token)
     price = resolve_price(price_token)
-    ref = PlayerRef.from_raw(name)
+    ref = resolve_player(name, ctx.book)
     check_not_already_sold(ctx.state, ref.key)
+
+    # A position from the reference file beats nothing, but never overrides
+    # what the user explicitly typed.
+    if position is None and ctx.book is not None:
+        row = ctx.book.get(ref.key)
+        position = row.position if row else None
 
     event = PlayerSold(
         player=ref,
@@ -197,7 +211,7 @@ def _nominate(rest: str, ctx: ParseContext, verb: Verb) -> Command:
         team_id = resolve_team(ctx.state, tokens[-1])
         tokens = tokens[:-1]
 
-    ref = PlayerRef.from_raw(" ".join(tokens))
+    ref = resolve_player(" ".join(tokens), ctx.book)
     event = PlayerNominated(
         player=ref,
         nominated_by=known(team_id, Provenance.MANUAL, ctx.now) if team_id else None,
@@ -219,7 +233,7 @@ def _price(rest: str, ctx: ParseContext, verb: Verb) -> Command:
             "use: sold <player> ? <team>"
         )
 
-    ref = PlayerRef.from_raw(" ".join(tokens[:-1]))
+    ref = resolve_player(" ".join(tokens[:-1]), ctx.book)
     if ref.key not in ctx.state.players:
         raise CommandError(
             f"no player {ref.raw!r} in this draft yet. Record the sale first: "
@@ -304,6 +318,9 @@ _HANDLERS = {
     "amend": _amend,
     "undo": _undo,
     "redo": _redo,
+    "advice": _view("advice"),
+    "scarcity": _view("scarcity"),
+    "market": _view("market"),
     "budgets": _view("budgets"),
     "state": _view("state"),
     "log": _view("log"),

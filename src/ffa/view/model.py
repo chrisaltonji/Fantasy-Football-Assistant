@@ -31,7 +31,7 @@ from ffa.util.clock import now_utc, to_iso
 VIEW_SCHEMA_VERSION = 1
 
 
-def build_view(state: DraftState, *, recent: int = 10) -> dict[str, Any]:
+def build_view(state: DraftState, book: Any = None, *, recent: int = 10) -> dict[str, Any]:
     if not state.is_initialized:
         return {
             "schema_version": VIEW_SCHEMA_VERSION,
@@ -40,11 +40,13 @@ def build_view(state: DraftState, *, recent: int = 10) -> dict[str, Any]:
         }
 
     league = state.league
+    advisory = _advisory(state, book)
     return {
         "schema_version": VIEW_SCHEMA_VERSION,
         "draft_id": state.draft_id,
         "generated_at": to_iso(now_utc()),
         "initialized": True,
+        "reference": _reference_meta(book),
         "league": {
             "name": league.name,
             "budget": league.budget,
@@ -53,19 +55,55 @@ def build_view(state: DraftState, *, recent: int = 10) -> dict[str, Any]:
             "roster_slots": {slot.value: n for slot, n in league.roster.items()},
             "flex_positions": [p.value for p in league.flex_positions],
         },
-        "me": _team_view(state, league.my_team_id) if league.my_team_id in state.teams else None,
-        "teams": [_team_view(state, team_id) for team_id in sorted(state.teams)],
-        "nomination": _nomination_view(state),
-        "market": _market_view(state),
-        "recent_sales": _recent_sales(state, recent),
-        # Reserved for CP3, when rankings and tiers exist. Present-but-empty
-        # so the dashboard can bind to the key now.
-        "scarcity": {},
-        "warnings": list(state.warnings),
+        "me": _team_view(state, league.my_team_id, book) if league.my_team_id in state.teams else None,
+        "teams": [_team_view(state, team_id, book) for team_id in sorted(state.teams)],
+        "nomination": _nomination_view(state, book, advisory),
+        "market": _market_view(state, advisory),
+        "recent_sales": _recent_sales(state, book, recent),
+        "scarcity": _scarcity_view(advisory),
+        "warnings": list(state.warnings) + list(getattr(book, "warnings", ())),
     }
 
 
-def _team_view(state: DraftState, team_id: int) -> dict[str, Any]:
+def _advisory(state: DraftState, book: Any):
+    """Run the deterministic advisory layer, if reference data is loaded."""
+    if book is None or not len(book):
+        return None
+    from ffa.advice.engine import advise
+
+    return advise(state, book)
+
+
+def _reference_meta(book: Any) -> dict[str, Any] | None:
+    """So a surface can say *whose* numbers these are — or warn they're fake."""
+    if book is None or not len(book):
+        return None
+    return {
+        "source": str(book.source) if book.source else None,
+        "players": len(book),
+        "scale": round(book.scale, 4),
+        "is_sample": book.is_sample,
+    }
+
+
+def _scarcity_view(advisory) -> dict[str, Any]:
+    if advisory is None:
+        return {}
+    return {
+        position.value: {
+            "elite": s.elite,
+            "startable": s.startable,
+            "bench": s.bench,
+            "total_remaining": s.total_remaining,
+            "starting_demand": s.starting_demand,
+            "top_value_remaining": s.top_value_remaining,
+            "is_drying_up": s.is_drying_up,
+        }
+        for position, s in advisory.scarcity.items()
+    }
+
+
+def _team_view(state: DraftState, team_id: int, book: Any = None) -> dict[str, Any]:
     team = state.teams.get(team_id)
     unknowns = proj.unknown_price_count(state, team_id)
     return {
@@ -90,55 +128,105 @@ def _team_view(state: DraftState, team_id: int) -> dict[str, Any]:
         "starter_gaps": {
             slot.value: n for slot, n in proj.starter_gaps(state, team_id).items()
         },
-        "roster": [_player_view(p) for p in state.players_for_team(team_id)],
+        "roster": [_player_view(p, book) for p in state.players_for_team(team_id)],
     }
 
 
-def _player_view(player: PlayerEntity) -> dict[str, Any]:
+def _player_view(player: PlayerEntity, book: Any = None) -> dict[str, Any]:
     position = _sourced_value(player.position)
+    price = _sourced_value(player.price)
+    value = book.value(player.ref.key) if (book is not None and len(book)) else None
     return {
         "key": player.ref.key,
         "name": player.ref.raw,
         "player_id": player.ref.player_id,
         "position": position.value if isinstance(position, Position) else position,
-        "price": _sourced_value(player.price),
+        "price": price,
         "price_known": player.price is not None and player.price.is_known,
         # Provenance travels with the value so a surface can show *why* it
         # believes a number — the audit trail the capability spec's
         # ground-truth-vs-inference rule depends on.
         "price_provenance": player.price.provenance.value if player.price else None,
+        "reference_value": value,
+        # Positive means they paid over the sheet. Feeds the "is the room hot"
+        # read without the surface having to do arithmetic.
+        "delta": (price - value) if (price is not None and value is not None) else None,
     }
 
 
-def _nomination_view(state: DraftState) -> dict[str, Any] | None:
+def _nomination_view(state: DraftState, book: Any, advisory) -> dict[str, Any] | None:
     nomination = state.current_nomination
     if nomination is None:
         return None
-    return {
+
+    out: dict[str, Any] = {
         "key": nomination.ref.key,
         "name": nomination.ref.raw,
         "nominated_by": _sourced_value(nomination.nominated_by),
         "opening_bid": _sourced_value(nomination.opening_bid),
+        "position": None,
+        "reference_value": None,
+        "guidance": None,
     }
 
+    row = book.get(nomination.ref.key) if (book is not None and len(book)) else None
+    if row is not None:
+        out["position"] = row.position.value
+        out["reference_value"] = book.value(row.key)
 
-def _market_view(state: DraftState) -> dict[str, Any]:
+    guidance = advisory.guidance if advisory is not None else None
+    if guidance is not None:
+        out["guidance"] = {
+            "max_legal_bid": guidance.max_legal_bid,
+            "max_advisable_bid": guidance.max_advisable_bid,
+            "suggested_low": guidance.suggested_low,
+            "suggested_high": guidance.suggested_high,
+            "inflated_value": guidance.inflated_value,
+            "fills_starter_gap": guidance.fills_starter_gap,
+            "contested_ceiling": guidance.contested_ceiling,
+            "reasons": list(guidance.reasons),
+            # Capacity only. Whether they *will* bid is the advisory layer's
+            # call, made from the dossiers.
+            "threats": [
+                {
+                    "team_id": t.team_id,
+                    "label": t.label,
+                    "max_legal_bid": t.max_legal_bid,
+                    "remaining": t.remaining,
+                    "remaining_is_floor": t.remaining_is_floor,
+                    "has_starter_gap": t.has_starter_gap,
+                    "open_at_position": t.open_at_position,
+                    "is_live": t.is_live,
+                }
+                for t in guidance.threats
+            ],
+        }
+    return out
+
+
+def _market_view(state: DraftState, advisory) -> dict[str, Any]:
     totals = proj.league_totals(state)
     league = state.league
-    return {
+    out = {
         "sales": totals["sales"],
         "dollars_spent": totals["dollars_spent"],
         "unknown_prices": totals["unknown_prices"],
         "dollars_remaining": (league.budget * league.team_count) - totals["dollars_spent"],
-        # CP3 fills this in once reference auction values exist.
         "inflation_ratio": None,
+        "reference_spent": None,
+        "read": "unknown",
     }
+    if advisory is not None:
+        out["inflation_ratio"] = advisory.market.inflation_ratio
+        out["reference_spent"] = advisory.market.reference_spent
+        out["read"] = advisory.market.read
+    return out
 
 
-def _recent_sales(state: DraftState, limit: int) -> list[dict[str, Any]]:
+def _recent_sales(state: DraftState, book: Any, limit: int) -> list[dict[str, Any]]:
     sold = [p for p in state.sold_players()]
     return [
-        {**_player_view(p), "team_id": _sourced_value(p.team)}
+        {**_player_view(p, book), "team_id": _sourced_value(p.team)}
         for p in sold[-limit:]
     ]
 

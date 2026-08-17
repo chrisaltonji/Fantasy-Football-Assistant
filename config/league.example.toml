@@ -56,6 +56,12 @@ flex_positions = ["RB", "WR", "TE"]
 type = "PPR"
 
 [reference]
+# Your exported auction values. Export from your calculator AT YOUR REAL LEAGUE
+# SETTINGS (teams, budget, scoring, roster) — then the rescaling below is a
+# no-op safety net rather than a correction. CSV, XLSX, or pasted TSV all work.
+# Leave blank to run on the sample fixture, which has invented values.
+path = "data/reference/auction_values.csv"
+
 # Your auction values were computed for a league of this shape. Values get
 # rescaled to YOUR league via:
 #     scaled = value * (teams.count * draft.budget) / (baseline_teams * baseline_budget)

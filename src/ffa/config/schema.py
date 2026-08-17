@@ -79,6 +79,10 @@ class LeagueConfig:
     # a nickname stay addressable as `t3`/`team3`/`3`.
     managers: Mapping[int, str] = field(default_factory=dict)
 
+    # Where your exported auction values live. Unset falls back to the sample
+    # fixture, with a loud banner — sample values are invented.
+    reference_path: str = ""
+
     baseline_teams: int = 12
     baseline_budget: int = 200
 

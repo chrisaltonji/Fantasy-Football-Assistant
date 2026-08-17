@@ -136,6 +136,7 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
         flex_positions=flex,
         scoring_type=str(scoring.get("type", "PPR")).upper(),
         managers=managers,
+        reference_path=str(reference.get("path", "")),
         baseline_teams=int(reference.get("baseline_teams", 12)),
         baseline_budget=int(reference.get("baseline_budget", 200)),
         poll_interval_seconds=float(polling.get("interval_seconds", 3.0)),
@@ -178,6 +179,7 @@ def config_to_dict(config: LeagueConfig) -> dict[str, Any]:
         "scoring": {"type": config.scoring_type},
         "managers": {str(k): v for k, v in sorted(config.managers.items())},
         "reference": {
+            "path": config.reference_path,
             "baseline_teams": config.baseline_teams,
             "baseline_budget": config.baseline_budget,
         },

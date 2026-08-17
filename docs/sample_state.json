@@ -1,8 +1,14 @@
 {
   "schema_version": 1,
-  "draft_id": "2026-123456-20260816T231451",
-  "generated_at": "2026-08-16T23:14:51Z",
+  "draft_id": "2026-123456-20260817T005522",
+  "generated_at": "2026-08-17T00:55:22Z",
   "initialized": true,
+  "reference": {
+    "source": "data/fixtures/sample_rankings.csv",
+    "players": 248,
+    "scale": 1.0,
+    "is_sample": true
+  },
   "league": {
     "name": "My League",
     "budget": 200,
@@ -31,18 +37,18 @@
     "manager": "chris",
     "label": "chris",
     "is_me": true,
-    "spent": 106,
-    "remaining": 94,
+    "spent": 78,
+    "remaining": 122,
     "remaining_is_floor": false,
     "unknown_price_count": 0,
-    "max_legal_bid": 81,
+    "max_legal_bid": 108,
     "is_overspent": false,
-    "roster_count": 2,
-    "open_slots": 14,
+    "roster_count": 1,
+    "open_slots": 15,
     "open_slots_by_pos": {
       "QB": 8,
       "RB": 9,
-      "WR": 9,
+      "WR": 10,
       "TE": 9,
       "K": 8,
       "DST": 8
@@ -50,7 +56,7 @@
     "starter_gaps": {
       "QB": 1,
       "RB": 1,
-      "WR": 1,
+      "WR": 2,
       "TE": 1,
       "FLEX": 1,
       "K": 1,
@@ -58,22 +64,15 @@
     },
     "roster": [
       {
-        "key": "aj-brown",
-        "name": "a.j. brown",
-        "player_id": null,
-        "position": "WR",
-        "price": 44,
-        "price_known": true,
-        "price_provenance": "MANUAL"
-      },
-      {
-        "key": "bijan-robinson",
-        "name": "bijan robinson",
+        "key": "aaron-bramford",
+        "name": "Aaron Bramford",
         "player_id": null,
         "position": "RB",
-        "price": 62,
+        "price": 78,
         "price_known": true,
-        "price_provenance": "MANUAL"
+        "price_provenance": "MANUAL",
+        "reference_value": 62,
+        "delta": 16
       }
     ]
   },
@@ -84,18 +83,18 @@
       "manager": "chris",
       "label": "chris",
       "is_me": true,
-      "spent": 106,
-      "remaining": 94,
+      "spent": 78,
+      "remaining": 122,
       "remaining_is_floor": false,
       "unknown_price_count": 0,
-      "max_legal_bid": 81,
+      "max_legal_bid": 108,
       "is_overspent": false,
-      "roster_count": 2,
-      "open_slots": 14,
+      "roster_count": 1,
+      "open_slots": 15,
       "open_slots_by_pos": {
         "QB": 8,
         "RB": 9,
-        "WR": 9,
+        "WR": 10,
         "TE": 9,
         "K": 8,
         "DST": 8
@@ -103,7 +102,7 @@
       "starter_gaps": {
         "QB": 1,
         "RB": 1,
-        "WR": 1,
+        "WR": 2,
         "TE": 1,
         "FLEX": 1,
         "K": 1,
@@ -111,22 +110,15 @@
       },
       "roster": [
         {
-          "key": "aj-brown",
-          "name": "a.j. brown",
-          "player_id": null,
-          "position": "WR",
-          "price": 44,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        },
-        {
-          "key": "bijan-robinson",
-          "name": "bijan robinson",
+          "key": "aaron-bramford",
+          "name": "Aaron Bramford",
           "player_id": null,
           "position": "RB",
-          "price": 62,
+          "price": 78,
           "price_known": true,
-          "price_provenance": "MANUAL"
+          "price_provenance": "MANUAL",
+          "reference_value": 62,
+          "delta": 16
         }
       ]
     },
@@ -136,51 +128,32 @@
       "manager": "dave",
       "label": "dave",
       "is_me": false,
-      "spent": 96,
-      "remaining": 104,
+      "spent": 0,
+      "remaining": 200,
       "remaining_is_floor": false,
       "unknown_price_count": 0,
-      "max_legal_bid": 91,
+      "max_legal_bid": 185,
       "is_overspent": false,
-      "roster_count": 2,
-      "open_slots": 14,
+      "roster_count": 0,
+      "open_slots": 16,
       "open_slots_by_pos": {
         "QB": 8,
-        "RB": 9,
-        "WR": 9,
+        "RB": 10,
+        "WR": 10,
         "TE": 9,
         "K": 8,
         "DST": 8
       },
       "starter_gaps": {
         "QB": 1,
-        "RB": 1,
-        "WR": 1,
+        "RB": 2,
+        "WR": 2,
         "TE": 1,
         "FLEX": 1,
         "K": 1,
         "DST": 1
       },
-      "roster": [
-        {
-          "key": "breece-hall",
-          "name": "breece hall",
-          "player_id": null,
-          "position": "RB",
-          "price": 58,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        },
-        {
-          "key": "puka-nacua",
-          "name": "puka nacua",
-          "player_id": null,
-          "position": "WR",
-          "price": 38,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        }
-      ]
+      "roster": []
     },
     {
       "team_id": 3,
@@ -188,51 +161,32 @@
       "manager": "sam",
       "label": "sam",
       "is_me": false,
-      "spent": 84,
-      "remaining": 116,
+      "spent": 0,
+      "remaining": 200,
       "remaining_is_floor": false,
       "unknown_price_count": 0,
-      "max_legal_bid": 103,
+      "max_legal_bid": 185,
       "is_overspent": false,
-      "roster_count": 2,
-      "open_slots": 14,
+      "roster_count": 0,
+      "open_slots": 16,
       "open_slots_by_pos": {
         "QB": 8,
-        "RB": 9,
-        "WR": 9,
+        "RB": 10,
+        "WR": 10,
         "TE": 9,
         "K": 8,
         "DST": 8
       },
       "starter_gaps": {
         "QB": 1,
-        "RB": 1,
-        "WR": 1,
+        "RB": 2,
+        "WR": 2,
         "TE": 1,
         "FLEX": 1,
         "K": 1,
         "DST": 1
       },
-      "roster": [
-        {
-          "key": "garrett-wilson",
-          "name": "garrett wilson",
-          "player_id": null,
-          "position": "WR",
-          "price": 30,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        },
-        {
-          "key": "jahmyr-gibbs",
-          "name": "jahmyr gibbs",
-          "player_id": null,
-          "position": "RB",
-          "price": 54,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        }
-      ]
+      "roster": []
     },
     {
       "team_id": 4,
@@ -240,51 +194,32 @@
       "manager": null,
       "label": "Team 4",
       "is_me": false,
-      "spent": 49,
-      "remaining": 150,
-      "remaining_is_floor": true,
-      "unknown_price_count": 1,
-      "max_legal_bid": 137,
+      "spent": 0,
+      "remaining": 200,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 185,
       "is_overspent": false,
-      "roster_count": 2,
-      "open_slots": 14,
+      "roster_count": 0,
+      "open_slots": 16,
       "open_slots_by_pos": {
         "QB": 8,
-        "RB": 9,
-        "WR": 9,
+        "RB": 10,
+        "WR": 10,
         "TE": 9,
         "K": 8,
         "DST": 8
       },
       "starter_gaps": {
         "QB": 1,
-        "RB": 1,
-        "WR": 1,
+        "RB": 2,
+        "WR": 2,
         "TE": 1,
         "FLEX": 1,
         "K": 1,
         "DST": 1
       },
-      "roster": [
-        {
-          "key": "drake-london",
-          "name": "drake london",
-          "player_id": null,
-          "position": "WR",
-          "price": null,
-          "price_known": false,
-          "price_provenance": "UNKNOWN"
-        },
-        {
-          "key": "saquon-barkley",
-          "name": "saquon barkley",
-          "player_id": null,
-          "position": "RB",
-          "price": 49,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        }
-      ]
+      "roster": []
     },
     {
       "team_id": 5,
@@ -292,50 +227,32 @@
       "manager": null,
       "label": "Team 5",
       "is_me": false,
-      "spent": 83,
-      "remaining": 117,
+      "spent": 0,
+      "remaining": 200,
       "remaining_is_floor": false,
       "unknown_price_count": 0,
-      "max_legal_bid": 104,
+      "max_legal_bid": 185,
       "is_overspent": false,
-      "roster_count": 2,
-      "open_slots": 14,
+      "roster_count": 0,
+      "open_slots": 16,
       "open_slots_by_pos": {
-        "QB": 7,
-        "RB": 9,
+        "QB": 8,
+        "RB": 10,
         "WR": 10,
         "TE": 9,
         "K": 8,
         "DST": 8
       },
       "starter_gaps": {
-        "RB": 1,
+        "QB": 1,
+        "RB": 2,
         "WR": 2,
         "TE": 1,
         "FLEX": 1,
         "K": 1,
         "DST": 1
       },
-      "roster": [
-        {
-          "key": "derrick-henry",
-          "name": "derrick henry",
-          "player_id": null,
-          "position": "RB",
-          "price": 45,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        },
-        {
-          "key": "josh-allen",
-          "name": "josh allen",
-          "player_id": null,
-          "position": "QB",
-          "price": 38,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        }
-      ]
+      "roster": []
     },
     {
       "team_id": 6,
@@ -343,50 +260,32 @@
       "manager": null,
       "label": "Team 6",
       "is_me": false,
-      "spent": 75,
-      "remaining": 125,
+      "spent": 0,
+      "remaining": 200,
       "remaining_is_floor": false,
       "unknown_price_count": 0,
-      "max_legal_bid": 112,
+      "max_legal_bid": 185,
       "is_overspent": false,
-      "roster_count": 2,
-      "open_slots": 14,
+      "roster_count": 0,
+      "open_slots": 16,
       "open_slots_by_pos": {
-        "QB": 7,
-        "RB": 9,
+        "QB": 8,
+        "RB": 10,
         "WR": 10,
         "TE": 9,
         "K": 8,
         "DST": 8
       },
       "starter_gaps": {
-        "RB": 1,
+        "QB": 1,
+        "RB": 2,
         "WR": 2,
         "TE": 1,
         "FLEX": 1,
         "K": 1,
         "DST": 1
       },
-      "roster": [
-        {
-          "key": "jonathan-taylor",
-          "name": "jonathan taylor",
-          "player_id": null,
-          "position": "RB",
-          "price": 41,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        },
-        {
-          "key": "patrick-mahomes",
-          "name": "patrick mahomes",
-          "player_id": null,
-          "position": "QB",
-          "price": 34,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        }
-      ]
+      "roster": []
     },
     {
       "team_id": 7,
@@ -394,50 +293,32 @@
       "manager": null,
       "label": "Team 7",
       "is_me": false,
-      "spent": 63,
-      "remaining": 137,
+      "spent": 0,
+      "remaining": 200,
       "remaining_is_floor": false,
       "unknown_price_count": 0,
-      "max_legal_bid": 124,
+      "max_legal_bid": 185,
       "is_overspent": false,
-      "roster_count": 2,
-      "open_slots": 14,
+      "roster_count": 0,
+      "open_slots": 16,
       "open_slots_by_pos": {
-        "QB": 7,
-        "RB": 9,
+        "QB": 8,
+        "RB": 10,
         "WR": 10,
         "TE": 9,
         "K": 8,
         "DST": 8
       },
       "starter_gaps": {
-        "RB": 1,
+        "QB": 1,
+        "RB": 2,
         "WR": 2,
         "TE": 1,
         "FLEX": 1,
         "K": 1,
         "DST": 1
       },
-      "roster": [
-        {
-          "key": "jalen-hurts",
-          "name": "jalen hurts",
-          "player_id": null,
-          "position": "QB",
-          "price": 30,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        },
-        {
-          "key": "kyren-williams",
-          "name": "kyren williams",
-          "player_id": null,
-          "position": "RB",
-          "price": 33,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        }
-      ]
+      "roster": []
     },
     {
       "team_id": 8,
@@ -445,50 +326,32 @@
       "manager": null,
       "label": "Team 8",
       "is_me": false,
-      "spent": 53,
-      "remaining": 147,
+      "spent": 0,
+      "remaining": 200,
       "remaining_is_floor": false,
       "unknown_price_count": 0,
-      "max_legal_bid": 134,
+      "max_legal_bid": 185,
       "is_overspent": false,
-      "roster_count": 2,
-      "open_slots": 14,
+      "roster_count": 0,
+      "open_slots": 16,
       "open_slots_by_pos": {
-        "QB": 7,
-        "RB": 9,
+        "QB": 8,
+        "RB": 10,
         "WR": 10,
         "TE": 9,
         "K": 8,
         "DST": 8
       },
       "starter_gaps": {
-        "RB": 1,
+        "QB": 1,
+        "RB": 2,
         "WR": 2,
         "TE": 1,
         "FLEX": 1,
         "K": 1,
         "DST": 1
       },
-      "roster": [
-        {
-          "key": "devon-achane",
-          "name": "de'von achane",
-          "player_id": null,
-          "position": "RB",
-          "price": 28,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        },
-        {
-          "key": "lamar-jackson",
-          "name": "lamar jackson",
-          "player_id": null,
-          "position": "QB",
-          "price": 25,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        }
-      ]
+      "roster": []
     },
     {
       "team_id": 9,
@@ -496,171 +359,18 @@
       "manager": null,
       "label": "Team 9",
       "is_me": false,
-      "spent": 88,
-      "remaining": 112,
+      "spent": 0,
+      "remaining": 200,
       "remaining_is_floor": false,
       "unknown_price_count": 0,
-      "max_legal_bid": 99,
+      "max_legal_bid": 185,
       "is_overspent": false,
-      "roster_count": 2,
-      "open_slots": 14,
+      "roster_count": 0,
+      "open_slots": 16,
       "open_slots_by_pos": {
         "QB": 8,
         "RB": 10,
-        "WR": 9,
-        "TE": 8,
-        "K": 8,
-        "DST": 8
-      },
-      "starter_gaps": {
-        "QB": 1,
-        "RB": 2,
-        "WR": 1,
-        "FLEX": 1,
-        "K": 1,
-        "DST": 1
-      },
-      "roster": [
-        {
-          "key": "jamarr-chase",
-          "name": "ja'marr chase",
-          "player_id": null,
-          "position": "WR",
-          "price": 60,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        },
-        {
-          "key": "sam-laporta",
-          "name": "sam laporta",
-          "player_id": null,
-          "position": "TE",
-          "price": 28,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        }
-      ]
-    },
-    {
-      "team_id": 10,
-      "name": "Team 10",
-      "manager": null,
-      "label": "Team 10",
-      "is_me": false,
-      "spent": 79,
-      "remaining": 121,
-      "remaining_is_floor": false,
-      "unknown_price_count": 0,
-      "max_legal_bid": 108,
-      "is_overspent": false,
-      "roster_count": 2,
-      "open_slots": 14,
-      "open_slots_by_pos": {
-        "QB": 8,
-        "RB": 10,
-        "WR": 9,
-        "TE": 8,
-        "K": 8,
-        "DST": 8
-      },
-      "starter_gaps": {
-        "QB": 1,
-        "RB": 2,
-        "WR": 1,
-        "FLEX": 1,
-        "K": 1,
-        "DST": 1
-      },
-      "roster": [
-        {
-          "key": "ceedee-lamb",
-          "name": "ceedee lamb",
-          "player_id": null,
-          "position": "WR",
-          "price": 55,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        },
-        {
-          "key": "travis-kelce",
-          "name": "travis kelce",
-          "player_id": null,
-          "position": "TE",
-          "price": 24,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        }
-      ]
-    },
-    {
-      "team_id": 11,
-      "name": "Team 11",
-      "manager": null,
-      "label": "Team 11",
-      "is_me": false,
-      "spent": 71,
-      "remaining": 129,
-      "remaining_is_floor": false,
-      "unknown_price_count": 0,
-      "max_legal_bid": 116,
-      "is_overspent": false,
-      "roster_count": 2,
-      "open_slots": 14,
-      "open_slots_by_pos": {
-        "QB": 8,
-        "RB": 10,
-        "WR": 9,
-        "TE": 8,
-        "K": 8,
-        "DST": 8
-      },
-      "starter_gaps": {
-        "QB": 1,
-        "RB": 2,
-        "WR": 1,
-        "FLEX": 1,
-        "K": 1,
-        "DST": 1
-      },
-      "roster": [
-        {
-          "key": "mark-andrews",
-          "name": "mark andrews",
-          "player_id": null,
-          "position": "TE",
-          "price": 19,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        },
-        {
-          "key": "tyreek-hill",
-          "name": "tyreek hill",
-          "player_id": null,
-          "position": "WR",
-          "price": 52,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        }
-      ]
-    },
-    {
-      "team_id": 12,
-      "name": "Team 12",
-      "manager": null,
-      "label": "Team 12",
-      "is_me": false,
-      "spent": 48,
-      "remaining": 152,
-      "remaining_is_floor": false,
-      "unknown_price_count": 0,
-      "max_legal_bid": 138,
-      "is_overspent": false,
-      "roster_count": 1,
-      "open_slots": 15,
-      "open_slots_by_pos": {
-        "QB": 8,
-        "RB": 10,
-        "WR": 9,
+        "WR": 10,
         "TE": 9,
         "K": 8,
         "DST": 8
@@ -668,140 +378,193 @@
       "starter_gaps": {
         "QB": 1,
         "RB": 2,
-        "WR": 1,
+        "WR": 2,
         "TE": 1,
         "FLEX": 1,
         "K": 1,
         "DST": 1
       },
-      "roster": [
-        {
-          "key": "amonra-st-brown",
-          "name": "amon-ra st. brown",
-          "player_id": null,
-          "position": "WR",
-          "price": 48,
-          "price_known": true,
-          "price_provenance": "MANUAL"
-        }
-      ]
+      "roster": []
+    },
+    {
+      "team_id": 10,
+      "name": "Team 10",
+      "manager": null,
+      "label": "Team 10",
+      "is_me": false,
+      "spent": 0,
+      "remaining": 200,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 185,
+      "is_overspent": false,
+      "roster_count": 0,
+      "open_slots": 16,
+      "open_slots_by_pos": {
+        "QB": 8,
+        "RB": 10,
+        "WR": 10,
+        "TE": 9,
+        "K": 8,
+        "DST": 8
+      },
+      "starter_gaps": {
+        "QB": 1,
+        "RB": 2,
+        "WR": 2,
+        "TE": 1,
+        "FLEX": 1,
+        "K": 1,
+        "DST": 1
+      },
+      "roster": []
+    },
+    {
+      "team_id": 11,
+      "name": "Team 11",
+      "manager": null,
+      "label": "Team 11",
+      "is_me": false,
+      "spent": 0,
+      "remaining": 200,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 185,
+      "is_overspent": false,
+      "roster_count": 0,
+      "open_slots": 16,
+      "open_slots_by_pos": {
+        "QB": 8,
+        "RB": 10,
+        "WR": 10,
+        "TE": 9,
+        "K": 8,
+        "DST": 8
+      },
+      "starter_gaps": {
+        "QB": 1,
+        "RB": 2,
+        "WR": 2,
+        "TE": 1,
+        "FLEX": 1,
+        "K": 1,
+        "DST": 1
+      },
+      "roster": []
+    },
+    {
+      "team_id": 12,
+      "name": "Team 12",
+      "manager": null,
+      "label": "Team 12",
+      "is_me": false,
+      "spent": 0,
+      "remaining": 200,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 185,
+      "is_overspent": false,
+      "roster_count": 0,
+      "open_slots": 16,
+      "open_slots_by_pos": {
+        "QB": 8,
+        "RB": 10,
+        "WR": 10,
+        "TE": 9,
+        "K": 8,
+        "DST": 8
+      },
+      "starter_gaps": {
+        "QB": 1,
+        "RB": 2,
+        "WR": 2,
+        "TE": 1,
+        "FLEX": 1,
+        "K": 1,
+        "DST": 1
+      },
+      "roster": []
     }
   ],
-  "nomination": {
-    "key": "christian-mccaffrey",
-    "name": "christian mccaffrey",
-    "nominated_by": null,
-    "opening_bid": null
-  },
+  "nomination": null,
   "market": {
-    "sales": 23,
-    "dollars_spent": 895,
-    "unknown_prices": 1,
-    "dollars_remaining": 1505,
-    "inflation_ratio": null
+    "sales": 1,
+    "dollars_spent": 78,
+    "unknown_prices": 0,
+    "dollars_remaining": 2322,
+    "inflation_ratio": null,
+    "reference_spent": 62,
+    "read": "unknown"
   },
   "recent_sales": [
     {
-      "key": "josh-allen",
-      "name": "josh allen",
-      "player_id": null,
-      "position": "QB",
-      "price": 38,
-      "price_known": true,
-      "price_provenance": "MANUAL",
-      "team_id": 5
-    },
-    {
-      "key": "kyren-williams",
-      "name": "kyren williams",
+      "key": "aaron-bramford",
+      "name": "Aaron Bramford",
       "player_id": null,
       "position": "RB",
-      "price": 33,
+      "price": 78,
       "price_known": true,
       "price_provenance": "MANUAL",
-      "team_id": 7
-    },
-    {
-      "key": "lamar-jackson",
-      "name": "lamar jackson",
-      "player_id": null,
-      "position": "QB",
-      "price": 25,
-      "price_known": true,
-      "price_provenance": "MANUAL",
-      "team_id": 8
-    },
-    {
-      "key": "mark-andrews",
-      "name": "mark andrews",
-      "player_id": null,
-      "position": "TE",
-      "price": 19,
-      "price_known": true,
-      "price_provenance": "MANUAL",
-      "team_id": 11
-    },
-    {
-      "key": "patrick-mahomes",
-      "name": "patrick mahomes",
-      "player_id": null,
-      "position": "QB",
-      "price": 34,
-      "price_known": true,
-      "price_provenance": "MANUAL",
-      "team_id": 6
-    },
-    {
-      "key": "puka-nacua",
-      "name": "puka nacua",
-      "player_id": null,
-      "position": "WR",
-      "price": 38,
-      "price_known": true,
-      "price_provenance": "MANUAL",
-      "team_id": 2
-    },
-    {
-      "key": "sam-laporta",
-      "name": "sam laporta",
-      "player_id": null,
-      "position": "TE",
-      "price": 28,
-      "price_known": true,
-      "price_provenance": "MANUAL",
-      "team_id": 9
-    },
-    {
-      "key": "saquon-barkley",
-      "name": "saquon barkley",
-      "player_id": null,
-      "position": "RB",
-      "price": 49,
-      "price_known": true,
-      "price_provenance": "MANUAL",
-      "team_id": 4
-    },
-    {
-      "key": "travis-kelce",
-      "name": "travis kelce",
-      "player_id": null,
-      "position": "TE",
-      "price": 24,
-      "price_known": true,
-      "price_provenance": "MANUAL",
-      "team_id": 10
-    },
-    {
-      "key": "tyreek-hill",
-      "name": "tyreek hill",
-      "player_id": null,
-      "position": "WR",
-      "price": 52,
-      "price_known": true,
-      "price_provenance": "MANUAL",
-      "team_id": 11
+      "reference_value": 62,
+      "delta": 16,
+      "team_id": 1
     }
   ],
-  "scarcity": {},
+  "scarcity": {
+    "QB": {
+      "elite": 4,
+      "startable": 8,
+      "bench": 18,
+      "total_remaining": 30,
+      "starting_demand": 12,
+      "top_value_remaining": 38,
+      "is_drying_up": false
+    },
+    "RB": {
+      "elite": 9,
+      "startable": 18,
+      "bench": 42,
+      "total_remaining": 69,
+      "starting_demand": 28,
+      "top_value_remaining": 58,
+      "is_drying_up": false
+    },
+    "WR": {
+      "elite": 10,
+      "startable": 18,
+      "bench": 50,
+      "total_remaining": 78,
+      "starting_demand": 28,
+      "top_value_remaining": 58,
+      "is_drying_up": false
+    },
+    "TE": {
+      "elite": 6,
+      "startable": 10,
+      "bench": 14,
+      "total_remaining": 30,
+      "starting_demand": 16,
+      "top_value_remaining": 28,
+      "is_drying_up": false
+    },
+    "K": {
+      "elite": 4,
+      "startable": 8,
+      "bench": 8,
+      "total_remaining": 20,
+      "starting_demand": 12,
+      "top_value_remaining": 2,
+      "is_drying_up": false
+    },
+    "DST": {
+      "elite": 4,
+      "startable": 8,
+      "bench": 8,
+      "total_remaining": 20,
+      "starting_demand": 12,
+      "top_value_remaining": 3,
+      "is_drying_up": false
+    }
+  },
   "warnings": []
 }

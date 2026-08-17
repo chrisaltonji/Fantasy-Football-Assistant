@@ -132,6 +132,81 @@ def render_warnings(warnings) -> str:
     return "\n".join(f"! {w}" for w in warnings)
 
 
+def render_guidance(guidance) -> str:
+    """The readout when a player is up for bid.
+
+    Deliberately leads with the two numbers you act on — what it's worth and
+    what you can legally spend — then who can actually take him from you.
+    """
+    if guidance is None:
+        return "no reference data loaded — advice unavailable"
+
+    pos = f" ({guidance.position.value})" if guidance.position else ""
+    lines = [f"{guidance.name}{pos}"]
+
+    if guidance.reference_value is not None:
+        inflated = ""
+        if guidance.inflated_value and guidance.inflated_value != guidance.reference_value:
+            inflated = f" -> ${guidance.inflated_value} at current market"
+        lines.append(f"  sheet value  ${guidance.reference_value}{inflated}")
+    else:
+        lines.append("  sheet value  not in your reference file")
+
+    lines.append(
+        f"  bid up to    ${guidance.max_advisable_bid}"
+        f"   (range ${guidance.suggested_low}-${guidance.suggested_high})"
+    )
+    lines.append(
+        f"  legal max    ${guidance.max_legal_bid}"
+        f"   {'fills a starting slot' if guidance.fills_starter_gap else 'bench only for us'}"
+    )
+
+    live = guidance.live_threats
+    if live:
+        lines.append(f"  who can take him ({len(live)} live):")
+        for threat in live[:6]:
+            floor = "+" if threat.remaining_is_floor else ""
+            lines.append(
+                f"    {threat.label:<12} up to ${threat.max_legal_bid:<4} "
+                f"(has ${threat.remaining}{floor}, {threat.open_at_position} slot(s))"
+            )
+        if len(live) > 6:
+            lines.append(f"    ... and {len(live) - 6} more")
+    else:
+        lines.append("  who can take him: nobody who needs the position can afford him")
+
+    lines.extend(f"  - {reason}" for reason in guidance.reasons)
+    return "\n".join(lines)
+
+
+def render_scarcity(scarcity) -> str:
+    """What's left, tiered against this league's actual starting demand."""
+    if not scarcity:
+        return "no reference data loaded — scarcity unavailable"
+
+    rows = [("POS", "ELITE", "STARTABLE", "BENCH", "DEMAND", "TOP LEFT", "")]
+    for position, s in scarcity.items():
+        rows.append((
+            position.value, str(s.elite), str(s.startable), str(s.bench),
+            str(s.starting_demand), f"${s.top_value_remaining}",
+            "DRYING UP" if s.is_drying_up else "",
+        ))
+    return _table(rows)
+
+
+def render_market(market) -> str:
+    if market.inflation_ratio is None:
+        return (
+            f"market: not enough priced sales yet "
+            f"({market.sales_priced} so far; ${market.dollars_spent} spent)"
+        )
+    return (
+        f"market: {market.read} at {market.inflation_ratio:.2f}x sheet "
+        f"({market.sales_priced} priced sales, ${market.dollars_spent} spent, "
+        f"${market.dollars_remaining} left league-wide)"
+    )
+
+
 # --- helpers ------------------------------------------------------------------
 
 

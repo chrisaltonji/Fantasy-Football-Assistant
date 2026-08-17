@@ -197,6 +197,119 @@ def test_state_view_shows_a_dangling_amendment(run_path, init_event):
     assert remaining_budget(store.state, 3) == 200
 
 
+# --- with reference data loaded -----------------------------------------------
+
+
+@pytest.fixture
+def book():
+    from ffa.reference.playerbook import load_playerbook
+
+    fixture = Path(__file__).resolve().parents[2] / "data" / "fixtures" / "sample_rankings.csv"
+    return load_playerbook(fixture, teams=12, budget=200, is_sample=True)
+
+
+def drive_with_book(store, script: str, book) -> str:
+    out = io.StringIO()
+    run_repl(store, stdin=io.StringIO(script), stdout=out, now_fn=lambda: at(0), book=book)
+    return out.getvalue()
+
+
+def top_players(book, n=3):
+    return sorted(book.rows, key=lambda r: r.overall_rank or 9999)[:n]
+
+
+def test_sample_data_is_announced_loudly(run_path, init_event, book):
+    """Invented values are worse than no values if you don't know they're invented."""
+    with DraftStore.create(run_path, init_event) as store:
+        output = drive_with_book(store, "quit\n", book)
+    assert "USING SAMPLE DATA" in output and "INVENTED" in output
+
+
+def test_a_surname_resolves_to_the_full_player(run_path, init_event, book):
+    player = top_players(book, 1)[0]
+    surname = player.name.split()[-1]
+    with DraftStore.create(run_path, init_event) as store:
+        output = drive_with_book(store, f"sold {surname} 45 t3\nquit\n", book)
+        assert store.state.players[player.key].sold
+
+    # The readout shows the canonical name, not the two letters that were typed.
+    assert player.name in output
+
+
+def test_the_literal_command_survives_in_the_journal(run_path, init_event, book):
+    """`raw` becomes the canonical name, so `note` is what preserves the input."""
+    player = top_players(book, 1)[0]
+    surname = player.name.split()[-1]
+    with DraftStore.create(run_path, init_event) as store:
+        drive_with_book(store, f"sold {surname} 45 t3\nquit\n", book)
+        assert store.events[-1].note == f"sold {surname} 45 t3"
+
+
+def test_position_is_filled_in_from_the_sheet(run_path, init_event, book):
+    player = top_players(book, 1)[0]
+    with DraftStore.create(run_path, init_event) as store:
+        drive_with_book(store, f"sold {player.name} 45 t3\nquit\n", book)
+        assert store.state.players[player.key].position.value is player.position
+
+
+def test_an_ambiguous_name_is_refused_and_nothing_is_written(run_path, init_event, book):
+    with DraftStore.create(run_path, init_event) as store:
+        output = drive_with_book(store, "sold bram 45 t3\nquit\n", book)
+        assert len(store.events) == 1  # only DraftInitialized
+
+    assert "could be more than one player" in output
+    assert "Type more of the name" in output
+
+
+def test_a_player_absent_from_the_sheet_is_still_recordable(run_path, init_event, book):
+    """Deep sleepers and late adds are normal; the tool must not block."""
+    with DraftStore.create(run_path, init_event) as store:
+        drive_with_book(store, "sold Some Undrafted Rookie 2 t3\nquit\n", book)
+        assert len(store.state.sold_players()) == 1
+
+
+def test_nomination_auto_fires_the_bid_readout(run_path, init_event, book):
+    """Capability 2: it fires on nomination, not on request."""
+    player = top_players(book, 1)[0]
+    with DraftStore.create(run_path, init_event) as store:
+        output = drive_with_book(store, f"nominate {player.name}\nquit\n", book)
+
+    assert "sheet value" in output
+    assert "bid up to" in output
+    assert "who can take him" in output
+
+
+def test_advice_works_for_a_player_who_is_not_nominated(run_path, init_event, book):
+    player = top_players(book, 2)[1]
+    with DraftStore.create(run_path, init_event) as store:
+        output = drive_with_book(store, f"advice {player.name}\nquit\n", book)
+    assert player.name in output and "legal max" in output
+
+
+def test_scarcity_and_market_views(run_path, init_event, book):
+    with DraftStore.create(run_path, init_event) as store:
+        output = drive_with_book(store, "scarcity\nmarket\nquit\n", book)
+    assert "ELITE" in output and "STARTABLE" in output
+    assert "not enough priced sales yet" in output
+
+
+def test_inflation_appears_once_enough_has_sold(run_path, init_event, book):
+    players = top_players(book, 8)
+    script = "\n".join(
+        f"sold {p.name} {round((book.value(p.key) or 1) * 1.2)} t{(i % 12) + 1}"
+        for i, p in enumerate(players)
+    )
+    with DraftStore.create(run_path, init_event) as store:
+        output = drive_with_book(store, script + "\nmarket\nquit\n", book)
+    assert "inflated" in output
+
+
+def test_advice_degrades_cleanly_with_no_reference_data(run_path, init_event):
+    with DraftStore.create(run_path, init_event) as store:
+        output = drive_with_book(store, "scarcity\nquit\n", None)
+    assert "no reference data" in output
+
+
 def test_incremental_state_always_matches_a_full_replay(run_path, init_event):
     with DraftStore.create(run_path, init_event) as store:
         drive(store, "\n".join([

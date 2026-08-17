@@ -39,8 +39,13 @@ def normalize_player_key(raw: str) -> str:
 class PlayerRef:
     """How a player is named in the journal.
 
-    `key` is identity, `raw` is what the user actually typed (kept for display
-    and for post-mortems), `player_id` is the CP3 upgrade and is absent at CP2.
+    `key` is identity and never changes once written. `raw` is the display
+    name — the canonical name from the reference file when one was resolved,
+    otherwise whatever the user typed. `player_id` is the external id, present
+    once reference data supplies one.
+
+    The literal command line is never lost regardless: it lives in the event's
+    `note` field, which is what you read when reconstructing what happened.
     """
 
     key: str

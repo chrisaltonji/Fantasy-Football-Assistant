@@ -19,6 +19,7 @@ from ffa.domain.events import DraftInitialized, TeamSeed
 from ffa.domain.models import LeagueSnapshot
 from ffa.domain.reducers import replay
 from ffa.ingest.manual.errors import CommandError
+from ffa.reference.loader import ReferenceError, load_reference
 from ffa.state.journal import JournalError
 from ffa.state.recovery import RUNS_DIR, load_run, make_draft_id, latest_run, run_dir
 from ffa.state.store import DraftStore, LockError
@@ -51,6 +52,57 @@ def cmd_config_check(args: argparse.Namespace) -> int:
     return 0
 
 
+SAMPLE_REFERENCE = Path("data/fixtures/sample_rankings.csv")
+
+
+def load_book(config: LeagueConfig):
+    """Load reference data, falling back to the sample fixture.
+
+    Never fatal: a draft with no values still tracks budgets and rosters
+    perfectly, it just can't advise. Refusing to start would be the wrong
+    trade on draft day.
+    """
+    from ffa.reference.playerbook import PlayerBook, load_playerbook
+
+    path = Path(config.reference_path) if config.reference_path else None
+    if path is None or not path.is_file():
+        if path is not None:
+            print(f"! reference file not found: {path}", file=sys.stderr)
+        path = SAMPLE_REFERENCE
+
+    # Flag the sample by identity, not by how we got here. Pointing
+    # [reference].path straight at the fixture must warn just as loudly as
+    # falling back to it — the values are invented either way.
+    is_sample = _same_file(path, SAMPLE_REFERENCE)
+
+    if not path.is_file():  # pragma: no cover - fixture is committed
+        return PlayerBook.empty()
+
+    try:
+        return load_playerbook(
+            path, teams=config.team_count, budget=config.budget,
+            baseline_teams=config.baseline_teams, baseline_budget=config.baseline_budget,
+            is_sample=is_sample,
+        )
+    except ReferenceError as exc:
+        print(f"! could not load reference data: {exc}", file=sys.stderr)
+        return PlayerBook.empty()
+
+
+def _same_file(left: Path, right: Path) -> bool:
+    try:
+        return left.resolve() == right.resolve()
+    except OSError:  # pragma: no cover - unresolvable path
+        return False
+
+
+def cmd_data_validate(args: argparse.Namespace) -> int:
+    """Check an export before draft day, not during it."""
+    report = load_reference(args.path)
+    print(report.summary())
+    return 0 if report.rows else 1
+
+
 def cmd_draft(args: argparse.Namespace) -> int:
     config = load_config(args.config)
 
@@ -73,7 +125,7 @@ def cmd_draft(args: argparse.Namespace) -> int:
         store = DraftStore.create(directory, _init_event(config, draft_id))
 
     try:
-        return run_repl(store, stdin=sys.stdin, stdout=sys.stdout)
+        return run_repl(store, stdin=sys.stdin, stdout=sys.stdout, book=load_book(config))
     finally:
         store.close()
 
@@ -92,7 +144,8 @@ def cmd_export_state(args: argparse.Namespace) -> int:
     for warning in warnings:
         print(f"! {warning}", file=sys.stderr)
 
-    view = build_view(replay(events, directory.name))
+    book = load_book(load_config(args.config)) if args.config.is_file() else None
+    view = build_view(replay(events, directory.name), book)
     text = json.dumps(view, indent=2)
 
     if args.out:
@@ -174,9 +227,16 @@ def build_parser() -> argparse.ArgumentParser:
     draft.add_argument("--runs", type=Path, default=RUNS_DIR)
     draft.set_defaults(func=cmd_draft)
 
+    data = sub.add_parser("data", help="inspect reference data")
+    data_sub = data.add_subparsers(dest="data_command", required=True)
+    validate = data_sub.add_parser("validate", help="check a rankings/auction-value export")
+    validate.add_argument("path", type=Path)
+    validate.set_defaults(func=cmd_data_validate)
+
     export = sub.add_parser("export-state", help="write the JSON view model for a run")
     export.add_argument("--run-dir", type=Path, default=None)
     export.add_argument("--runs", type=Path, default=RUNS_DIR)
+    export.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     export.add_argument("--out", type=Path, default=None)
     export.set_defaults(func=cmd_export_state)
 
@@ -188,7 +248,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except (ConfigError, CommandError, JournalError, LockError) as exc:
+    except (ConfigError, CommandError, JournalError, LockError, ReferenceError) as exc:
         # All user-fixable; a traceback would only bury the message.
         print(f"error: {exc}", file=sys.stderr)
         return 2

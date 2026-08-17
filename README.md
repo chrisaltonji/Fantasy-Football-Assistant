@@ -9,11 +9,11 @@ RB, and the tool should say so.
 Built to degrade gracefully: if ESPN's API gives us nothing on draft day, you
 type picks in by hand and every downstream calculation works identically.
 
-> **Status: Checkpoint 2 of 5.** The scaffold, config layer, ESPN probe, state
-> engine, event journal, and manual-entry REPL are done — you can run a
-> complete draft by hand today, crash it, and resume it exactly. Reference
-> data, the advisory layer, the simulator, and the production ESPN adapter land
-> in later checkpoints. See [Roadmap](#roadmap) below.
+> **Status: Checkpoint 3 of 5.** Scaffold, config, ESPN probe, state engine,
+> event journal, manual REPL, reference-data loader, and the deterministic
+> advisory layer are done — you can run a complete draft by hand today with
+> live bid guidance, crash it, and resume it exactly. The simulator and the
+> production ESPN adapter land next. See [Roadmap](#roadmap) below.
 
 ---
 
@@ -181,6 +181,72 @@ Runs live in `runs/<draft_id>/events.jsonl` — an append-only log that *is* the
 draft. It's plain JSON lines; you can read it, grep it, and hand it to anyone
 debugging a discrepancy.
 
+### Your auction values
+
+Export from your auction-value calculator **at your real league settings**
+(teams, budget, scoring, roster), drop the file in `data/reference/`, and point
+`[reference].path` at it. CSV, XLSX, and pasted tab- or space-separated text all
+work — copy-paste is a first-class path, since CSV export is a paid feature on
+most sources.
+
+Check it before draft day, not during:
+
+```bash
+ffa data validate data/reference/auction_values.csv
+```
+
+```
+data/reference/auction_values.csv
+  header found on line 3
+  columns: auction_value, bye_week, nfl_team, overall_rank, player_name, position, ...
+  248 row(s) ok, 0 dropped
+```
+
+The loader is deliberately hard to upset. It searches for the header rather than
+assuming line 1 (exports routinely carry a title row), it splits combined cells
+like `Ja'Marr Chase CIN (WR1)` into four fields, and it maps header aliases
+(`Value` / `$` / `AAV` / `Auction Value` all mean the same thing). A row it
+can't read is dropped with a reason and the load continues — you only get a hard
+error if the whole file is unusable.
+
+**With no file configured it runs on `data/fixtures/sample_rankings.csv`, whose
+values are invented**, and says so loudly on every startup.
+
+### Bid guidance
+
+Flag a nomination and the readout fires automatically:
+
+```
+> nominate rashad halson
+#14 up for bid: Rashad Halson
+Rashad Halson (WR)
+  sheet value  $42 -> $48 at current market
+  bid up to    $48   (range $41-$55)
+  legal max    $115   fills a starting slot
+  who can take him (11 live):
+    dave         up to $135  (has $149, 9 slot(s))
+    sam          up to $133  (has $147, 10 slot(s))
+  - market running inflated (1.15x)
+```
+
+Two numbers, deliberately distinct. **`legal max`** is arithmetic you cannot
+exceed — every other roster slot still costs $1, so that money isn't available.
+**`bid up to`** is what the sheet, current inflation, and your roster needs say
+he's worth.
+
+"Who can take him" counts only rivals who can afford him *and* still start him.
+A team with $90 and no open RB slot doesn't appear on an RB — that omission is
+the whole point of the tool.
+
+Also: `scarcity` (what's left per position, tiered against your league's real
+starting demand), `market` (inflation vs. your sheet), and `advice <player>` for
+anyone not currently nominated.
+
+Player names resolve against your file, so `sold halson 45 dave` works. A typo
+or an ambiguous name is **never** guessed — you get numbered candidates and
+retype. A wrong match wears a real player's price and fails silently, which is
+the worst thing this tool could do.
+
 ### Feeding the dashboard
 
 ```bash
@@ -251,8 +317,8 @@ exists**. Adding a web UI later is one new `DraftStore` subscriber plus one new
 |----|-------|--------|
 | 1 | Scaffold, config layer, ESPN probe | **done** — needs your Practice Draft |
 | 2 | State engine, event journal, manual REPL, undo, crash-resume, dashboard contract | **done** |
-| 3 | Reference data loader + deterministic advisory layer | next — needs your rankings files |
-| 4 | Auction simulator with budget-aware bots (the real acceptance test) | |
+| 3 | Reference data loader + deterministic advisory layer | **done** — running on sample data until you add yours |
+| 4 | Auction simulator with budget-aware bots (the real acceptance test) | next |
 | 5 | Production ESPN adapter, graceful degradation, draft-day kit | |
 
 Explicitly deferred: tuning how *good* the advice is (separate workstream), the

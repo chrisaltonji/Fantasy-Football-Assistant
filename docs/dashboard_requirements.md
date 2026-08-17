@@ -95,14 +95,22 @@ Data: `teams[]`.
 Only present when a player is up for bid; the highest-attention region when it
 is. Needs to accommodate, without reflowing as numbers arrive:
 
-- Player name, position, reference auction value *(CP3)*.
-- Suggested bid range and a yes/no call with 2–3 reasons *(advisory layer)*.
-- **Ranked likely bidders**, each with their true ceiling — this is where the
-  budget × need join pays off.
+- Player name, position, reference auction value, and that value restated at
+  current market inflation.
+- Suggested bid range, `max_advisable_bid`, and the hard `max_legal_bid`.
+  **These two must be visually distinct** — one is judgment, the other is
+  arithmetic you cannot exceed.
+- **Ranked bidders with their true ceilings**, each carrying `is_live` — can
+  afford him *and* has a starting slot. This is where the budget × need join
+  pays off, and `is_live` is the flag that expresses it.
+- `contested_ceiling`: the highest any live rival could legally go.
 - Live price as it climbs, if available (see §6).
 
-Data: `nomination` + `teams[]`. The advisory fields arrive from the Claude
-layer, not the engine.
+Data: `nomination.guidance` — live now, including the `threats[]` array. Note
+that everything here is **capacity**, not intent: whether a rival *can* take him
+is arithmetic and lives in the payload; whether they *will* is inference the
+Claude layer adds from the dossiers. The design should leave room for a
+likelihood annotation per bidder without implying the engine supplied it.
 
 ### 3.4 Positional Scarcity — v1 — capability 10
 
@@ -110,8 +118,14 @@ Tier counts per position: elite / startable / bench-only remaining. Small,
 persistent, glanceable. Threshold crossings ("last elite RB gone") also emit to
 the ambient feed — the tile itself stays quiet.
 
-Data: `scarcity` — **currently `{}`; populated in CP3** once reference tiers
-exist. Design against the shape, expect empty today.
+Data: `scarcity` — **live now.** Keyed by position, each carrying `elite`,
+`startable`, `bench`, `total_remaining`, `starting_demand`,
+`top_value_remaining`, and an `is_drying_up` flag worth a visual treatment.
+
+Note what "startable" means here: it is measured against *this league's* actual
+starting demand (12 teams × 2 RB + a third of a flex = 28 startable RBs), not
+against a generic tier column. The 29th RB is a bench body no matter what the
+sheet says. `{}` only when no reference file is loaded.
 
 ### 3.5 Market Inflation — v1 — cross-cutting
 
@@ -119,8 +133,14 @@ One compact readout: total spent league-wide, dollars remaining, and inflation
 ratio (actual price ÷ reference value, running). Drives the dynamic overspend
 threshold, so it needs to be visible enough to build trust in the alerts.
 
-Data: `market`. `inflation_ratio` is **`null` until CP3** — the design must
-degrade gracefully rather than showing a broken gauge.
+Data: `market` — `inflation_ratio`, `read` (`inflated` / `neutral` /
+`deflated` / `unknown`), `reference_spent`, `dollars_spent`,
+`dollars_remaining`.
+
+`inflation_ratio` stays **`null` until at least 5 priced sales have landed**,
+deliberately: early noise would swing every threshold that reads it. The design
+must show "not enough data yet" for the first stretch of the draft rather than a
+gauge pinned at a meaningless value.
 
 ### 3.6 Recent Sales — v1.1
 
@@ -249,9 +269,14 @@ draft-day risk and can be built whenever.
 ## 9. Constraints
 
 - **Read-only.** No control mutates draft state.
-- **Degrades, never blanks.** `scarcity: {}` and `inflation_ratio: null` are
-  the *current* state and must render as "not yet available", not as zero and
-  not as a broken component.
+- **Degrades, never blanks.** `scarcity: {}` (no reference file loaded) and
+  `inflation_ratio: null` (fewer than 5 priced sales) are legitimate states and
+  must render as "not yet available", not as zero and not as a broken
+  component.
+- **Say whose numbers these are.** `reference.is_sample` is `true` when the
+  values are the committed development fixture — invented, not real. That has
+  to be unmissable on screen; acting on invented values is worse than having no
+  advice at all.
 - **Legible under stress.** Assume a glance, not a read. Assume a laptop
   screen, possibly next to the ESPN draft room window — so it should survive a
   half-width viewport.

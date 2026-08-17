@@ -128,6 +128,54 @@ def looks_like_position(token: str) -> bool:
 # --- players ------------------------------------------------------------------
 
 
+def resolve_player(text: str, book=None) -> "PlayerRef":
+    """Identify a typed name against the reference data.
+
+    Three outcomes, and the middle one is the point:
+
+    - **Confident match** → the *canonical* key from the reference file, with
+      what you typed kept in `raw`. Using the canonical key is what stops
+      `bramford` and `aaron bramford` becoming two separate players. The key is
+      still fixed at write time and never recomputed, so journals stay
+      self-describing and replay without the reference file.
+    - **Ambiguous** → refuse, and list the candidates. Never auto-accept: a
+      wrong match wears a real player's price and fails silently, which is the
+      worst failure this tool has.
+    - **No match at all** → accept as free text. A player missing from the
+      sheet is normal (deep sleepers, late adds); the tool must not block on it.
+    """
+    from ffa.domain.ids import PlayerRef
+
+    typed = (text or "").strip()
+    if not typed:
+        raise CommandError("no player name given")
+    if book is None or not len(book):
+        return PlayerRef.from_raw(typed)
+
+    resolution = book.resolve(typed)
+    if resolution.resolved:
+        row = resolution.match.row
+        # `raw` becomes the canonical name, not the two letters you typed —
+        # it is the display name everywhere downstream, and "Halson" reads as
+        # a mystery in a readout. The literal input isn't lost: the event's
+        # `note` carries the whole command line.
+        return PlayerRef(key=row.key, raw=row.name, player_id=row.espn_player_id)
+
+    if resolution.is_ambiguous:
+        options = "\n".join(
+            f"  {n}) {m.row.name} ({m.row.position.value}"
+            + (f", {m.row.nfl_team}" if m.row.nfl_team else "")
+            + f") — {m.confidence:.0%}"
+            for n, m in enumerate(resolution.candidates, 1)
+        )
+        raise CommandError(
+            f"{typed!r} could be more than one player:\n{options}\n"
+            "Type more of the name to pick one."
+        )
+
+    return PlayerRef.from_raw(typed)
+
+
 def check_not_already_sold(state: DraftState, key: str) -> None:
     """Stop a *human* creating an ambiguous double entry.
 

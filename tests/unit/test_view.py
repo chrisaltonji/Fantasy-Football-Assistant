@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from ffa.domain import reducers
 from ffa.domain.enums import Position
 from ffa.domain.events import PlayerNominated
@@ -104,11 +106,75 @@ def test_market_totals(init_event):
     assert view["market"]["dollars_remaining"] == 2400 - 75
 
 
-def test_cp3_fields_are_reserved_and_empty_not_absent(init_event):
-    """So the dashboard can bind to them now and they light up in CP3."""
+def test_reference_dependent_fields_stay_present_when_no_book_is_loaded(init_event):
+    """A draft with no reference data still tracks everything else."""
     view = view_of(init_event)
     assert view["scarcity"] == {}
     assert view["market"]["inflation_ratio"] is None
+    assert view["reference"] is None
+
+
+# --- with reference data loaded -----------------------------------------------
+
+
+@pytest.fixture
+def book():
+    from pathlib import Path
+
+    from ffa.reference.playerbook import load_playerbook
+
+    fixture = Path(__file__).resolve().parents[2] / "data" / "fixtures" / "sample_rankings.csv"
+    return load_playerbook(fixture, teams=12, budget=200, is_sample=True)
+
+
+def view_with(book, init_event, *events):
+    return build_view(reducers.replay([init_event, *events]), book)
+
+
+def test_scarcity_is_populated_once_a_book_is_loaded(book, init_event):
+    scarcity = view_with(book, init_event)["scarcity"]
+    assert set(scarcity) == {p.value for p in Position}
+    rb = scarcity["RB"]
+    assert rb["starting_demand"] == 28
+    assert rb["elite"] + rb["startable"] + rb["bench"] == rb["total_remaining"]
+
+
+def test_reference_meta_flags_sample_data(book, init_event):
+    meta = view_with(book, init_event)["reference"]
+    assert meta["is_sample"] is True and meta["players"] > 200
+
+
+def test_sold_players_carry_reference_value_and_delta(book, init_event):
+    row = sorted(book.rows, key=lambda r: r.overall_rank or 9999)[0]
+    value = book.value(row.key)
+    view = view_with(book, init_event, sold(2, row.name, 3, value + 10, pos=row.position))
+    player = next(t for t in view["teams"] if t["team_id"] == 3)["roster"][0]
+    assert player["reference_value"] == value
+    assert player["delta"] == 10
+
+
+def test_nomination_carries_guidance_for_the_dashboard(book, init_event):
+    from ffa.domain.events import PlayerNominated
+    from ffa.domain.ids import PlayerRef
+
+    row = sorted(book.rows, key=lambda r: r.overall_rank or 9999)[0]
+    view = view_with(
+        book, init_event,
+        PlayerNominated(id=2, at=at(), player=PlayerRef(key=row.key, raw=row.name)),
+    )
+    nomination = view["nomination"]
+    assert nomination["reference_value"] == book.value(row.key)
+
+    guidance = nomination["guidance"]
+    assert guidance["max_advisable_bid"] <= guidance["max_legal_bid"]
+    assert len(guidance["threats"]) == 11
+    assert all("is_live" in t for t in guidance["threats"])
+
+
+def test_the_view_stays_json_serializable_with_a_book(book, init_event):
+    row = sorted(book.rows, key=lambda r: r.overall_rank or 9999)[0]
+    view = view_with(book, init_event, sold(2, row.name, 3, 50, pos=row.position))
+    assert json.loads(json.dumps(view))["scarcity"]["RB"]["elite"] >= 0
 
 
 def test_recent_sales_are_capped(init_event):
