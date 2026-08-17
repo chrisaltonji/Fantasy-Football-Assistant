@@ -88,6 +88,27 @@ class TeamResolver:
             return self._ids[pick.team_index]
         return pick.team_index + 1
 
+    def audit(self, snapshot: RoomSnapshot) -> tuple[dict[str, int], list[str]]:
+        """Check every board team against the config, before a draft starts.
+
+        Discovering a rename at pick 40 is far worse than at pick 0: by then
+        forty picks are attributed to whoever happened to sit in that column,
+        and unpicking it means undoing and retyping under the clock. This runs
+        at attach time, while the fix is still one command.
+
+        Deliberately does not mutate `unmatched` — a pre-flight report should
+        not leave the resolver already in a warning state.
+        """
+        matched: dict[str, int] = {}
+        unmatched: list[str] = []
+        for team in snapshot.teams:
+            team_id = self._by_name.get(normalize_team_name(team.name))
+            if team_id is None:
+                unmatched.append(team.name)
+            else:
+                matched[team.name] = team_id
+        return matched, unmatched
+
     @property
     def warning(self) -> str | None:
         if not self.unmatched:

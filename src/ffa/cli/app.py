@@ -242,35 +242,54 @@ def _build_source(args: argparse.Namespace, config: LeagueConfig):
     from ffa.ingest.espn.draftroom import DraftRoomError, DraftRoomReader
     from ffa.ingest.espn.source import DraftRoomSource
 
+    from ffa.ingest.espn.source import TeamResolver
+
     # Attach once here purely to fail fast — a bad port or a missing draft tab
-    # should be a clear message now, not ten silent poll failures later.
+    # should be a clear message now, not ten silent poll failures later. The
+    # same snapshot pays for the team-name pre-flight below.
+    reader = DraftRoomReader(port=args.cdp_port)
     try:
-        DraftRoomReader(port=args.cdp_port).connect().close()
+        reader.connect()
+        preflight = reader.snapshot()
     except DraftRoomError as exc:
         raise ConfigError(
             f"{exc}\n\nManual entry still works: re-run without --source espn."
         ) from None
+    finally:
+        reader.close()
 
     print(f"attached to the draft room on port {args.cdp_port}")
+
+    resolver = TeamResolver(config.team_names, config.effective_team_ids)
+    matched, unmatched = resolver.audit(preflight)
+    print(f"matched {len(matched)}/{len(preflight.teams)} draft-room teams to league ids")
+
+    # Up front, while it is still one command to fix. Finding this at pick 40
+    # means forty picks credited to whoever sat in that column.
+    if unmatched:
+        print("", file=sys.stderr)
+        print("! these draft-room teams do not match any team in your config:",
+              file=sys.stderr)
+        for name in unmatched:
+            print(f"!   {name}", file=sys.stderr)
+        print("! Picks for them would be attributed by board position, which is "
+              "NOT team-id order and will be wrong.", file=sys.stderr)
+        print("! Fix: quit, run `ffa config init --force`, and start again.",
+              file=sys.stderr)
+        if not args.ignore_unmatched_teams:
+            raise ConfigError(
+                "refusing to start with unmatched teams. Re-run "
+                "`ffa config init --force` to pick up renames, or pass "
+                "--ignore-unmatched-teams to draft anyway."
+            )
 
     # Hand over an *unconnected* reader. Playwright's sync API is
     # greenlet-based and not thread-safe, so the connection must be made on the
     # thread that polls it; the source connects lazily on its first snapshot.
-    # Passing the already-connected reader above raises on every poll.
-    from ffa.ingest.espn.source import TeamResolver
-
-    if not config.team_names:
-        print(
-            "! config has no [team_names], so draft-room columns can only be "
-            "matched by position — which is not team-id order. Re-run "
-            "`ffa config init --force` to pick them up.",
-            file=sys.stderr,
-        )
-
     return DraftRoomSource(
         DraftRoomReader(port=args.cdp_port),
         interval=config.poll_interval_seconds,
-        resolver=TeamResolver(config.team_names, config.effective_team_ids),
+        resolver=resolver,
     )
 
 
@@ -546,6 +565,9 @@ def build_parser() -> argparse.ArgumentParser:
                             "tools/draft_room_probe.py --launch")
     draft.add_argument("--cdp-port", type=int, default=9222,
                        help="Chrome remote-debugging port for --source espn")
+    draft.add_argument("--ignore-unmatched-teams", action="store_true",
+                       help="start even if draft-room team names do not match "
+                            "the config (picks for them may be misattributed)")
     draft.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     draft.add_argument("--runs", type=Path, default=RUNS_DIR)
     draft.set_defaults(func=cmd_draft)

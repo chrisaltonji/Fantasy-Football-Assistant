@@ -387,3 +387,42 @@ def test_a_sale_carries_the_resolved_team_id(snap):
     event = events_for(pick, snap, resolver)
     assert event.team.value == resolver.resolve(snap, pick)
     assert event.team.value in real_ids
+
+
+def test_the_audit_reports_matches_and_misses_before_a_draft_starts(snap):
+    """Pre-flight, not post-mortem.
+
+    Finding a rename at pick 40 means forty picks credited to whoever sat in
+    that column, and unpicking it under the clock. This runs at attach time,
+    while the fix is still one command.
+    """
+    from ffa.ingest.espn.source import TeamResolver
+
+    real_ids = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13]
+    names = {tid: snap.team_name(i) for i, tid in enumerate(real_ids)}
+
+    matched, unmatched = TeamResolver(names, real_ids).audit(snap)
+    assert len(matched) == len(snap.teams)
+    assert unmatched == []
+
+
+def test_the_audit_names_every_team_it_could_not_match(snap):
+    from ffa.ingest.espn.source import TeamResolver
+
+    real_ids = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13]
+    names = {tid: snap.team_name(i) for i, tid in enumerate(real_ids)}
+    names.pop(real_ids[0])          # simulate one team renamed since config
+    names.pop(real_ids[4])
+
+    matched, unmatched = TeamResolver(names, real_ids).audit(snap)
+    assert len(unmatched) == 2
+    assert len(matched) == len(snap.teams) - 2
+
+
+def test_the_audit_does_not_leave_the_resolver_already_warning(snap):
+    """A pre-flight report must not poison the resolver's live state."""
+    from ffa.ingest.espn.source import TeamResolver
+
+    resolver = TeamResolver({}, [1, 2, 3])
+    resolver.audit(snap)
+    assert resolver.warning is None
