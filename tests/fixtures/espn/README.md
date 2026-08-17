@@ -64,9 +64,16 @@ somewhere, so an endpoint carrying them exists. Candidates, untested:
 - a **different view** or a draft-specific service the room's client calls
 - a real-time channel the REST views only mirror after completion
 
-The way to settle it is DevTools → Network while a practice draft runs: whatever
-the draft room fetches *is* the answer. The original handoff doc anticipated
-this ("extended/reverse-engineered as needed").
+The probe can now chase every one of those (`--segment`, `--history`, `--url`,
+`--candidate-league-id`, `--sweep`, `--har`), but nothing here has been run
+against ESPN yet — the sandbox can't reach it. Until a capture lands, treat all
+four as untested.
+
+Two ways to settle it, cheapest first. The league ran an **auction in a prior
+season**, so `--year 2025 --view mDraftDetail` should return a completed real
+auction with real bids and no new code. Failing that, DevTools → Network while a
+practice draft runs, saved as HAR with content, then `--har`: whatever the draft
+room fetches *is* the answer.
 
 ## Still unverified
 

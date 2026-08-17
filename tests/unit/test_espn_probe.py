@@ -8,7 +8,9 @@ ESPN.
 
 from __future__ import annotations
 
+import base64
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -176,3 +178,271 @@ def test_http_errors_produce_actionable_messages(status, fragment, monkeypatch):
 
     with pytest.raises(probe.ProbeError, match=fragment):
         probe.fetch_view(FakeSession(), 1, 2026, "mDraftDetail")
+
+
+# --- URL construction ------------------------------------------------------
+
+
+def test_default_url_shape_is_unchanged():
+    """segments/0 is the only shape ever confirmed against ESPN. Lock it."""
+    assert probe.build_url("https://h", 123, 2026, "mDraftDetail") == (
+        "https://h/apis/v3/games/ffl/seasons/2026/segments/0/leagues/123?view=mDraftDetail"
+    )
+
+
+def test_segment_override_changes_only_the_segment():
+    url = probe.build_url("https://h", 123, 2026, "mDraftDetail", segment="7")
+    assert "/segments/7/leagues/123" in url
+
+
+def test_history_uses_the_league_history_path():
+    url = probe.build_url("https://h", 123, 2025, "mDraftDetail", history=True)
+    assert url == (
+        "https://h/apis/v3/games/ffl/leagueHistory/123?seasonId=2025&view=mDraftDetail"
+    )
+    assert "segments" not in url
+
+
+# --- leagueHistory returns an array; every analyser wants a dict ------------
+
+
+def test_normalize_picks_the_requested_season():
+    payload = [{"seasonId": 2024, "n": "old"}, {"seasonId": 2025, "n": "want"}]
+    assert probe.normalize_payload(payload, 2025)["n"] == "want"
+
+
+def test_normalize_falls_back_to_the_last_entry():
+    payload = [{"seasonId": 2024, "n": "old"}, {"seasonId": 2025, "n": "newest"}]
+    assert probe.normalize_payload(payload, 1999)["n"] == "newest"
+    assert probe.normalize_payload(payload)["n"] == "newest"
+
+
+def test_normalize_leaves_a_dict_alone():
+    payload = {"draftDetail": {"picks": []}}
+    assert probe.normalize_payload(payload, 2025) is payload
+
+
+def test_normalize_empty_array_is_an_empty_dict():
+    assert probe.normalize_payload([], 2025) == {}
+
+
+def test_history_array_flows_through_to_a_verdict():
+    """The whole reason normalize exists: an array must still reach analyse."""
+    payload = [{"seasonId": 2025, **draft_payload(bids=[45, 62])}]
+    report = "\n".join(probe.analyse_payload(probe.normalize_payload(payload, 2025)))
+    assert "bidAmount IS populated" in report
+
+
+# --- fetch_url: the non-raising primitive a sweep needs --------------------
+
+
+class _FakeResponse:
+    def __init__(self, status, payload=None, text=""):
+        self.status_code = status
+        self._payload = payload
+        self.text = text
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("not json")
+        return self._payload
+
+
+class _FakeSession:
+    """Maps url-substring -> response, so candidates can differ per URL."""
+
+    def __init__(self, routes, default=None):
+        self.routes = routes
+        self.default = default or _FakeResponse(404, text="")
+        self.seen = []
+
+    def get(self, url, timeout=None):
+        self.seen.append(url)
+        for fragment, resp in self.routes.items():
+            if fragment in url:
+                return resp
+        return self.default
+
+
+def test_fetch_url_reports_a_404_instead_of_raising():
+    status, payload, _ = probe.fetch_url(_FakeSession({}), "https://h/x")
+    assert status == 404 and payload is None
+
+
+def test_fetch_url_reports_a_transport_failure_as_minus_one():
+    import requests
+
+    class Boom:
+        def get(self, url, timeout=None):
+            raise requests.RequestException("down")
+
+    status, payload, error = probe.fetch_url(Boom(), "https://h/x")
+    assert status == -1 and payload is None and "down" in error
+
+
+# --- sweep ----------------------------------------------------------------
+
+
+def _filled_skeleton(filled_count, total=4):
+    payload = draft_payload(bids=[10] * total)
+    for pick in payload["draftDetail"]["picks"][filled_count:]:
+        pick["playerId"] = -1
+    return payload
+
+
+def test_sweep_visits_every_candidate_despite_a_404(tmp_path):
+    """A 404 on one shape is a result, not a reason to stop looking."""
+    session = _FakeSession(
+        {
+            "/segments/1/": _FakeResponse(200, _filled_skeleton(0)),
+            "/segments/2/": _FakeResponse(200, _filled_skeleton(2)),
+        }
+    )  # segment 0 and leagueHistory fall through to the default 404
+    report = "\n".join(
+        probe.sweep(session, None, 999, 2026, probe.DEFAULT_SWEEP_CANDIDATES, tmp_path, "S")
+    )
+
+    for label in ("segment0", "segment1", "segment2", "history"):
+        assert label in report
+    assert "HTTP 404" in report
+
+
+def test_sweep_distinguishes_a_filled_candidate_from_an_empty_one(tmp_path):
+    session = _FakeSession(
+        {
+            "/segments/1/": _FakeResponse(200, _filled_skeleton(0)),
+            "/segments/2/": _FakeResponse(200, _filled_skeleton(2)),
+        }
+    )
+    report = "\n".join(
+        probe.sweep(session, None, 999, 2026, probe.DEFAULT_SWEEP_CANDIDATES, tmp_path, "S")
+    )
+    assert "0 filled / 4 picks" in report
+    assert "2 filled / 4 picks" in report
+    assert (tmp_path / "sweep_segment2_S.json").exists()
+
+
+def test_sweep_honours_a_candidate_league_id_override(tmp_path):
+    session = _FakeSession({})
+    probe.sweep(
+        session, None, 999, 2026,
+        [probe.Candidate("shadow", league_id_override=555)],
+        tmp_path, "S",
+    )
+    assert any("/leagues/555?" in url for url in session.seen)
+
+
+# --- HAR ingestion --------------------------------------------------------
+
+
+def _har(entries):
+    return {"log": {"entries": entries}}
+
+
+def _entry(url, payload=None, *, status=200, method="GET", encoding=None):
+    content = {}
+    if payload is not None:
+        text = json.dumps(payload)
+        if encoding == "base64":
+            content = {
+                "text": base64.b64encode(text.encode()).decode(),
+                "encoding": "base64",
+            }
+        else:
+            content = {"text": text}
+    return {
+        "request": {"url": url, "method": method, "cookies": [{"name": "espn_s2", "value": "SECRET"}]},
+        "response": {"status": status, "content": content},
+    }
+
+
+ESPN_URL = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/x?view=mDraftDetail"
+
+
+def test_har_names_the_url_carrying_filled_picks(tmp_path):
+    path = tmp_path / "c.har"
+    path.write_text(
+        json.dumps(
+            _har(
+                [
+                    _entry("https://fantasy.espn.com/apis/v3/empty", _filled_skeleton(0)),
+                    _entry(ESPN_URL, _filled_skeleton(3)),
+                ]
+            )
+        ),
+        encoding="utf-8",
+    )
+    report = "\n".join(probe.analyse_har(path))
+    assert "ANSWER: 3 filled pick(s) at" in report
+    assert ESPN_URL in report
+    assert "bidAmount IS populated" in report
+
+
+def test_har_decodes_base64_bodies(tmp_path):
+    path = tmp_path / "c.har"
+    path.write_text(
+        json.dumps(_har([_entry(ESPN_URL, _filled_skeleton(2), encoding="base64")])),
+        encoding="utf-8",
+    )
+    assert "ANSWER: 2 filled pick(s) at" in "\n".join(probe.analyse_har(path))
+
+
+def test_har_never_echoes_request_cookies(tmp_path):
+    path = tmp_path / "c.har"
+    path.write_text(
+        json.dumps(_har([_entry(ESPN_URL, _filled_skeleton(1))])), encoding="utf-8"
+    )
+    assert "SECRET" not in "\n".join(probe.analyse_har(path))
+
+
+def test_har_tolerates_entries_with_no_body(tmp_path):
+    path = tmp_path / "c.har"
+    path.write_text(
+        json.dumps(
+            _har(
+                [
+                    {"request": {"url": ESPN_URL, "method": "OPTIONS"}, "response": {"status": 204}},
+                    _entry(ESPN_URL, _filled_skeleton(1)),
+                ]
+            )
+        ),
+        encoding="utf-8",
+    )
+    report = "\n".join(probe.analyse_har(path))
+    assert "OPTIONS" in report and "ANSWER: 1 filled pick(s) at" in report
+
+
+def test_har_ignores_non_espn_hosts(tmp_path):
+    path = tmp_path / "c.har"
+    path.write_text(
+        json.dumps(_har([_entry("https://cdn.example.com/a.js", _filled_skeleton(3))])),
+        encoding="utf-8",
+    )
+    report = "\n".join(probe.analyse_har(path))
+    assert "No ESPN API calls found" in report
+    assert "ANSWER" not in report
+
+
+def test_har_says_so_when_nothing_was_filled(tmp_path):
+    """Distinguish "wrong endpoint" from "nothing had sold yet"."""
+    path = tmp_path / "c.har"
+    path.write_text(
+        json.dumps(_har([_entry(ESPN_URL, _filled_skeleton(0))])), encoding="utf-8"
+    )
+    report = "\n".join(probe.analyse_har(path))
+    assert "ANSWER: none of these responses carried a filled pick" in report
+
+
+# --- the load-bearing verdict must survive the refactor -------------------
+
+
+def test_analyse_payload_still_reports_inconclusive_on_a_bare_skeleton():
+    """Guards the same invariant as the analyse_draft tests, via the new entry
+    point that --url, --sweep and --har all route through."""
+    report = "\n".join(probe.analyse_payload(_filled_skeleton(0, total=3)))
+    assert "INCONCLUSIVE" in report
+    assert "filled picks          = 0/3" in report
+
+
+def test_analyse_payload_reports_nothing_recognizable_for_junk():
+    assert "Nothing recognizable" in "\n".join(probe.analyse_payload({"unrelated": 1}))
