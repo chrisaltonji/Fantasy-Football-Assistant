@@ -110,9 +110,42 @@ gitignored; anonymized structure in `tests/fixtures/espn/`):
 
 ---
 
-## Open — and the trap in it
+## B1, first half: ANSWERED — `bidAmount` populates
 
-**B1: does `bidAmount` populate during a live auction? Still unobserved.**
+Observed 2026-08-17 by reading this league's **2025** season, which was also an
+auction. `--year` was always parameterized, so it took one command and no code:
+
+```
+python tools/espn_probe.py --year 2025 --view mDraftDetail
+```
+
+180/180 picks filled, every `bidAmount` non-zero, $1–$75, $2,389 total. The
+live-price path is viable. Committed anonymized as
+`tests/fixtures/espn/mDraftDetail_completed_auction.json` — the first real
+filled picks this build has ever seen.
+
+Three things that capture taught us that nothing else could have:
+
+- **`memberId` is on picks, but not all of them.** All 173 human picks have it;
+  all 7 autodrafted ones (`autoDraftTypeId: 2`) do not. Never key on it
+  unconditionally — `teamId` is the anchor. On draft day an expired nomination
+  clock produces exactly this shape.
+- **Teams spend ~everything.** $195–$200 each, $2,389 of $2,400 league-wide. The
+  market clears at ~99.5%, so hoarding is not a strategy the field plays.
+- **The 2025 draft is 180 real auction prices** for this exact league — genuine
+  market data for the inflation model and the CP4 simulator, not invented
+  samples.
+
+`previousSeasons` lists 2021–2024, so four more auctions are readable the same
+way if more data is wanted.
+
+## Still open — and the trap in it
+
+**B1's second half: does `bidAmount` populate *live*, mid-draft? Still unobserved.**
+
+The 2025 capture is a *finished* draft (`drafted: true, inProgress: false`), so
+it says nothing about timing. This was always the bigger risk and it is now the
+whole of B1.
 
 A Practice Draft was run several picks deep. `segments/0` `mDraftDetail` came
 back **byte-identical to the pre-draft baseline**, `inProgress` still false.
@@ -132,33 +165,24 @@ candidates:
 carried filled picks). All of it is tested offline; none of it has been run
 against ESPN, because the sandbox can't.
 
-**Cheapest path, and it needs no new code at all:** the league ran an auction in
-a **prior season**, so a completed real auction with real `bidAmount`s already
-exists on ESPN. `--year` was always parameterized:
+**The way to settle it:** DevTools → Network, filter `apis/v3`, while a practice
+draft runs, save as HAR *with content*, then `--har`. Whatever the room fetches
+is the answer. A throwaway private auction league drafted against autopick
+remains the last resort.
 
-```
-python tools/espn_probe.py --league-id <id> --year 2025 --view mDraftDetail
-python tools/espn_probe.py --league-id <id> --year 2025 --history   # if that 404s
-```
+**Why it still matters now that prices are confirmed.** If ESPN's draft room is
+real-time-driven and the REST view is written only at the end, live polling gets
+nothing on draft day *regardless* of `bidAmount`. The 2025 capture proves the
+number is there when the draft is over; it proves nothing about when it appears.
+This is why `price=None` and manual entry are first-class throughout, not a
+fallback.
 
-That answers "does `bidAmount` populate" outright. It does **not** answer
-whether picks appear live — see the bigger risk below.
-
-**Failing that:** DevTools → Network, filter `apis/v3`, while a practice draft
-runs, save as HAR *with content*, then `--har`. Whatever the room fetches is the
-answer. A throwaway private auction league drafted against autopick remains the
-last resort.
-
-**The trap:** an unfilled skeleton is indistinguishable from "ESPN never
-populates prices." Reading it that way inverts the truth and would strand the
-build on manual entry permanently. The probe therefore reports **INCONCLUSIVE**
-on zero filled picks rather than concluding anything. Preserve that behavior.
-
-**The bigger untested risk:** whether the real draft updates `mDraftDetail`
-*live* or only on completion. If the draft room is real-time-driven and REST is
-written at the end, live polling gets nothing on draft day regardless of
-`bidAmount`. This is why `price=None` and manual entry are first-class
-throughout, not a fallback.
+**The trap, unchanged:** an unfilled skeleton is indistinguishable from "ESPN
+never populates prices." Reading it that way inverts the truth and would strand
+the build on manual entry permanently. The probe therefore reports
+**INCONCLUSIVE** on zero filled picks rather than concluding anything. Preserve
+that behavior — it is what kept the practice-draft result from being read as a
+"no", which the 2025 capture has now shown would have been wrong.
 
 ---
 
@@ -181,8 +205,8 @@ draft day.
 | # | Item | Blocks |
 |---|---|---|
 | A1 | **FantasyPros auction values** at real settings → `data/reference/`, then `ffa data validate <path>` | Every number is currently invented sample data |
-| A4 | **ESPN cookies** (`espn_s2`, `SWID`) → `.env` | The probe and CP5; the league is private |
-| A5 | **A prior-season capture** (`--year 2025`), or the DevTools HAR above | B1 |
+| A4 | ~~ESPN cookies~~ **DONE 2026-08-17** — `.env` is populated and working against the live API | — |
+| A5 | ~~Prior-season capture~~ **DONE 2026-08-17.** Still open: a DevTools HAR during a *running* draft, for the live-timing half | B1 second half |
 | C1 | **Owner dossiers** — a ~20–30 min interview, 12 managers | Capability 2's bid forecasting reads them; v1 |
 | C2 | **Draft strategy preset** — one archetype | v1.1 |
 

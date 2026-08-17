@@ -44,6 +44,117 @@ def sandboxed():
     return load("mDraftDetail_practice_sandboxed.json")
 
 
+@pytest.fixture
+def completed():
+    return load("mDraftDetail_completed_auction.json")
+
+
+# --- the 2025 auction: the first real filled picks this build has ever seen ---
+
+
+def test_bid_amount_is_populated_on_a_real_completed_auction(completed):
+    """B1, answered. Captured from the same league's 2025 season on 2026-08-17.
+
+    Everything before this was a skeleton of `playerId: -1` — which is
+    indistinguishable from "ESPN never populates prices" and would have
+    stranded the build on manual entry. It populates. All 180 of them.
+    """
+    detail = completed["draftDetail"]
+    assert detail["drafted"] is True
+    assert detail["inProgress"] is False
+
+    picks = detail["picks"]
+    assert len(picks) == 180
+    assert all(p["playerId"] != -1 for p in picks), "every pick sold"
+
+    bids = [p["bidAmount"] for p in picks]
+    assert all(b > 0 for b in bids)
+    assert (min(bids), max(bids)) == (1, 75)
+    assert sum(bids) == 2389
+
+
+def test_human_picks_carry_member_id_but_autodrafted_ones_do_not(completed):
+    """`memberId` is the owner SWID on the pick — and it is NOT always there.
+
+    Present on all 173 human picks, absent on all 7 ESPN autodrafted ones
+    (`autoDraftTypeId: 2`). Nothing may key on `memberId` unconditionally; the
+    fallback is `teamId`, which is always present.
+
+    This matters on draft day specifically: if a nomination clock expires,
+    ESPN autodrafts, and that pick arrives with no member on it.
+    """
+    picks = completed["draftDetail"]["picks"]
+    human = [p for p in picks if p["autoDraftTypeId"] == 0]
+    auto = [p for p in picks if p["autoDraftTypeId"] != 0]
+
+    assert len(human) == 173 and len(auto) == 7
+    assert all("memberId" in p and p["memberId"].startswith("{") for p in human)
+    assert not any("memberId" in p for p in auto)
+    assert all("teamId" in p for p in picks), "teamId is the reliable anchor"
+
+
+def test_autodrafted_picks_are_all_dollar_scraps(completed):
+    """Every autodraft in 2025 went for exactly $1 — end-of-draft cleanup.
+
+    Not all bench, though: 4 BE, plus a WR, a K and a DST. So autodraft is not
+    a proxy for "filler slot", only for "nobody bid".
+    """
+    auto = [p for p in completed["draftDetail"]["picks"] if p["autoDraftTypeId"] != 0]
+    assert all(p["bidAmount"] == 1 for p in auto)
+    assert {p["lineupSlotId"] for p in auto} == {20, 4, 17, 16}  # BE, WR, K, DST
+
+
+def test_the_id_gap_survives_into_a_second_season(completed):
+    """Team 6 is missing in 2025 too, independently confirming the gap.
+
+    `range(1, count+1)` invents a phantom team and drops a real one.
+    """
+    team_ids = sorted({p["teamId"] for p in completed["draftDetail"]["picks"]})
+    assert team_ids == [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13]
+    assert 6 not in team_ids
+
+
+def test_every_team_drafted_a_full_roster(completed):
+    """15 draftable slots x 12 teams = 180. Confirms the roster arithmetic."""
+    from collections import Counter
+
+    per_team = Counter(p["teamId"] for p in completed["draftDetail"]["picks"])
+    assert set(per_team.values()) == {15}
+
+
+def test_real_teams_spend_essentially_their_whole_budget(completed):
+    """Nobody hoards. Min observed was $195 of $200.
+
+    This is what makes `max_advisable_bid` and the inflation model matter: the
+    market clears at ~99.5% of the money in the room, so every dollar saved
+    early is a dollar that has to be spent later at a worse price.
+    """
+    from collections import Counter
+
+    spend = Counter()
+    for pick in completed["draftDetail"]["picks"]:
+        spend[pick["teamId"]] += pick["bidAmount"]
+
+    assert all(190 <= total <= 200 for total in spend.values())
+    assert sum(spend.values()) == 2389  # of 12 x $200 = $2400
+
+
+def test_nomination_order_is_declared_up_front(completed):
+    """pickOrder is a full 12-team permutation, readable before a draft starts."""
+    order = completed["settings"]["draftSettings"]["pickOrder"]
+    assert sorted(order) == [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13]
+
+
+def test_the_completed_auction_carries_no_real_identifiers(completed):
+    """Anonymized by tools/anonymize_capture.py. Guard against a raw re-drop."""
+    blob = json.dumps(completed)
+    assert "37CFAEAC" not in blob
+    members = {p["memberId"] for p in completed["draftDetail"]["picks"] if "memberId" in p}
+    assert members, "fixture should still carry member ids, just synthetic ones"
+    for member_id in members:
+        assert member_id.count("0000-4000-8000") == 1, member_id
+
+
 def test_practice_draft_picks_are_absent_from_segment_zero(sandboxed, predraft):
     """Captured several picks into an active Practice Draft.
 

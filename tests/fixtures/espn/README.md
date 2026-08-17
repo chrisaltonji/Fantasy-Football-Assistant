@@ -15,8 +15,13 @@ catch it until draft day.
 |---|---|
 | `mSettings_auction.json` | `draftSettings.auctionBudget` and `type` — the two fields `espn-api`'s `BaseSettings` drops, so config bootstrap must read raw. Plus `lineupSlotCounts`. |
 | `mDraftDetail_predraft.json` | The pre-created 180-pick skeleton, before anyone drafts. |
-| `mDraftDetail_inprogress.json` | Same skeleton with three picks filled, showing what a completed sale looks like. |
+| `mDraftDetail_inprogress.json` | Same skeleton with three picks filled. Hand-authored; corrected against the 2025 capture. |
+| `mDraftDetail_completed_auction.json` | **A real, finished auction** — the 2025 season of this same league. 180 filled picks, real bids. |
 | `mTeam_predraft.json` | Team/owner shape, including non-contiguous ids. |
+
+Captures are anonymized by `tools/anonymize_capture.py`, which maps every member
+SWID to a synthetic one. Run it on anything before committing it — `espn_probe`'s
+own `scrub` only removes *your* credentials, not the other eleven managers'.
 
 ## What these encode that isn't obvious
 
@@ -75,11 +80,35 @@ auction with real bids and no new code. Failing that, DevTools → Network while
 practice draft runs, saved as HAR with content, then `--har`: whatever the draft
 room fetches *is* the answer.
 
-## Still unverified
+## `bidAmount` populates — observed 2026-08-17, from the 2025 season
 
-**Whether `bidAmount` populates during a live auction at all.**
-`mDraftDetail_inprogress.json` encodes what we *expect* a filled pick to look
-like; it is a hypothesis, not an observation.
+Captured with `--year 2025`. A finished auction, 180/180 picks filled, every
+`bidAmount` non-zero, $1–$75, $2,389 total. **B1's first half is closed** and
+`mDraftDetail_completed_auction.json` is the proof.
+
+What that capture taught us beyond the headline:
+
+**`memberId` exists on picks — but not on all of them.** Present on all 173
+human picks, absent on all 7 ESPN autodrafted ones (`autoDraftTypeId: 2`).
+Nothing may key on it unconditionally; `teamId` is the reliable anchor. This
+bites specifically on draft day: a nomination clock that expires produces an
+autodrafted pick with no member on it. The hand-authored `inprogress` fixture
+had omitted `memberId` entirely — exactly the fixture drift this file warns
+about, caught only because a real capture finally existed.
+
+**Every autodraft went for exactly $1**, but they are not all bench slots —
+4 BE, plus a WR, a K and a DST. Autodraft means "nobody bid", not "filler slot".
+
+**Teams spend essentially everything.** Per-team totals ran $195–$200 of $200;
+the league left $11 of $2,400 on the table. The market clears at ~99.5% of the
+money in the room, which is what makes inflation modelling worth doing.
+
+**The id gap is real and durable.** 2025 shows the same `1-5, 7-13` with no team
+6, independently confirming it across two seasons.
+
+**`pickOrder` is a full 12-team permutation**, readable before a draft starts.
+
+## Still unverified
 
 **Whether the real draft updates `mDraftDetail` live, or only on completion.**
 This is the bigger risk of the two and is equally untested. If ESPN's draft
