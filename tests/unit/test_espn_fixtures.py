@@ -49,6 +49,57 @@ def completed():
     return load("mDraftDetail_completed_auction.json")
 
 
+@pytest.fixture
+def practice_live():
+    return load("mDraftDetail_practice_live.json")
+
+
+# --- what a live draft actually looks like over REST -------------------------
+
+
+def test_a_live_draft_reports_in_progress_but_writes_no_picks(practice_live):
+    """Observed 2026-08-17, during an actively running practice draft.
+
+    Captured from the **shadow league id** the practice draft runs under,
+    which is visible in the draft-room URL and is not the real league id. Two
+    players had been bought when this was taken, and 60 polls over 15 minutes
+    never showed a single one.
+
+    This is the answer to B1's second half: ESPN's draft room is driven by a
+    Server-Sent Events stream at `fantasydraft.espn.com`, and the REST view is
+    not written while the draft runs. Polling `mDraftDetail` on draft day
+    returns this exact payload for three hours.
+    """
+    detail = practice_live["draftDetail"]
+    assert detail["inProgress"] is True, "the draft was genuinely running"
+    assert detail["drafted"] is False
+    assert all(p["playerId"] == -1 for p in detail["picks"])
+    assert all(p["bidAmount"] == 0 for p in detail["picks"])
+
+
+def test_a_live_draft_still_publishes_the_nomination_order(practice_live):
+    """The one thing REST does give us mid-draft, and it is worth having.
+
+    `nominatingTeamId` is populated on all 180 picks before anything sells, so
+    the whole nomination sequence is readable in advance even though no result
+    is.
+    """
+    picks = practice_live["draftDetail"]["picks"]
+    assert all(p["nominatingTeamId"] > 0 for p in picks)
+    assert len({p["nominatingTeamId"] for p in picks}) == 12
+
+
+def test_the_practice_draft_runs_under_a_different_league_id(practice_live):
+    """Not the real league. This is why every earlier capture looked empty.
+
+    The real league (1167816302) sat at `inProgress: False` with an untouched
+    skeleton through the entire practice draft — 30 polls, no change. The two
+    are completely separate leagues, so practice picks were never "sandboxed",
+    just somewhere nobody had looked.
+    """
+    assert practice_live["id"] != 1167816302
+
+
 # --- the 2025 auction: the first real filled picks this build has ever seen ---
 
 

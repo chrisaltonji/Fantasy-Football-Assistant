@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 449 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 452 tests pass. Everything below is
 pushed.
 
 ---
@@ -142,52 +142,72 @@ Three things that capture taught us that nothing else could have:
 `previousSeasons` lists 2021–2024, so four more auctions are readable the same
 way if more data is wanted.
 
-## Still open — and the trap in it
+## B1, second half: ANSWERED — the draft room does not use REST
 
-**B1's second half: does `bidAmount` populate *live*, mid-draft? Still unobserved.**
+Observed 2026-08-17, during a live practice draft, by reading the draft-room
+tab's own network activity.
 
-The 2025 capture is a *finished* draft (`drafted: true, inProgress: false`), so
-it says nothing about timing. This was always the bigger risk and it is now the
-whole of B1.
+**ESPN's draft room is driven by Server-Sent Events.**
 
-A Practice Draft was run several picks deep. `segments/0` `mDraftDetail` came
-back **byte-identical to the pre-draft baseline**, `inProgress` still false.
+```
+fantasydraft.espn.com/game-1/league-<SHADOW_ID>/sse/JOIN
+  ?1=1 &2=<shadow league id> &3=<teamId> &4=<SWID> &5=<63-char token>
+  &6=false &7=false &8=KONA &nocache=<int>
+```
 
-Stated narrowly: practice picks are not at `segments/0` for that league id. They
-are presumably readable somewhere — ESPN's draft room renders them. Untested
-candidates:
+The supporting call is
+`.../segments/0/leagues/<SHADOW_ID>/teams/<teamId>/draftSecurity`, which returns
+a bare integer token.
 
-- a different **segment id** (path is `/segments/0/`)
-- a **shadow league id** minted for the practice draft, visible in the draft-room URL
-- a different **view**, or a draft-specific service
-- a real-time channel the REST views only mirror after completion
+**REST is not written while a draft runs.** With two players bought and the
+draft actively in progress, `mDraftDetail` returned `inProgress: true` and
+`0/180` filled picks across **60 polls over 15 minutes**, unchanged. While the
+draft room played, it made *zero* `apis/v3` requests — only a player headshot.
 
-**The probe can now chase all of these.** `--segment`, `--history`, `--url`,
-`--candidate-league-id`, `--sweep` (tries a matrix of shapes, never aborts on a
-404) and `--har` (reads a DevTools export and names the endpoint that actually
-carried filled picks). All of it is tested offline; none of it has been run
-against ESPN, because the sandbox can't.
+**Two of the three untested candidates are now settled:**
 
-**The way to settle it:** DevTools → Network, filter `apis/v3`, while a practice
-draft runs, save as HAR *with content*, then `--har`. Whatever the room fetches
-is the answer. A throwaway private auction league drafted against autopick
-remains the last resort.
+- **Shadow league id — CONFIRMED.** The practice draft runs under a different
+  league id, sitting in plain sight in the draft-room URL. The real league sat
+  at `inProgress: false` with an untouched skeleton throughout — 30 polls, no
+  change. Practice picks were never "sandboxed"; they were in another league
+  nobody had looked at.
+- **Real-time channel — CONFIRMED.** SSE, as above.
+- **Different segment id — DEAD.** Segments 1 and 2 return HTTP 202.
 
-**Why it still matters now that prices are confirmed.** If ESPN's draft room is
-real-time-driven and the REST view is written only at the end, live polling gets
-nothing on draft day *regardless* of `bidAmount`. The 2025 capture proves the
-number is there when the draft is over; it proves nothing about when it appears.
-This is why `price=None` and manual entry are first-class throughout, not a
-fallback.
+### What this means for CP5
 
-**The trap, unchanged:** an unfilled skeleton is indistinguishable from "ESPN
-never populates prices." Reading it that way inverts the truth and would strand
-the build on manual entry permanently. The probe therefore reports
-**INCONCLUSIVE** on zero filled picks rather than concluding anything. Preserve
-that behavior — it is what kept the practice-draft result from being read as a
-"no", which the 2025 capture has now shown would have been wrong.
+**Polling `mDraftDetail` on draft day returns an empty skeleton for three
+hours.** The CP5 plan as written would have produced nothing, and would have
+failed silently — the payload is indistinguishable from "the draft has not
+started". Finding this on the 17th rather than the 31st is the entire reason
+the probe exists.
 
----
+The good news is that SSE is plain HTTP: `requests.get(stream=True)` consumes
+it, no websocket dependency. The connect sequence is known. CP5's poller
+becomes an SSE reader, and `EventSource`/`SourceHealth` already model a
+long-lived producer that can drop and reconnect.
+
+Two things REST *does* still give us, both useful:
+
+- `nominatingTeamId` on all 180 picks **before anything sells** — the whole
+  nomination sequence, readable in advance.
+- The completed draft, after the fact (2025 proves the finished shape).
+
+`tests/fixtures/espn/mDraftDetail_practice_live.json` pins the live-but-empty
+payload so CP5 cannot mistake it for a pre-draft baseline.
+
+### Still open
+
+**Does REST backfill when a draft completes?** Untested. If it does, it is a
+usable end-of-draft reconciliation path and a safety net for anything the SSE
+stream dropped. If it does not, SSE is the only source of truth and there is no
+fallback. This is now the last unanswered ESPN question.
+
+**The trap, unchanged and now vindicated:** an unfilled skeleton is
+indistinguishable from "ESPN never populates prices". The probe reports
+**INCONCLUSIVE** on zero filled picks rather than concluding anything, and that
+is exactly what it did against the live draft — correctly refusing to call it
+either way. Preserve that behavior.
 
 ## Constraints on the dev environment
 
@@ -255,9 +275,13 @@ structural, not a tuning failure: a bot outbid early cannot retroactively
 reallocate, so it fills its roster cheaply and carries cash. Raising the
 aggression clamps changes nothing, which is how we know.
 
-**CP5 — production ESPN adapter.** Config bootstrap from raw `mSettings`, poller
-with backoff and circuit breaker, queue wiring, degradation, draft-day runbook.
-Built against the fixtures; verified on the user's machine.
+**CP5 — production ESPN adapter. Now an SSE reader, not a poller.** The
+draft room streams from `fantasydraft.espn.com/.../sse/JOIN`; REST returns an
+empty skeleton for the whole draft (see B1 above). Config bootstrap from raw
+`mSettings` is unchanged. The reader needs: `draftSecurity` for a token, the
+JOIN parameter shape, reconnect-with-backoff, and REST as an end-of-draft
+reconciliation pass *if* it turns out to backfill. `EventSource` and
+`SourceHealth` already model a long-lived producer that drops and reconnects.
 
 **Draft-day gate, unchanged:** the tool must run end-to-end against real ESPN
 traffic at least once before 2026-08-31. That gate is currently **unmet**.
