@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 764 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 793 tests pass. Everything below is
 pushed.
 
 ---
@@ -323,6 +323,58 @@ Bugs it found that every test had passed over, because they only existed live:
   and polling from the worker failed on every poll. The reader connects lazily
   on the thread that uses it.
 
+## Draft history: four prior auctions, read (2026-08-18)
+
+`ffa history fetch` then `ffa history report`. `src/ffa/history/` pulls every
+season ESPN still serves, and `docs/draft_history.html` is the result.
+
+**What is actually there**, and it is not what `previousSeasons` implies:
+
+| season | verdict |
+|---|---|
+| 2018–2020 | HTTP 202 — the league did not exist |
+| 2021 | present, but `type=OFFLINE` and 10 teams: no prices, no nominators |
+| 2022–2025 | **AUCTION, 12 teams, 180/180 filled and priced, `nominatingTeamId` on every pick** |
+
+So four usable seasons, 720 real auction prices, and the nomination order for
+all of them. Gaps are recorded as `SeasonGap` with a reason rather than dropped —
+"no data for 2021" and "2021 was a ten-team offline draft" support very
+different conclusions and only one is true.
+
+**The price reference is a different ESPN field in different seasons**, which is
+the trap here. `ownership.auctionValueAverage` covers 348 players in 2022 and
+comes back as a **column of zeroes in 2025**; `draftRanksByRankType.PPR.
+auctionValue` covers the top 160 but is absent in 2022. Trusting the first field
+blindly would price 2025 at zero and report that every manager massively
+overpaid for everybody. `price_reference` merges both (consensus wins where they
+overlap) and the result is **scaled to the money actually spent that season**, so
+a season covered at 46% and one at 82% can sit in the same table. Coverage and
+source are printed per season at the top of the report, above any finding.
+
+**Every classification is league-relative**, scored against that season's field
+at 0.6σ. An absolute rule encodes what auctions look like in general; the only
+question that matters is who does something more than the people bidding against
+him. Two metrics needed care:
+
+- **Best-available nomination is degenerate as a raw number.** Every manager
+  scores ≈ +0.9 on order-vs-price correlation, because auctions run in price
+  order by construction. It only discriminates as a z-score.
+- **Homerism needs a surplus, not a rate.** Three players from one team is a
+  coincidence; the test is picks ≥ 3, index ≥ 1.8, *and* at least 2 more than
+  the league's own rate would hand you. The mirror test (`avoids`) is
+  deliberately weak and labelled as such — with 32 NFL teams and ~59 picks per
+  manager, the most-drafted team has an expectation of 2.9, so it can never be
+  more than suggestive.
+
+`ffa history report` also writes `docs/dossier_suggested.json` — the archetypes
+in the dossier interchange format. It is **never written into the record**: a
+measurement and an observation are different things, and the file is a draft to
+argue with, which is also the fastest way to run the interview. Labels that did
+not hold in more than half the seasons are omitted, and `random` is never
+offered as a finding because it is the residual bucket, not a discovery.
+
+---
+
 ## Known debt, ranked by draft-day risk
 
 **Would bite during a draft — all four CLOSED 2026-08-17**
@@ -402,7 +454,7 @@ is a draft that looks like it is working.
    config that then refuses to load. `config init` and `config check` both say
    which teams are still untypeable.
 
-764 tests pass, up from 578.
+793 tests pass, up from 578.
 
 **Correctness, not urgency — CLOSED 2026-08-17**
 

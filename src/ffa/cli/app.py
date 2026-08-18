@@ -896,8 +896,10 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.set_defaults(func=cmd_data_fetch)
 
     from ffa.cli.dossier_cmd import add_parser as add_dossier_parser
+    from ffa.cli.history_cmd import add_parser as add_history_parser
 
     add_dossier_parser(sub)
+    add_history_parser(sub)
 
     export = sub.add_parser("export-state", help="write the JSON view model for a run")
     export.add_argument("--run-dir", type=Path, default=None)

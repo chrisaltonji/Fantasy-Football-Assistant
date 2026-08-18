@@ -1,0 +1,153 @@
+"""`ffa history` — what four prior auctions say about the twelve people in the room.
+
+    ffa history fetch     pull every season ESPN still serves, and cache it
+    ffa history report    the HTML report, plus a dossier draft to argue with
+
+Split in two on purpose. Fetching is slow and hits the network; the analysis is
+the part that gets iterated on, and it should never need ESPN to be reachable.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from ffa.config.loader import DEFAULT_CONFIG_PATH, load_config, load_credentials
+from ffa.config.schema import ConfigError
+from ffa.history.fetch import DEFAULT_CACHE, build_history, download_season, load_cached
+from ffa.history.metrics import build_profiles
+from ffa.history.report import render_report
+from ffa.history.suggest import suggest_dossiers
+
+# ESPN answers 202 for a season the league did not exist in, so walking back is
+# cheap and self-terminating. Nothing before this is worth asking about.
+EARLIEST = 2015
+
+
+def _years(args, config) -> list[int]:
+    if args.years:
+        return sorted({int(y) for y in args.years})
+    first = max(EARLIEST, args.since or (config.year - 8))
+    return list(range(first, config.year))
+
+
+def _managers(cache: Path, years) -> dict[str, str]:
+    """SWID -> real name, pooled across every cached season.
+
+    Pooled because somebody who left in 2023 is still a manager in the seasons
+    they played, and their name only appears in those payloads.
+    """
+    out: dict[str, str] = {}
+    for year in years:
+        raw = load_cached(year, cache) or {}
+        for member in (raw.get("mTeam") or {}).get("members") or []:
+            name = " ".join(
+                str(p).strip()
+                for p in (member.get("firstName"), member.get("lastName"))
+                if p and str(p).strip()
+            )
+            if name and member.get("id"):
+                out[str(member["id"])] = name
+    return out
+
+
+def cmd_history_fetch(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    creds = load_credentials()
+    cookies = creds.as_cookies() if creds else None
+    years = _years(args, config)
+
+    print(f"reading league {config.league_id} — {years[0]} to {years[-1]}")
+    for year in years:
+        raw = download_season(config.league_id, year, cookies=cookies, cache=args.cache)
+        status = raw.get("mDraftDetail_status")
+        detail = (raw.get("mDraftDetail") or {}).get("draftDetail") or {}
+        filled = sum(
+            1 for p in (detail.get("picks") or []) if int(p.get("playerId", -1) or -1) != -1
+        )
+        print(f"  {year}: {status:<10} {filled} filled pick(s)")
+
+    print(f"\ncached under {args.cache}/")
+    print("Now:  ffa history report")
+    return 0
+
+
+def cmd_history_report(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    years = _years(args, config)
+    history = build_history(
+        years, cache=args.cache, league_name=config.name, league_id=config.league_id
+    )
+
+    if not history.seasons:
+        raise ConfigError(
+            "no usable seasons in the cache. Run `ffa history fetch` first — and "
+            "if it has already run, every season ESPN served was either not an "
+            "auction or had no prices recorded."
+        )
+
+    managers = _managers(args.cache, years)
+    profiles = build_profiles(history, managers)
+
+    print(f"seasons used: {', '.join(str(y) for y in history.years)}")
+    for gap in sorted(history.gaps, key=lambda g: g.year):
+        print(f"  ! {gap.year} excluded — {gap.reason}", file=sys.stderr)
+    print(f"{len(profiles)} manager(s) profiled\n")
+
+    print(f"  {'manager':<22}{'shape':<18}{'pace':<13}{'chasing':<11}nominating")
+    for profile in profiles:
+        pooled = profile.pooled
+        print(
+            f"  {profile.manager:<22}{pooled.spend_shape or '—':<18}"
+            f"{pooled.pace or '—':<13}{pooled.chases or '—':<11}"
+            f"{pooled.nomination_style or '—'}"
+        )
+
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(
+        render_report(history, profiles, generated=args.stamp or ""), encoding="utf-8"
+    )
+    print(f"\nwrote {args.out}")
+
+    seats = {
+        team_id: config.owners[team_id]
+        for team_id in config.effective_team_ids
+        if config.owners.get(team_id)
+    }
+    suggested = suggest_dossiers(profiles, seats)
+    args.suggest.parent.mkdir(parents=True, exist_ok=True)
+    args.suggest.write_text(json.dumps(suggested, indent=2) + "\n", encoding="utf-8")
+    print(f"wrote {args.suggest} — {len(suggested)} manager(s)")
+    print(
+        "\nThat file is a draft, not a finding. Read it, disagree with it, then:\n"
+        f"  ffa dossier import {args.suggest} --dry-run"
+    )
+    return 0
+
+
+def add_parser(sub) -> None:
+    history = sub.add_parser(
+        "history", help="what prior seasons say about how each manager drafts"
+    )
+    history_sub = history.add_subparsers(dest="history_command", required=True)
+
+    def common(parser):
+        parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+        parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE)
+        parser.add_argument("--years", nargs="*", type=int, default=None,
+                            help="explicit seasons; default walks back from this one")
+        parser.add_argument("--since", type=int, default=None,
+                            help="earliest season to try")
+        return parser
+
+    fetch = common(history_sub.add_parser("fetch", help="download and cache prior seasons"))
+    fetch.set_defaults(func=cmd_history_fetch)
+
+    report = common(history_sub.add_parser("report", help="analyse the cached seasons"))
+    report.add_argument("--out", type=Path, default=Path("docs/draft_history.html"))
+    report.add_argument("--suggest", type=Path,
+                        default=Path("docs/dossier_suggested.json"))
+    report.add_argument("--stamp", default="", help="text to print in the header")
+    report.set_defaults(func=cmd_history_report)

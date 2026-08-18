@@ -15,6 +15,10 @@ data/reference/*
 data/dossiers.json
 docs/dossier_form.md
 docs/dossier_brief.md
+docs/dossier_suggested.json
+
+# --- Six years of who paid what for whom, with names attached. ---
+docs/draft_history.html
 
 # --- Draft run journals ---
 runs/
