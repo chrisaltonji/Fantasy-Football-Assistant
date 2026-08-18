@@ -99,6 +99,8 @@ def run_repl(
     prompt: str = PROMPT,
     book=None,
     source: EventSource | None = None,
+    precedent=None,
+    seats=None,
 ) -> int:
     """Drive a draft until quit, EOF, or Ctrl-C. Returns an exit code.
 
@@ -112,7 +114,8 @@ def run_repl(
     """
     if source is not None:
         return _run_live(store, stdin=stdin, stdout=stdout, now_fn=now_fn,
-                         prompt=prompt, book=book, source=source)
+                         prompt=prompt, book=book, source=source,
+                         precedent=precedent, seats=seats)
     emit = _writer(stdout)
 
     if store.load_warnings:
@@ -135,7 +138,9 @@ def run_repl(
             emit("")
             return 0
 
-        outcome = _handle_line(line, store, emit, book, now_fn, seen_warnings)
+        outcome = _handle_line(
+            line, store, emit, book, now_fn, seen_warnings, precedent, seats
+        )
         if outcome.exit_code is not None:
             return outcome.exit_code
         seen_warnings = outcome.seen_warnings
@@ -147,7 +152,8 @@ def _emit_new_warnings(emit, state: DraftState, seen: int) -> int:
     return len(state.warnings)
 
 
-def _view(store: DraftStore, command: ViewCommand, book=None) -> str:
+def _view(store: DraftStore, command: ViewCommand, book=None,
+          precedent=None, seats=None) -> str:
     state = store.state
     if command.kind in ("advice", "scarcity", "market"):
         if book is None or not len(book):
@@ -169,7 +175,9 @@ def _view(store: DraftStore, command: ViewCommand, book=None) -> str:
                 return f"error: {exc}"
         elif state.current_nomination is None:
             return "nothing nominated. Try: advice <player>"
-        return render.render_guidance(advise(state, book, key=key).guidance)
+        return render.render_guidance(
+            advise(state, book, key=key, precedent=precedent, seats=seats).guidance
+        )
 
     if command.kind == "budgets":
         team_id = _team_arg(state, command.arg)
@@ -236,6 +244,8 @@ def _run_live(
     prompt: str,
     book,
     source: EventSource,
+    precedent=None,
+    seats=None,
 ) -> int:
     """The same draft loop, fed by two producers instead of one."""
     # Everything that reaches the screen goes through the console, including the
@@ -283,11 +293,11 @@ def _run_live(
                     continue
                 emit(f"#{store.events[-1].id} {render.describe(payload)}")
                 seen_warnings = _emit_new_warnings(emit, store.state, seen_warnings)
-                _maybe_guidance(emit, store, book, [payload])
+                _maybe_guidance(emit, store, book, [payload], precedent, seats)
                 continue
 
             outcome = _handle_line(
-                payload, store, emit, book, now_fn, seen_warnings
+                payload, store, emit, book, now_fn, seen_warnings, precedent, seats
             )
             if outcome.exit_code is not None:
                 _drain(inbox, store, emit)
@@ -352,7 +362,8 @@ class _LineOutcome:
 
 
 def _handle_line(
-    line: str, store: DraftStore, emit, book, now_fn, seen_warnings: int
+    line: str, store: DraftStore, emit, book, now_fn, seen_warnings: int,
+    precedent=None, seats=None,
 ) -> _LineOutcome:
     """One typed command. Shared by both loops so they cannot drift."""
     try:
@@ -372,7 +383,7 @@ def _handle_line(
         emit("saved.")
         return _LineOutcome(0, seen_warnings)
     if isinstance(command, ViewCommand):
-        emit(_view(store, command, book))
+        emit(_view(store, command, book, precedent, seats))
         return _LineOutcome(None, seen_warnings)
 
     if isinstance(command, EmitCommand):
@@ -384,12 +395,13 @@ def _handle_line(
             return _LineOutcome(None, seen_warnings)
         emit(f"#{store.events[-1].id} {command.echo}")
         seen_warnings = _emit_new_warnings(emit, store.state, seen_warnings)
-        _maybe_guidance(emit, store, book, command.events)
+        _maybe_guidance(emit, store, book, command.events, precedent, seats)
 
     return _LineOutcome(None, seen_warnings)
 
 
-def _maybe_guidance(emit, store: DraftStore, book, events) -> None:
+def _maybe_guidance(emit, store: DraftStore, book, events,
+                    precedent=None, seats=None) -> None:
     """Capability 2: the bid readout auto-fires on nomination.
 
     That is the moment it is needed, and asking for it costs seconds you do not
@@ -398,4 +410,8 @@ def _maybe_guidance(emit, store: DraftStore, book, events) -> None:
     if book is None or store.state.current_nomination is None:
         return
     if any(isinstance(e, PlayerNominated) for e in events):
-        emit(render.render_guidance(advise(store.state, book).guidance))
+        emit(
+            render.render_guidance(
+                advise(store.state, book, precedent=precedent, seats=seats).guidance
+            )
+        )

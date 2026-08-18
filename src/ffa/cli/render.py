@@ -183,6 +183,23 @@ def render_guidance(guidance) -> str:
         lines.append("  who can take him: nobody who needs the position can afford him")
 
     lines.extend(f"  - {reason}" for reason in guidance.reasons)
+
+    # Their own script, where the record still separates people. `pace_reads` is
+    # already empty past that point, so there is nothing to suppress here.
+    notable = [r for r in guidance.pace_reads if r.is_notable][:3]
+    if notable:
+        seasons = max((r.seasons for r in notable), default=0)
+        lines.append(f"  vs their own past drafts ({seasons} seasons):")
+        for read in notable:
+            delta = read.dollars_vs_script
+            behind = "behind" if delta < 0 else "ahead of"
+            thin = " (thin record)" if read.is_thin else ""
+            lines.append(
+                f"    {read.label:<12} {read.actual_share:.0%} of budget out, "
+                f"usually {read.expected_share:.0%} by now"
+                f"   ~${abs(delta)} {behind} script{thin}"
+            )
+
     return "\n".join(lines)
 
 

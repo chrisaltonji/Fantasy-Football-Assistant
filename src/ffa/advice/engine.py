@@ -16,7 +16,10 @@ from ffa.domain.models import DraftState
 from ffa.reference.playerbook import PlayerBook
 
 
-def advise(state: DraftState, book: PlayerBook, *, key: str | None = None) -> Advisory:
+def advise(
+    state: DraftState, book: PlayerBook, *, key: str | None = None,
+    precedent=None, seats=None,
+) -> Advisory:
     """Current market and scarcity, plus bid guidance when a player is named.
 
     `key` defaults to whatever is currently nominated, so the common case —
@@ -35,6 +38,8 @@ def advise(state: DraftState, book: PlayerBook, *, key: str | None = None) -> Ad
         player = state.players.get(target)
         if player is not None:
             name = player.ref.raw
-        guidance = guidance_for(state, book, target, market, name=name)
+        guidance = guidance_for(
+            state, book, target, market, name=name, precedent=precedent, seats=seats
+        )
 
     return Advisory(market=market, scarcity=scarcity, guidance=guidance)

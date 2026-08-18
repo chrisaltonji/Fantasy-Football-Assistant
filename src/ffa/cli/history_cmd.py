@@ -20,6 +20,11 @@ from ffa.config.schema import ConfigError
 from ffa.history.evidence import ROUNDS, assess
 from ffa.history.fetch import DEFAULT_CACHE, build_history, download_season, load_cached
 from ffa.history.metrics import build_profiles
+from ffa.history.precedent import (
+    DEFAULT_PRECEDENT_PATH,
+    build_precedent,
+    save_precedent,
+)
 from ffa.history.report import render_report
 from ffa.history.suggest import suggest_dossiers
 
@@ -135,6 +140,11 @@ def cmd_history_report(args: argparse.Namespace) -> int:
     )
     print(f"\nwrote {args.out}")
 
+    precedent = build_precedent(history, profiles)
+    save_precedent(precedent, args.precedent)
+    print(f"wrote {args.precedent} — {len(precedent)} manager(s), "
+          f"useful through {precedent.window:.0%} of the board")
+
     suggested = suggest_dossiers(profiles, seats(config))
     args.suggest.parent.mkdir(parents=True, exist_ok=True)
     args.suggest.write_text(json.dumps(suggested, indent=2) + "\n", encoding="utf-8")
@@ -169,6 +179,8 @@ def add_parser(sub) -> None:
     report.add_argument("--suggest", type=Path,
                         default=Path("docs/dossier_suggested.json"))
     report.add_argument("--stamp", default="", help="text to print in the header")
+    report.add_argument("--precedent", type=Path, default=DEFAULT_PRECEDENT_PATH,
+                        help="where to write the spending scripts the draft loads")
     report.add_argument("--rounds", type=int, default=ROUNDS,
                         help="permutation rounds when scoring signals against chance")
     report.set_defaults(func=cmd_history_report)

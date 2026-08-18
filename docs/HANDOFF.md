@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 793 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 868 tests pass. Everything below is
 pushed.
 
 ---
@@ -323,6 +323,52 @@ Bugs it found that every test had passed over, because they only existed live:
   and polling from the worker failed on every poll. The reader connects lazily
   on the thread that uses it.
 
+## Draft history in the live draft (2026-08-18)
+
+`ffa history report` writes three things now: the HTML, a dossier draft, and
+`data/manager_precedent.json` — each manager's own cumulative spending curve at
+ten points of the board. `ffa draft` loads that once at startup and the bid
+readout gains one block:
+
+```
+  vs their own past drafts (4 seasons):
+    jared        92% of budget out, usually 66% by now   ~$52 ahead of script
+    nickc        42% of budget out, usually 65% by now   ~$46 behind script
+```
+
+**This is the one thing four prior auctions tell you that tonight's board
+cannot.** `max_legal_bid` already knows to the dollar what a rival can spend; it
+cannot know whether that number is normal for that person. By pick 54 this
+league runs from 60% of budget spent to 90% — a $60 swing in ammunition.
+
+Three things keep it honest, and all three are load-bearing:
+
+- **It goes quiet on its own.** The curves only separate through the first ~30%
+  of the board; past that everybody has spent ~90%. `discriminating_window`
+  measures that from the data (it computed 0.30) rather than hardcoding a pick
+  number that would go stale next season.
+- **It respects each manager's own wobble.** Rudner's four seasons span 40% of
+  budget at the second decile, so a 19% departure is the range he always had,
+  not news. `PaceRead.is_notable` compares the departure against that spread,
+  which is why he is correctly suppressed while Jared at +$52 is not.
+- **It never touches the bid arithmetic.** `PaceRead` rides on `BidGuidance`
+  parallel to `threats`, never inside `Threat` — which stays tonight's capacity
+  and nothing else. There is a test asserting `max_advisable_bid`,
+  `max_legal_bid`, `safe_legal_bid` and `threats` are identical with and without
+  a precedent book.
+
+Loaded once at startup, never inside the nomination path — that path is uncached
+and has to stay instant, and a disk read there would add latency and a failure
+mode while a clock runs. A missing artifact costs the block and nothing else.
+
+`build_view` gains a `history` key per team, sibling to `dossier`. That falsified
+two docstrings which now state the real three-way distinction: **tonight's ground
+truth** (arithmetic over this draft), **a different draft's ground truth**
+(history — computed, but carrying its own seasons and expiry), and **nothing
+computed at all** (the dossier).
+
+---
+
 ## Draft history: four prior auctions, read (2026-08-18)
 
 `ffa history fetch` then `ffa history report`. `src/ffa/history/` pulls every
@@ -454,7 +500,7 @@ is a draft that looks like it is working.
    config that then refuses to load. `config init` and `config check` both say
    which teams are still untypeable.
 
-793 tests pass, up from 578.
+868 tests pass, up from 578.
 
 **Correctness, not urgency — CLOSED 2026-08-17**
 

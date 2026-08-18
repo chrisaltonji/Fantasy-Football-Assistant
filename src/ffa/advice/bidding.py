@@ -16,7 +16,7 @@ belongs to the Claude layer, which reads the dossiers.
 from __future__ import annotations
 
 from ffa.advice.market import inflated_value
-from ffa.advice.types import BidGuidance, MarketState, Threat
+from ffa.advice.types import BidGuidance, MarketState, PaceRead, Threat
 from ffa.domain import projections as proj
 from ffa.domain.enums import Position, RosterSlot
 from ffa.domain.models import DraftState
@@ -111,8 +111,63 @@ def safe_legal_bid(
     return max(0, proj.max_legal_bid(state, team_id) - understated)
 
 
+def pace_reads_for(
+    state: DraftState,
+    precedent,
+    seats,
+    *,
+    exclude_team: int | None = None,
+) -> tuple[PaceRead, ...]:
+    """Every rival, tonight's spend against their own script.
+
+    Returns nothing at all past the point where the curves stop separating.
+    An auction front-loads by construction, so by the halfway mark everybody has
+    spent about 90% and a confident readout there is noise delivered under time
+    pressure. The cutoff is measured from the record, not assumed.
+    """
+    league = state.league
+    if precedent is None or not precedent or league is None:
+        return ()
+
+    total_slots = league.team_count * league.draftable_slots
+    if not total_slots:
+        return ()
+    progress = len(state.sold_players()) / total_slots
+    if not precedent.discriminates_at(progress):
+        return ()
+
+    out: list[PaceRead] = []
+    for team_id in sorted(state.teams):
+        if team_id == exclude_team:
+            continue
+        script = precedent.for_team(team_id, seats or {})
+        if script is None:
+            continue
+        expected = script.expected_share(progress)
+        if expected is None:
+            continue
+        spent = proj.spent(state, team_id)
+        out.append(
+            PaceRead(
+                team_id=team_id,
+                label=state.teams[team_id].label,
+                spent=spent,
+                budget=league.budget,
+                actual_share=(spent / league.budget) if league.budget else 0.0,
+                expected_share=expected,
+                wobble=script.expected_wobble(progress),
+                seasons=script.season_count,
+                is_thin=script.is_thin,
+            )
+        )
+
+    # Biggest departure first: that is the one worth the line.
+    return tuple(sorted(out, key=lambda r: -abs(r.dollars_vs_script)))
+
+
 def guidance_for(
-    state: DraftState, book: PlayerBook, key: str, market: MarketState, *, name: str | None = None
+    state: DraftState, book: PlayerBook, key: str, market: MarketState, *,
+    name: str | None = None, precedent=None, seats=None,
 ) -> BidGuidance:
     """The deterministic read on one nominated player."""
     league = state.league
@@ -181,4 +236,5 @@ def guidance_for(
         fills_starter_gap=fills_gap,
         threats=threats,
         reasons=tuple(reasons),
+        pace_reads=pace_reads_for(state, precedent, seats, exclude_team=me),
     )

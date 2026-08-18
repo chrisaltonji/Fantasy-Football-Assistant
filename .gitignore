@@ -19,6 +19,7 @@ docs/dossier_suggested.json
 
 # --- Six years of who paid what for whom, with names attached. ---
 docs/draft_history.html
+data/manager_precedent.json
 
 # --- Draft run journals ---
 runs/

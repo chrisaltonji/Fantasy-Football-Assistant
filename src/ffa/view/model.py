@@ -4,11 +4,22 @@ This is the single shared draft-state object the advisory capability spec asks
 for. The dashboard artifact, the ambient feed, and the chat thread all read
 *this*, rather than each inventing its own store.
 
-The dividing line it enforces: **everything in here is deterministic.** Budgets,
-slots, roster composition, counts — computed by the engine from ground truth,
-never re-derived downstream. Soft signals (who's likely to bid, tendency reads,
-notability, grades) belong to the advisory layer and are deliberately absent.
-If a number appears here, nothing downstream should be recomputing it.
+The dividing line it enforces is **provenance, not certainty**, and there are
+three kinds of thing in here. Each lives in its own object rather than blended
+into a team, so a surface can never mistake one for another:
+
+- **Tonight's ground truth.** Budgets, slots, roster composition, counts,
+  scarcity, bid ceilings — arithmetic over what has actually happened in this
+  draft. If a number appears here, nothing downstream should recompute it.
+- **A different draft's ground truth**, under the `history` key. Also
+  deterministic, also arithmetic, but computed from *past* auctions. It is a
+  fact about what somebody did before and a bet about what they do tonight, so
+  the number of seasons behind it travels with every value.
+- **Nothing computed at all**, under the `dossier` key. Recorded testimony about
+  a person, in the words somebody chose.
+
+Soft signals — who is *likely* to bid, notability, grades — are none of the
+three. They belong to the advisory layer and are deliberately absent.
 
 Keeping draft state in a file rather than only in a conversation is also what
 lets a 3+ hour draft stay workable: the thread can be summarized or restarted
@@ -37,6 +48,8 @@ def build_view(
     *,
     recent: int = 10,
     dossiers: Any = None,
+    precedent: Any = None,
+    seats: Any = None,
 ) -> dict[str, Any]:
     if not state.is_initialized:
         return {
@@ -46,7 +59,7 @@ def build_view(
         }
 
     league = state.league
-    advisory = _advisory(state, book)
+    advisory = _advisory(state, book, precedent=precedent, seats=seats)
     return {
         "schema_version": VIEW_SCHEMA_VERSION,
         "draft_id": state.draft_id,
@@ -62,12 +75,13 @@ def build_view(
             "flex_positions": [p.value for p in league.flex_positions],
         },
         "me": (
-            _team_view(state, league.my_team_id, book, dossiers)
+            _team_view(state, league.my_team_id, book, dossiers, precedent, seats)
             if league.my_team_id in state.teams
             else None
         ),
         "teams": [
-            _team_view(state, team_id, book, dossiers) for team_id in sorted(state.teams)
+            _team_view(state, team_id, book, dossiers, precedent, seats)
+            for team_id in sorted(state.teams)
         ],
         "nomination": _nomination_view(state, book, advisory, dossiers),
         "market": _market_view(state, advisory),
@@ -77,13 +91,13 @@ def build_view(
     }
 
 
-def _advisory(state: DraftState, book: Any):
+def _advisory(state: DraftState, book: Any, *, precedent=None, seats=None):
     """Run the deterministic advisory layer, if reference data is loaded."""
     if book is None or not len(book):
         return None
     from ffa.advice.engine import advise
 
-    return advise(state, book)
+    return advise(state, book, precedent=precedent, seats=seats)
 
 
 def _reference_meta(book: Any) -> dict[str, Any] | None:
@@ -116,7 +130,8 @@ def _scarcity_view(advisory) -> dict[str, Any]:
 
 
 def _team_view(
-    state: DraftState, team_id: int, book: Any = None, dossiers: Any = None
+    state: DraftState, team_id: int, book: Any = None, dossiers: Any = None,
+    precedent: Any = None, seats: Any = None,
 ) -> dict[str, Any]:
     team = state.teams.get(team_id)
     unknowns = proj.unknown_price_count(state, team_id)
@@ -124,6 +139,10 @@ def _team_view(
         # Recorded observations about the *person*, never a computed likelihood.
         # See `_dossier_view` for why that distinction is load-bearing.
         "dossier": _dossier_view(dossiers, team_id),
+        # Measured from this manager's *past* drafts. Computed, unlike the
+        # dossier, but from a different draft's ground truth than everything
+        # below it. See `_history_view`.
+        "history": _history_view(precedent, team_id, seats),
         "team_id": team_id,
         # owner_id is the stable identity; name is volatile display text and
         # must not be used as a key by any surface.
@@ -213,6 +232,22 @@ def _nomination_view(
             "fills_starter_gap": guidance.fills_starter_gap,
             "contested_ceiling": guidance.contested_ceiling,
             "reasons": list(guidance.reasons),
+            # Rivals against their own precedent. Arithmetic, but over previous
+            # drafts, and empty once the record stops discriminating.
+            "pace_reads": [
+                {
+                    "team_id": r.team_id,
+                    "label": r.label,
+                    "spent": r.spent,
+                    "actual_share": round(r.actual_share, 4),
+                    "expected_share": round(r.expected_share, 4),
+                    "dollars_vs_script": r.dollars_vs_script,
+                    "seasons": r.seasons,
+                    "is_thin": r.is_thin,
+                }
+                for r in guidance.pace_reads
+                if r.is_notable
+            ],
             # Capacity only. Whether they *will* bid is the advisory layer's
             # call, made from the dossiers.
             "threats": [
@@ -241,11 +276,12 @@ def _nomination_view(
 def _dossier_view(dossiers: Any, team_id: int) -> dict[str, Any] | None:
     """What we were told about the person in this seat. Observations, not scores.
 
-    This is the one part of the payload that is *not* derived from ground truth,
-    and keeping that legible is the point of shipping it as a separate object
-    rather than folding fields into the team. Everything else in this file is
-    computed and nothing downstream should recompute it; this is the reverse —
-    nothing here was computed, and the layer that reads it is expected to add
+    This is the one part of the payload that is not *computed* at all, and
+    keeping that legible is the point of shipping it as a separate object rather
+    than folding fields into the team. Two other things here are computed: most
+    of the payload, from tonight's board, and the sibling `history` block, from
+    past drafts. This is neither. Nothing here was measured — it is what somebody
+    told us about a person, and the layer that reads it is expected to add
     judgment on top.
 
     Concretely: there is no `will_bid`, no `likelihood`, no score. The dashboard
@@ -274,6 +310,40 @@ def _dossier_view(dossiers: Any, team_id: int) -> dict[str, Any] | None:
         rendered = render_answer(question, value)
         out[question.field] = None if rendered == "-" else rendered
     return out
+
+
+def _history_view(precedent: Any, team_id: int, seats: Any) -> dict[str, Any] | None:
+    """What this manager's own past auctions say. Measured, not asserted.
+
+    Computed, like almost everything else in this payload — but from a
+    *different* draft's ground truth, which is the distinction the sibling
+    `dossier` key makes from the other side. A number here is a fact about 2023;
+    whether it predicts tonight is the reading layer's call, so `seasons`
+    travels with every value and a manager with no record gets `None` rather
+    than a zero.
+
+    Nothing here is a likelihood and nothing here moves a bid ceiling.
+    `max_advisable_bid` is arithmetic over tonight's board and stays that way;
+    this sits beside it. Only signals that cleared a permutation test in
+    `ffa.history.evidence` are present at all.
+    """
+    if precedent is None or not precedent:
+        return None
+    script = precedent.for_team(team_id, seats or {})
+    if script is None:
+        return None
+    return {
+        "seasons": list(script.seasons),
+        "accounts": len(script.accounts) or 1,
+        "spend_curve": list(script.curve),
+        "curve_spread": list(script.spread),
+        "useful_through": precedent.window,
+        "spend_shape": script.spend_shape or None,
+        "pace": script.pace or None,
+        "nomination_premium": script.nomination_premium,
+        "te_share": script.te_share,
+        "is_thin": script.is_thin,
+    }
 
 
 def _market_view(state: DraftState, advisory) -> dict[str, Any]:

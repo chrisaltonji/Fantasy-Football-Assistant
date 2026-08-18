@@ -7,6 +7,13 @@ Everything here is **deterministic** — computed from ground truth. The soft
 half of the advisory capabilities (who is *likely* to bid, tendency reads,
 notability judgments) lives in the Claude layer, which consumes these rather
 than recomputing them.
+
+One record is marked out. `PaceRead` is also arithmetic and also deterministic,
+but its ground truth is a *previous* auction rather than this one. It rides on
+`BidGuidance` because `render_guidance` receives nothing else; it never enters
+`Threat`, which is tonight's capacity and nothing else; and it never enters the
+bid arithmetic — delete every `PaceRead` and `max_advisable_bid` is unchanged.
+There is a test that says so.
 """
 
 from __future__ import annotations
@@ -94,6 +101,52 @@ class Threat:
 
 
 @dataclass(frozen=True)
+class PaceRead:
+    """One rival measured against their own spending script. Not capacity.
+
+    `Threat` answers what a rival *can* do tonight, to the dollar. This answers
+    something the board cannot: whether that number is normal for this person at
+    this point in a draft. By pick 54 this league runs from 60% of budget spent
+    to 90% — a $60 swing in ammunition that no arithmetic over tonight's picks
+    would reveal.
+
+    It is a precedent and not a prediction, which is why `seasons` travels with
+    it and `is_thin` is a field rather than a footnote.
+    """
+
+    team_id: int
+    label: str
+    spent: int
+    budget: int
+    actual_share: float
+    expected_share: float
+    # How far this manager's own seasons disagree at this point in the board.
+    wobble: float = 0.0
+    seasons: int = 0
+    is_thin: bool = False
+
+    @property
+    def dollars_vs_script(self) -> int:
+        """Negative means money still in hand that they usually have spent."""
+        return round((self.actual_share - self.expected_share) * self.budget)
+
+    @property
+    def is_notable(self) -> bool:
+        """Worth a line only if it beats both a floor and their own noise.
+
+        The dollar floor stops $4 interrupting a draft. The wobble check is the
+        one that matters: a manager whose own four seasons span 40% of budget at
+        this point has no script to be off, and reporting one would be inventing
+        precision the record does not have.
+        """
+        departure = abs(self.actual_share - self.expected_share)
+        return (
+            abs(self.dollars_vs_script) >= 8
+            and departure > max(self.wobble, 0.05)
+        )
+
+
+@dataclass(frozen=True)
 class BidGuidance:
     """What the numbers say about one nominated player."""
 
@@ -109,6 +162,12 @@ class BidGuidance:
     fills_starter_gap: bool = False
     threats: tuple[Threat, ...] = ()
     reasons: tuple[str, ...] = ()
+
+    # Rivals against their own precedent. Deliberately parallel to `threats`
+    # rather than a field on one: a `Threat` is tonight's capacity, and mixing a
+    # measurement from 2023 into it would blur the line the whole module rests
+    # on. Joined by `team_id` at render time.
+    pace_reads: tuple[PaceRead, ...] = ()
 
     # `max_legal_bid` charges our own unpriced picks at the $1 minimum, which
     # *over*-states what we have left. That floor is the safe direction for

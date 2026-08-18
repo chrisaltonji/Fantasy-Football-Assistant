@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from ffa.cli.repl import run_repl
+from ffa.config.identity import seats
 from ffa.config.loader import DEFAULT_CONFIG_PATH, load_config, load_credentials
 from ffa.config.schema import ConfigError, LeagueConfig
 from ffa.domain.events import DraftInitialized, TeamSeed
@@ -408,10 +409,17 @@ def cmd_draft(args: argparse.Namespace) -> int:
         print(f"new draft {draft_id}")
         store = DraftStore.create(directory, _init_event(config, draft_id))
 
+    # Loaded once, here, and never touched again. The nomination path is
+    # uncached and has to stay instant; a disk read inside it would add latency
+    # and a failure mode while a clock runs.
+    precedent = _load_precedent(config, args.precedent)
+    seats_map = seats(config)
+
     try:
         return run_repl(
             store, stdin=sys.stdin, stdout=sys.stdout,
             book=load_book(config), source=source,
+            precedent=precedent, seats=seats_map,
         )
     finally:
         store.close()
@@ -708,7 +716,11 @@ def cmd_export_state(args: argparse.Namespace) -> int:
     config = load_config(args.config) if args.config.is_file() else None
     book = load_book(config) if config is not None else None
     dossiers = _load_dossiers(config, args.dossiers)
-    view = build_view(replay(events, directory.name), book, dossiers=dossiers)
+    precedent = _load_precedent(config, args.precedent) if config is not None else None
+    view = build_view(
+        replay(events, directory.name), book, dossiers=dossiers,
+        precedent=precedent, seats=seats(config) if config is not None else None,
+    )
     text = json.dumps(view, indent=2)
 
     if args.out:
@@ -723,6 +735,32 @@ def cmd_export_state(args: argparse.Namespace) -> int:
 # --- helpers ------------------------------------------------------------------
 
 
+def _load_precedent(config: LeagueConfig, path: Path):
+    """Each manager's own spending script, or nothing at all.
+
+    Never fatal. Everything else works without it — this only adds a line to the
+    bid readout — and refusing to start a draft over a derived file would be
+    absurd.
+    """
+    from ffa.history.precedent import load_precedent
+
+    book = load_precedent(path, league_id=config.league_id)
+    for warning in book.warnings:
+        print(f"! {warning}", file=sys.stderr)
+    if not book:
+        print(
+            "no draft history loaded — bid guidance will not compare rivals to "
+            "their own past drafts. Build it with:  ffa history report",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"history: {len(book)} manager(s) from "
+            f"{', '.join(str(y) for y in book.seasons)}"
+        )
+    return book
+
+
 def _load_dossiers(config: LeagueConfig | None, path: Path):
     """What we know about the managers, or nothing at all.
 
@@ -733,8 +771,6 @@ def _load_dossiers(config: LeagueConfig | None, path: Path):
     if config is None:
         return None
     from ffa.dossier.store import load_dossiers
-
-    from ffa.config.identity import seats
 
     book = load_dossiers(path, owners=seats(config))
     for warning in book.warnings:
@@ -867,6 +903,9 @@ def build_parser() -> argparse.ArgumentParser:
                             "the config (picks for them may be misattributed)")
     draft.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     draft.add_argument("--runs", type=Path, default=RUNS_DIR)
+    draft.add_argument("--precedent", type=Path,
+                       default=Path("data/manager_precedent.json"),
+                       help="spending scripts from prior drafts; absent is fine")
     draft.set_defaults(func=cmd_draft)
 
     sim = sub.add_parser("sim", help="run a simulated auction (no ESPN needed)")
@@ -912,6 +951,8 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--runs", type=Path, default=RUNS_DIR)
     export.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     export.add_argument("--dossiers", type=Path, default=Path("data/dossiers.json"))
+    export.add_argument("--precedent", type=Path,
+                        default=Path("data/manager_precedent.json"))
     export.add_argument("--out", type=Path, default=None)
     export.set_defaults(func=cmd_export_state)
 
