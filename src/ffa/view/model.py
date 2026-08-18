@@ -50,6 +50,7 @@ def build_view(
     dossiers: Any = None,
     precedent: Any = None,
     seats: Any = None,
+    strategy: Any = None,
 ) -> dict[str, Any]:
     if not state.is_initialized:
         return {
@@ -59,7 +60,8 @@ def build_view(
         }
 
     league = state.league
-    advisory = _advisory(state, book, precedent=precedent, seats=seats)
+    advisory = _advisory(state, book, precedent=precedent, seats=seats,
+                         strategy=strategy)
     return {
         "schema_version": VIEW_SCHEMA_VERSION,
         "draft_id": state.draft_id,
@@ -88,6 +90,9 @@ def build_view(
         # `None` whenever nothing is on the block, which is exactly the moment
         # whose-turn-is-it and what-to-put-up are worth reading.
         "nomination_plan": _nomination_plan_view(advisory),
+        # Capability 12. `null` when no plan is declared — which a surface must
+        # render as "no plan", never as a row of zeroes.
+        "strategy": _strategy_view(advisory),
         "market": _market_view(state, advisory),
         "recent_sales": _recent_sales(state, book, recent),
         "scarcity": _scarcity_view(advisory),
@@ -95,13 +100,15 @@ def build_view(
     }
 
 
-def _advisory(state: DraftState, book: Any, *, precedent=None, seats=None):
+def _advisory(state: DraftState, book: Any, *, precedent=None, seats=None,
+              strategy=None):
     """Run the deterministic advisory layer, if reference data is loaded."""
     if book is None or not len(book):
         return None
     from ffa.advice.engine import advise
 
-    return advise(state, book, precedent=precedent, seats=seats)
+    return advise(state, book, precedent=precedent, seats=seats,
+                  strategy=strategy)
 
 
 def _reference_meta(book: Any) -> dict[str, Any] | None:
@@ -194,6 +201,55 @@ def _player_view(player: PlayerEntity, book: Any = None) -> dict[str, Any]:
         # Positive means they paid over the sheet. Feeds the "is the room hot"
         # read without the surface having to do arithmetic.
         "delta": (price - value) if (price is not None and value is not None) else None,
+    }
+
+
+def _strategy_view(advisory) -> dict[str, Any] | None:
+    """The declared plan, and how far tonight has drifted from it.
+
+    The one thing a surface must not do with this block is present it beside the
+    computed ones without marking it. Everything else in this payload is
+    arithmetic over ground truth; `planned` is a number somebody typed. The keys
+    say `planned` and `variance` rather than `projected` and `error` for exactly
+    that reason, and `archetype` is carried so the label travels with the
+    numbers it produced.
+
+    `max_on_one_player` appears here **and** on `nomination.guidance.plan_cap`,
+    and in neither place has it moved a bid. It is a line to read.
+    """
+    read = advisory.strategy if advisory is not None else None
+    if read is None:
+        return None
+
+    return {
+        "archetype": read.archetype,
+        "budget": read.budget,
+        "planned_total": read.planned_total,
+        "bench_reserve": read.bench_reserve,
+        "spent_total": read.spent_total,
+        "remaining": read.remaining,
+        # Charged at the $1 floor like every other remaining figure here, so
+        # `shortfall` below is the optimistic one.
+        "unknown_prices": read.unknown_prices,
+        "still_calls_for": read.still_calls_for,
+        # Positive means the plan is no longer reachable with the money left.
+        "shortfall": read.shortfall,
+        "slack": read.slack,
+        "max_on_one_player": read.max_on_one_player,
+        "biggest_buy": read.biggest_buy,
+        "breached_cap": read.breached_cap,
+        "positions": [
+            {
+                "position": p.position.value,
+                "planned": p.planned,
+                "spent": p.spent,
+                "variance": p.variance,
+                "open_slots": p.open_slots,
+                "still_calls_for": p.still_calls_for,
+                "is_material": p.is_material,
+            }
+            for p in read.positions
+        ],
     }
 
 
@@ -301,6 +357,9 @@ def _nomination_view(
             "suggested_high": guidance.suggested_high,
             "inflated_value": guidance.inflated_value,
             "fills_starter_gap": guidance.fills_starter_gap,
+            # Declared, never applied — see `_strategy_view`.
+            "plan_cap": guidance.plan_cap,
+            "exceeds_plan_cap": guidance.exceeds_plan_cap,
             "contested_ceiling": guidance.contested_ceiling,
             "reasons": list(guidance.reasons),
             # Rivals against their own precedent. Arithmetic, but over previous

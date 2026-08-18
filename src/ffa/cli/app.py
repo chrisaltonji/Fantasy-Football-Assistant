@@ -45,6 +45,7 @@ def cmd_config_check(args: argparse.Namespace) -> int:
     print(f"  league money ${config.total_league_money}")
     print(f"  managers     {_manager_summary(config)}")
     print(f"  nominations  {_nomination_summary(config)}")
+    print(f"  plan         {_strategy_summary(config)}")
     print(f"  credentials  {'loaded' if creds else 'none (public league)'}")
     _print_roster(config)
 
@@ -432,6 +433,9 @@ def cmd_draft(args: argparse.Namespace) -> int:
             store, stdin=sys.stdin, stdout=sys.stdout,
             book=load_book(config), source=source,
             precedent=precedent, seats=seats_map,
+            # Read from config, not the journal: a plan is an intention, and
+            # revising it mid-draft is a legitimate thing to do.
+            strategy=config.strategy,
         )
     finally:
         store.close()
@@ -732,6 +736,7 @@ def cmd_export_state(args: argparse.Namespace) -> int:
     view = build_view(
         replay(events, directory.name), book, dossiers=dossiers,
         precedent=precedent, seats=seats(config) if config is not None else None,
+        strategy=config.strategy if config is not None else None,
     )
     text = json.dumps(view, indent=2)
 
@@ -868,6 +873,22 @@ def _nomination_summary(config) -> str:
     return " -> ".join(names) + seat
 
 
+def _strategy_summary(config: LeagueConfig) -> str:
+    """C2 in one line. Says nothing rather than implying a default plan."""
+    preset = config.strategy
+    if not preset.is_set:
+        return "none declared (`ffa strategy init` builds one)"
+    split = ", ".join(
+        f"{position.value} ${dollars}"
+        for position, dollars in sorted(
+            preset.budget_by_position.items(), key=lambda kv: -kv[1]
+        )
+    )
+    cap = f"max ${preset.max_on_one_player} on one" if preset.max_on_one_player else ""
+    parts = [p for p in (preset.archetype or "custom", cap, split) if p]
+    return "  ".join(parts)
+
+
 def _manager_summary(config: LeagueConfig) -> str:
     if not config.managers:
         return "none set (teams addressable as t1..tN)"
@@ -967,9 +988,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     from ffa.cli.dossier_cmd import add_parser as add_dossier_parser
     from ffa.cli.history_cmd import add_parser as add_history_parser
+    from ffa.cli.strategy_cmd import add_parser as add_strategy_parser
 
     add_dossier_parser(sub)
     add_history_parser(sub)
+    add_strategy_parser(sub)
 
     export = sub.add_parser("export-state", help="write the JSON view model for a run")
     export.add_argument("--run-dir", type=Path, default=None)

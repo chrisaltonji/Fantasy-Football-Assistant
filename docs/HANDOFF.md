@@ -646,6 +646,69 @@ There is no CP6. What remains is product work:
 - **The dashboard.** `docs/dashboard_requirements.md` is a 12.7K spec with zero
   implementation.
 
+- **C2 — the draft plan, and capability 12. BUILT 2026-08-18.**
+
+  ```
+  ffa strategy init        a plan off the market, for you to edit
+  ffa strategy show        the plan, and adherence to it
+  plan                     (in the REPL) the same, mid-draft
+  ```
+
+  It lives in `config/league.toml` under `[strategy]`, reaches `build_view()` as
+  a top-level `strategy` key, and is in `CARRIED_FORWARD` — ESPN has no opinion
+  about your plan, so the documented recovery command must not be the thing that
+  wipes it.
+
+  Four decisions worth knowing:
+
+  - **The plan is testimony, and the vocabulary says so.** It is the second
+    thing in here that is recorded rather than computed, after the dossiers, and
+    it carries the same risk: a typed number sitting beside arithmetic gets read
+    as arithmetic. So the keys are `planned` and `variance`, never `projected`
+    and `error`, and the readout says once, on screen, that the planned figures
+    are what you declared.
+  - **It never touches a bid.** `max_on_one_player` is carried into
+    `BidGuidance.plan_cap` and rendered as a line, and `max_advisable_bid` is
+    untouched. Capping the advisable bid with it would produce a readout saying
+    a player is worth $58 because you once said $58. There is a test that sets
+    the cap to $1 and asserts every computed number is identical.
+  - **It is read live, not frozen in the journal.** `LeagueSnapshot` copies
+    league settings in precisely so a mid-draft config edit cannot move a
+    ceiling. A plan is the opposite case — revising it mid-draft is legitimate,
+    adherence should measure against the plan you hold now, and nothing here
+    feeds a ceiling, so letting it stay live costs no correctness.
+  - **The default split is derived, not asserted.** An archetype could have
+    shipped a hardcoded "RB 35%, WR 35%" table, and that table would be
+    somebody's opinion wearing the costume of a default. Instead the split is
+    the market's own shape — the top *N* values at each position, where *N* is
+    this league's starting demand there, the same definition `scarcity.py`
+    tiers against. The archetype only sets *concentration*: `max_on_one_player`
+    and the bench reserve. Those are genuinely preferences with nothing to
+    derive them from. `stars-and-scrubs` and `hoarder` therefore produce the
+    same positional shape and different concentrations, and a test says so.
+
+  **What the dry run found.** Two wording-level bugs that read as correct until
+  you saw them against a real draft. The headline said "on track" when it was
+  only measuring whether the plan was still *affordable* — a draft can be
+  perfectly affordable while $45 under at receiver, and "on track" talks you out
+  of reading the table that says so; it now says "reachable". And every position
+  showed "materially off plan" at pick 0, because underspending was flagged
+  symmetrically with overspending. It is not symmetric: money already gone is a
+  fact at pick 12, but *under* plan with slots still open is the plan not having
+  happened yet. Overspend flags immediately; underspend waits until the position
+  is finished.
+
+  **Still open, and it is the interesting one.** The plan does not yet reach
+  capability 4. `nomination.py` ships two candidate lists and deliberately no
+  ranking, because ranking needs a strategy — and now there is one. Joining them
+  is the next cheap win in this area.
+
+  **A cost worth knowing before the dashboard polls `build_view()`:** `advise()`
+  measures ~40 ms at 100 sales, and ~34 ms of that is `nomination_plan` scanning
+  the remaining board. `strategy_read` is 0.4 ms. It fires once per user action,
+  so it is invisible today; a surface that polls it many times a second is the
+  case that would change that.
+
 - **Capability 4 — nomination order. BUILT 2026-08-18.**
 
   `draftSettings.pickOrder` was sitting in a payload this codebase already

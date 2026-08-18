@@ -19,9 +19,12 @@ There is a test that says so.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
 from ffa.domain.enums import Position
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ffa.advice.strategy import StrategyRead
 
 
 @dataclass(frozen=True)
@@ -184,6 +187,19 @@ class BidGuidance:
     safe_legal_bid: int = 0
     unknown_prices: int = 0
 
+    # C2's `max_on_one_player`, carried for display and **never** applied.
+    # `max_advisable_bid` is what the market says he is worth; folding a declared
+    # preference into it would produce a readout saying a player is worth $58
+    # because you once said $58. It rides here the way `pace_reads` does — see
+    # the test that deletes every strategy field and asserts the arithmetic is
+    # unchanged.
+    plan_cap: int = 0
+
+    @property
+    def exceeds_plan_cap(self) -> bool:
+        """Worth more than you said you would spend on anyone."""
+        return bool(self.plan_cap) and self.max_advisable_bid > self.plan_cap
+
     @property
     def ceiling_is_optimistic(self) -> bool:
         """True when our own ceiling is a guess resting on unpriced picks."""
@@ -343,3 +359,5 @@ class Advisory:
     scarcity: Mapping[Position, PositionScarcity] = field(default_factory=dict)
     guidance: BidGuidance | None = None
     nomination: NominationPlan | None = None
+    # Capability 12. `None` when no plan is declared, which is a normal state.
+    strategy: "StrategyRead | None" = None

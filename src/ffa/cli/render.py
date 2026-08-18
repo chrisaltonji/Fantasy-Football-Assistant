@@ -182,6 +182,11 @@ def render_guidance(guidance) -> str:
     else:
         lines.append("  who can take him: nobody who needs the position can afford him")
 
+    if guidance.exceeds_plan_cap:
+        lines.append(
+            f"  plan cap     ${guidance.plan_cap}   (declared, not applied above)"
+        )
+
     lines.extend(f"  - {reason}" for reason in guidance.reasons)
 
     # Their own script, where the record still separates people. `pace_reads` is
@@ -200,6 +205,68 @@ def render_guidance(guidance) -> str:
                 f"   ~${abs(delta)} {behind} script{thin}"
             )
 
+    return "\n".join(lines)
+
+
+def render_plan(read) -> str:
+    """Capability 12 — the plan you wrote, against the draft you are having.
+
+    Leads with the shortfall, because it is the only line that can tell you the
+    plan is finished. Everything above it is context for that number.
+    """
+    if read is None:
+        return (
+            "no draft plan declared.\n"
+            "`ffa strategy init` builds one from the market for you to edit."
+        )
+
+    floor = "+" if read.unknown_prices else ""
+    lines = [
+        f"plan: {read.archetype or 'custom'}",
+        f"  spent        ${read.spent_total} of ${read.budget}"
+        f"   (${read.remaining}{floor} left)",
+    ]
+
+    if read.shortfall:
+        lines.append(
+            f"  SHORT        ${read.shortfall} — the plan still calls for "
+            f"${read.still_calls_for} and you have ${read.remaining}{floor}"
+        )
+    else:
+        # "reachable", not "on track". This line is about whether the plan can
+        # still be *afforded*, and a draft can be perfectly affordable while
+        # being $45 under at wide receiver — which the table below says, and
+        # which "on track" would talk you out of reading.
+        lines.append(
+            f"  reachable    plan calls for ${read.still_calls_for} more; "
+            f"${read.slack} spare"
+        )
+
+    if read.max_on_one_player:
+        breach = "  BREACHED" if read.breached_cap else ""
+        lines.append(
+            f"  one-player   cap ${read.max_on_one_player}, "
+            f"biggest buy ${read.biggest_buy}{breach}"
+        )
+
+    rows = [("", "PLANNED", "SPENT", "+/-", "OPEN")]
+    for position in read.positions:
+        mark = "*" if position.is_material else " "
+        rows.append((
+            mark + position.position.value,
+            f"${position.planned}",
+            f"${position.spent}",
+            f"{position.variance:+d}",
+            str(position.open_slots),
+        ))
+    lines.append(_table(rows))
+
+    if read.off_plan:
+        lines.append("  * materially off plan")
+
+    # Said once, here, rather than trusted to be remembered. Every other number
+    # this tool prints is computed; these are not.
+    lines.append("  (planned figures are what you declared, not what anything computed)")
     return "\n".join(lines)
 
 

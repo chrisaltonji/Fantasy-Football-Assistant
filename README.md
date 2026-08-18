@@ -53,6 +53,7 @@ cp .env.example .env              # then fill in your cookies (below)
 ffa config init                   # reads the real league settings from ESPN
 ffa config nicknames              # names you can type with a clock running
 ffa data fetch                    # ESPN's own consensus auction values
+ffa strategy init                 # a draft plan off the market, for you to edit
 ffa config check                  # validates everything and explains what's wrong
 ```
 
@@ -181,6 +182,7 @@ happens on a real terminal; piped input keeps plain line-buffered behaviour.
 | `undo [#id]` / `redo` | Undo the last event, or a specific one. |
 | `advice [player...]` | Bid readout for the nominated player, or anyone you name. |
 | `turns` | Nomination order: who is up, when you are, what to put up. |
+| `plan` | Your declared plan vs. what you have actually spent. |
 | `scarcity` / `market` | What's left per position; inflation vs. your sheet. |
 | `budgets [team]` | Remaining money, max bid, and starter gaps per team. |
 | `state [team\|player]` / `log [n]` | Full board / recent events with their ids. |
@@ -336,6 +338,45 @@ If the board ever credits a nomination to someone the order did not expect, the
 readout leads with a warning and tells you to trust the board. The order is a
 model of ESPN's schedule; the board is what happened.
 
+### Your draft plan
+
+`ffa strategy init` writes a plan into `[strategy]`. It comes off the same
+reference sheet the bid advice trusts, so what you do next is disagree with
+specific numbers rather than invent a split at eleven at night.
+
+```
+> plan
+plan: balanced
+  spent        $119 of $200   ($81 left)
+  reachable    plan calls for $0 more; $81 spare
+  one-player   cap $70, biggest buy $22
+      PLANNED  SPENT  +/-  OPEN
+*QB   $11      $26    +15  0
+*RB   $76      $46    -30  0
+*WR   $78      $33    -45  0
+  * materially off plan
+  (planned figures are what you declared, not what anything computed)
+```
+
+Four archetypes — `stars-and-scrubs`, `balanced`, `value-hunter`, `hoarder` —
+and they differ **only in concentration**: how much you will put on one player,
+and how much you hold back for the bench. None of them has an opinion about
+positions. The positional split is the market's own shape at every archetype,
+because that is derivable and an opinion is not.
+
+Two things it deliberately does not do:
+
+- **It never moves a bid.** `max_on_one_player` shows up in the bid readout as
+  a line saying you capped yourself, and `bid up to` is unchanged. A declared
+  preference must not silently redefine what the market says a player is worth.
+- **It does not tell you off for being under.** Overspending is flagged the
+  moment it happens; underspending only counts once you have finished buying at
+  that position, because until then it is the plan not having happened yet.
+
+`reachable` is about money, not virtue: it says the plan can still be afforded,
+which a draft that is $45 under at receiver can be. The table is what tells you
+how it is actually going.
+
 ### Owner dossiers
 
 Everything above is **capacity**: can this rival afford him, does he have a slot
@@ -444,11 +485,11 @@ src/ffa/
               espn/    draftroom, source, settings, players
               manual/  grammar, resolve, source, errors
   reference/  schema, loader, playerbook
-  advice/     market, scarcity, bidding, nomination, types, engine
+  advice/     market, scarcity, bidding, nomination, strategy, types, engine
   sim/        bots, engine, faults, source
   view/       model (the JSON contract every surface reads)
   cli/        app, repl, console, render
-  config/     schema, loader, nicknames
+  config/     schema, loader, nicknames, strategy
 tools/        espn_probe, draft_room_probe, draft_watch, anonymize_capture
 ```
 

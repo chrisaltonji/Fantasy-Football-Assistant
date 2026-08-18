@@ -11,7 +11,7 @@ stage-by-stage picture of *where they stand*.
 > 2026-08-17. Everything listed as not started is an improvement, not a
 > prerequisite.
 
-929 tests · 75 source modules · 37 test modules.
+964 tests · 78 source modules · 38 test modules.
 
 ---
 
@@ -31,15 +31,18 @@ flowchart TB
     C["Chat / LLM layer<br/>the inference half"]
   end
   N["Nomination order — CP4<br/>whole schedule, known in advance"]
+  S["Draft plan — C2 + cap 12<br/>declared, and measured against"]
   E --> A --> T
   L --> T
   H --> T
   N --> T
+  S --> T
   A -.->|"build_view() is the contract"| D
   H -.->|"inputs now in place"| C
   style done fill:#e8f5e9,stroke:#2e7d32
   style open fill:#fff3e0,stroke:#ef6c00
   style N fill:#e8f5e9,stroke:#2e7d32
+  style S fill:#e8f5e9,stroke:#2e7d32
 ```
 
 ---
@@ -71,19 +74,19 @@ flowchart TB
 | 7 | Owner dossiers | ✅ | `dossier/` — and **100% filled** |
 | 4 | Nomination strategy | ✅ **new** | `advice/nomination.py` — schedule exact; candidate lists thin by design |
 | 10 | Positional scarcity | ✅ | `advice/scarcity.py` |
+| 12 | Strategy adherence | ✅ **new** | `advice/strategy.py` — needs a plan declared |
 | — | Market inflation | ✅ | `advice/market.py::market_state` |
 
 Capability 2 is the only partial one, and the split is deliberate: **capacity is
 arithmetic and is finished; intent is inference and is not.**
 
-### v1.1 — one shipped early
+### v1.1 — two shipped early
 
 | # | Capability | Note |
 |---|---|---|
 | 6 | Ambient feed | Needs a surface that is allowed to interrupt. |
 | 8 | Post-pick fit | `starter_gaps` / `open_slots_by_pos` already compute the inputs. |
 | 9 | Danger-zone watchlist | |
-| 12 | Strategy adherence | Also needs **C2**, the strategy preset. |
 
 ### v2 — not started
 
@@ -112,7 +115,7 @@ arithmetic and is finished; intent is inference and is not.**
 | A5 | Prior-season capture | ✅ |
 | B1 | Does ESPN populate prices? Is there a real-time channel? | ✅ **Both halves answered.** Prices yes; the draft room is SSE and REST stays empty during a draft — hence the CDP reader. |
 | C1 | Owner dossiers | ✅ **100% covered** — 5 fields derived, 11 managers interviewed |
-| C2 | Draft strategy preset | ❌ Not started (was always v1.1). Now also the thing standing between capability 4's two candidate lists and a real "nominate this next" recommendation. |
+| C2 | Draft strategy preset | ✅ **DONE 2026-08-18.** `ffa strategy init` builds one from the market; `[strategy]` in `league.toml`; capability 12 measures against it. Still the thing standing between capability 4's two candidate lists and a real "nominate this next". |
 | Debt 1–7 | | ✅ All closed |
 
 ---
@@ -126,6 +129,7 @@ arithmetic and is finished; intent is inference and is not.**
 | **Manager aliases** | Brian Cona's two ESPN accounts merged; orphan discovery built in |
 | **Pace vs precedent** | Live in the bid readout, bounded to where the record discriminates |
 | **Nomination order** | Capability 4. `pickOrder` read, cycle verified against a real 180-pick auction, `turns` readout, `nomination_plan` in `build_view()` |
+| **Draft plan** | C2 + capability 12. Market-derived default allocation, `plan` readout, `strategy` in `build_view()`, plan cap carried into the bid readout without ever applying it |
 
 ---
 
@@ -178,9 +182,16 @@ ffa config alias                            # check for second accounts
 ffa data fetch                              # ESPN's consensus auction values
 ffa history fetch && ffa history report     # prior seasons -> precedent artifact
 ffa dossier status                          # confirm coverage
+ffa strategy init                           # a plan off the market, for you to edit
+ffa strategy show                           # the plan, and adherence to it
 ffa config check                            # last gate before the day
 ffa draft --new --source espn               # draft
 ```
 
 `ffa config init` is what puts the nomination order in place; `ffa config check`
-prints it back as names you recognise, and says so plainly if it is missing.
+prints it back as names you recognise, and says so plainly if it is missing. It
+prints the plan the same way, and says when there is none.
+
+**`ffa strategy init` needs `ffa data fetch` to have run** — the default
+allocation is read off the reference sheet rather than asserted, so there has to
+be a sheet.

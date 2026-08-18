@@ -167,7 +167,7 @@ def pace_reads_for(
 
 def guidance_for(
     state: DraftState, book: PlayerBook, key: str, market: MarketState, *,
-    name: str | None = None, precedent=None, seats=None,
+    name: str | None = None, precedent=None, seats=None, strategy=None,
 ) -> BidGuidance:
     """The deterministic read on one nominated player."""
     league = state.league
@@ -211,6 +211,16 @@ def guidance_for(
     low = max(1, round(advisable * (1 - RANGE_SPREAD))) if advisable else 0
     high = min(safe, round(advisable * (1 + RANGE_SPREAD))) if advisable else 0
 
+    # Declared, not computed, and it stops here: it becomes a line you read, not
+    # a term in the bid. Applying it would make `max_advisable_bid` a statement
+    # about your preferences rather than about the market.
+    plan_cap = getattr(strategy, "max_on_one_player", 0) or 0
+    if plan_cap and advisable > plan_cap:
+        reasons.append(
+            f"your plan caps any one player at ${plan_cap} — this is not applied "
+            "to the numbers above, it is your call"
+        )
+
     threats = threats_for(state, position, exclude_team=me)
     live = [t for t in threats if t.is_live]
     if live:
@@ -237,4 +247,5 @@ def guidance_for(
         threats=threats,
         reasons=tuple(reasons),
         pace_reads=pace_reads_for(state, precedent, seats, exclude_team=me),
+        plan_cap=plan_cap,
     )

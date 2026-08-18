@@ -12,6 +12,7 @@ from ffa.advice.bidding import guidance_for
 from ffa.advice.market import market_state
 from ffa.advice.nomination import nomination_plan
 from ffa.advice.scarcity import scarcity_by_position
+from ffa.advice.strategy import strategy_read
 from ffa.advice.types import Advisory
 from ffa.domain.models import DraftState
 from ffa.reference.playerbook import PlayerBook
@@ -19,7 +20,7 @@ from ffa.reference.playerbook import PlayerBook
 
 def advise(
     state: DraftState, book: PlayerBook, *, key: str | None = None,
-    precedent=None, seats=None,
+    precedent=None, seats=None, strategy=None,
 ) -> Advisory:
     """Current market and scarcity, plus bid guidance when a player is named.
 
@@ -40,7 +41,8 @@ def advise(
         if player is not None:
             name = player.ref.raw
         guidance = guidance_for(
-            state, book, target, market, name=name, precedent=precedent, seats=seats
+            state, book, target, market, name=name, precedent=precedent,
+            seats=seats, strategy=strategy,
         )
 
     return Advisory(
@@ -50,4 +52,7 @@ def advise(
         # Independent of `key`: the nomination read is about the whole remaining
         # board and whose turn it is, not about whoever is on the block.
         nomination=nomination_plan(state, book, market),
+        # The plan is read live rather than from the journal: revising it
+        # mid-draft is legitimate, and nothing here feeds a ceiling.
+        strategy=strategy_read(state, book, strategy),
     )

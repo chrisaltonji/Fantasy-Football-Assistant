@@ -9,9 +9,18 @@ without ESPN, and they are all overridable.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping, Sequence
+from typing import TYPE_CHECKING, Mapping, Sequence
 
 from ffa.domain.enums import Position, RosterSlot
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle: strategy raises ConfigError
+    from ffa.config.strategy import StrategyPreset
+
+
+def _empty_strategy():
+    from ffa.config.strategy import StrategyPreset
+
+    return StrategyPreset()
 
 
 class ConfigError(Exception):
@@ -176,6 +185,12 @@ class LeagueConfig:
     # readout. Nothing here falls back.
     nomination_order: tuple[int, ...] = ()
 
+    # C2 — the plan you declared. Testimony, not arithmetic, and unlike every
+    # other field here it is *yours*: ESPN has no opinion about it and a rebuild
+    # must not touch it. Empty is a normal state, and every reader treats it as
+    # "say nothing" rather than assuming a default plan on your behalf.
+    strategy: "StrategyPreset" = field(default_factory=lambda: _empty_strategy())
+
     # Where your exported auction values live. Unset falls back to the sample
     # fixture, with a loud banner — sample values are invented.
     reference_path: str = ""
@@ -292,6 +307,15 @@ class LeagueConfig:
             problems.append(
                 "[managers] nicknames must be unique so they can be typed "
                 f"unambiguously; repeated: {', '.join(sorted(duplicates))}"
+            )
+
+        from ffa.config.strategy import strategy_problem
+
+        plan_problem = strategy_problem(self.strategy, self.budget)
+        if plan_problem:
+            problems.append(
+                f"[strategy] {plan_problem}. Re-run `ffa strategy init` to rebuild "
+                "it from the market, or edit the numbers by hand."
             )
 
         order_problem = nomination_order_problem(self.nomination_order, ids)

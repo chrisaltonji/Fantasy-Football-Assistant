@@ -18,6 +18,7 @@ from typing import Callable, TextIO
 from ffa.advice.engine import advise
 from ffa.advice.market import market_state
 from ffa.advice.nomination import nomination_plan
+from ffa.advice.strategy import strategy_read
 from ffa.cli import render
 from ffa.cli.console import make_console
 from ffa.domain.events import PlayerNominated
@@ -103,6 +104,7 @@ def run_repl(
     source: EventSource | None = None,
     precedent=None,
     seats=None,
+    strategy=None,
 ) -> int:
     """Drive a draft until quit, EOF, or Ctrl-C. Returns an exit code.
 
@@ -117,7 +119,7 @@ def run_repl(
     if source is not None:
         return _run_live(store, stdin=stdin, stdout=stdout, now_fn=now_fn,
                          prompt=prompt, book=book, source=source,
-                         precedent=precedent, seats=seats)
+                         precedent=precedent, seats=seats, strategy=strategy)
     emit = _writer(stdout)
 
     if store.load_warnings:
@@ -141,7 +143,8 @@ def run_repl(
             return 0
 
         outcome = _handle_line(
-            line, store, emit, book, now_fn, seen_warnings, precedent, seats
+            line, store, emit, book, now_fn, seen_warnings, precedent, seats,
+            strategy,
         )
         if outcome.exit_code is not None:
             return outcome.exit_code
@@ -155,8 +158,13 @@ def _emit_new_warnings(emit, state: DraftState, seen: int) -> int:
 
 
 def _view(store: DraftStore, command: ViewCommand, book=None,
-          precedent=None, seats=None) -> str:
+          precedent=None, seats=None, strategy=None) -> str:
     state = store.state
+    if command.kind == "plan":
+        # Like `turns`, ahead of the reference-data gate: adherence is your
+        # dollars against your own declared numbers, and needs no sheet.
+        return render.render_plan(strategy_read(state, book, strategy))
+
     if command.kind == "turns":
         # Ahead of the reference-data gate on purpose. Whose turn it is needs no
         # auction values at all — only the candidate lists do, and they simply
@@ -186,7 +194,10 @@ def _view(store: DraftStore, command: ViewCommand, book=None,
         elif state.current_nomination is None:
             return "nothing nominated. Try: advice <player>"
         return render.render_guidance(
-            advise(state, book, key=key, precedent=precedent, seats=seats).guidance
+            advise(
+                state, book, key=key, precedent=precedent, seats=seats,
+                strategy=strategy,
+            ).guidance
         )
 
     if command.kind == "budgets":
@@ -256,6 +267,7 @@ def _run_live(
     source: EventSource,
     precedent=None,
     seats=None,
+    strategy=None,
 ) -> int:
     """The same draft loop, fed by two producers instead of one."""
     # Everything that reaches the screen goes through the console, including the
@@ -303,11 +315,13 @@ def _run_live(
                     continue
                 emit(f"#{store.events[-1].id} {render.describe(payload)}")
                 seen_warnings = _emit_new_warnings(emit, store.state, seen_warnings)
-                _maybe_guidance(emit, store, book, [payload], precedent, seats)
+                _maybe_guidance(emit, store, book, [payload], precedent, seats,
+                                strategy)
                 continue
 
             outcome = _handle_line(
-                payload, store, emit, book, now_fn, seen_warnings, precedent, seats
+                payload, store, emit, book, now_fn, seen_warnings, precedent,
+                seats, strategy,
             )
             if outcome.exit_code is not None:
                 _drain(inbox, store, emit)
@@ -373,7 +387,7 @@ class _LineOutcome:
 
 def _handle_line(
     line: str, store: DraftStore, emit, book, now_fn, seen_warnings: int,
-    precedent=None, seats=None,
+    precedent=None, seats=None, strategy=None,
 ) -> _LineOutcome:
     """One typed command. Shared by both loops so they cannot drift."""
     try:
@@ -393,7 +407,7 @@ def _handle_line(
         emit("saved.")
         return _LineOutcome(0, seen_warnings)
     if isinstance(command, ViewCommand):
-        emit(_view(store, command, book, precedent, seats))
+        emit(_view(store, command, book, precedent, seats, strategy))
         return _LineOutcome(None, seen_warnings)
 
     if isinstance(command, EmitCommand):
@@ -405,13 +419,14 @@ def _handle_line(
             return _LineOutcome(None, seen_warnings)
         emit(f"#{store.events[-1].id} {command.echo}")
         seen_warnings = _emit_new_warnings(emit, store.state, seen_warnings)
-        _maybe_guidance(emit, store, book, command.events, precedent, seats)
+        _maybe_guidance(emit, store, book, command.events, precedent, seats,
+                        strategy)
 
     return _LineOutcome(None, seen_warnings)
 
 
 def _maybe_guidance(emit, store: DraftStore, book, events,
-                    precedent=None, seats=None) -> None:
+                    precedent=None, seats=None, strategy=None) -> None:
     """Capability 2: the bid readout auto-fires on nomination.
 
     That is the moment it is needed, and asking for it costs seconds you do not
@@ -422,6 +437,9 @@ def _maybe_guidance(emit, store: DraftStore, book, events,
     if any(isinstance(e, PlayerNominated) for e in events):
         emit(
             render.render_guidance(
-                advise(store.state, book, precedent=precedent, seats=seats).guidance
+                advise(
+                    store.state, book, precedent=precedent, seats=seats,
+                    strategy=strategy,
+                ).guidance
             )
         )

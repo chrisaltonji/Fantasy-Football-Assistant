@@ -78,6 +78,9 @@ def _require(table: dict[str, Any], section: str, key: str) -> Any:
     return table[key]
 
 
+from ffa.config.strategy import parse_strategy, strategy_to_dict
+
+
 def _nomination_order(raw: Any) -> tuple[int, ...]:
     """`[draft].nomination_order` -> team ids.
 
@@ -175,6 +178,7 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
         draft_type=str(draft.get("type", "AUCTION")).upper(),
         budget=int(draft.get("budget", 200)),
         nomination_order=_nomination_order(draft.get("nomination_order", ())),
+        strategy=parse_strategy(data.get("strategy")),
         team_count=int(_require(teams, "teams", "count")),
         my_team_id=int(teams.get("my_team_id", 0)),
         team_ids=tuple(int(i) for i in teams.get("ids", ())),
@@ -235,6 +239,7 @@ def config_to_dict(config: LeagueConfig) -> dict[str, Any]:
         },
         "roster": roster,
         "scoring": {"type": config.scoring_type},
+        "strategy": strategy_to_dict(config.strategy),
         "managers": {str(k): v for k, v in sorted(config.managers.items())},
         "owners": {str(k): v for k, v in sorted(config.owners.items())},
         "team_names": {str(k): v for k, v in sorted(config.team_names.items())},

@@ -20,6 +20,7 @@ from typing import Any
 CARRIED_FORWARD: tuple[str, ...] = (
     "managers",            # hand-typed nicknames; merged, not copied — see nicknames.carry_forward
     "aliases",             # two accounts, one human; declared by hand and unrecoverable
+    "strategy",            # C2 — your declared plan; ESPN has no opinion about it
     "reference_path",
     "baseline_teams",
     "baseline_budget",
