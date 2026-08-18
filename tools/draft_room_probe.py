@@ -83,7 +83,7 @@ def launch(chrome: Path, port: int, profile: Path) -> int:
         "\nChrome is starting. If this is the first time:\n"
         "  1. Log into ESPN in that window\n"
         "  2. Open your league, then the draft room\n"
-        f"  3. Re-run with --catalog\n"
+        "  3. Re-run with --catalog\n"
     )
     return 0
 
@@ -188,7 +188,7 @@ def catalog(port: int, out_dir: Path) -> int:
         print(f"  clock       : {data['clock']}")
         print(f"  $ amounts   : {data['dollarCount']}  ($null: {data['nullBudgets']}, AUTO: {data['autoFlags']})")
         print(f"  tables      : {len(data['tables'])}")
-        print(f"\ntop draft-ish class names:")
+        print("\ntop draft-ish class names:")
         for name, count in data["interestingClasses"][:20]:
             print(f"  {count:>4}x  {name}")
         print(f"\nfull catalogue written to {target}")

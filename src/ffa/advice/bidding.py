@@ -74,6 +74,43 @@ def threats_for(
     return tuple(sorted(out, key=lambda t: (not t.is_live, -t.max_legal_bid, t.team_id)))
 
 
+def safe_legal_bid(
+    state: DraftState, book: PlayerBook, market: MarketState, team_id: int
+) -> int:
+    """`max_legal_bid`, with our own unpriced picks charged at their likely cost.
+
+    `remaining_budget` charges an unknown price at the $1 minimum. For a rival
+    that is the right way to be wrong — it over-states their ammunition, so we
+    are never surprised by a bid we thought they could not make. For *us* it is
+    the wrong way: it over-states the money we have, and the simulator showed
+    exactly what follows. With `--drop-prices 0.3` the bots bid against that
+    inflated figure and finished over budget once the real prices landed.
+
+    The estimate uses the reference sheet at current market temperature, which
+    is the same number the tool already trusts to advise a bid. It is a guess,
+    but it is a guess in the safe direction, and $1 is a guess too — just an
+    optimistic one.
+    """
+    league = state.league
+    if league is None:
+        return 0
+
+    understated = 0
+    for player in state.players_for_team(team_id):
+        if player.price is not None and player.price.is_known:
+            continue
+        estimate = inflated_value(book, player.ref.key, market) or book.value(
+            player.ref.key
+        )
+        if estimate is None:
+            # Nothing to estimate from. The $1 floor already charged for him,
+            # and inventing a number here would be worse than leaving it.
+            continue
+        understated += max(0, int(estimate) - proj.MIN_BID)
+
+    return max(0, proj.max_legal_bid(state, team_id) - understated)
+
+
 def guidance_for(
     state: DraftState, book: PlayerBook, key: str, market: MarketState, *, name: str | None = None
 ) -> BidGuidance:
@@ -86,12 +123,14 @@ def guidance_for(
     reference = book.value(key)
     inflated = inflated_value(book, key, market)
     legal = proj.max_legal_bid(state, me) if league else 0
+    unknown_prices = proj.unknown_price_count(state, me) if league else 0
+    safe = safe_legal_bid(state, book, market, me) if league else 0
     fills_gap = has_starter_gap(state, me, position) if (league and position) else False
 
     reasons: list[str] = []
     if reference is None:
         # No reference value: refuse to invent one. The ceiling is all we know.
-        advisable = legal
+        advisable = safe
         reasons.append("no reference value for this player — showing the legal ceiling only")
     else:
         base = inflated or reference
@@ -100,13 +139,22 @@ def guidance_for(
             reasons.append("would not fill a starting slot for us")
         if market.inflation_ratio and market.inflation_ratio != 1.0:
             reasons.append(f"market running {market.read} ({market.inflation_ratio:.2f}x)")
-        advisable = min(advisable, legal)
-        if advisable == legal and legal < base:
-            reasons.append(f"capped by our legal ceiling of ${legal}")
+        # Capped by the *safe* ceiling, not the optimistic one. Advising up to a
+        # number that rests on unpriced picks is how a draft ends over budget.
+        advisable = min(advisable, safe)
+        if advisable == safe and safe < base:
+            reasons.append(f"capped by our legal ceiling of ${safe}")
+
+    if safe < legal:
+        reasons.append(
+            f"${legal} assumes our {unknown_prices} unpriced pick(s) cost $1 each; "
+            f"at sheet value the real ceiling is nearer ${safe}. "
+            "Enter those prices to firm it up."
+        )
 
     advisable = max(0, int(advisable))
     low = max(1, round(advisable * (1 - RANGE_SPREAD))) if advisable else 0
-    high = min(legal, round(advisable * (1 + RANGE_SPREAD))) if advisable else 0
+    high = min(safe, round(advisable * (1 + RANGE_SPREAD))) if advisable else 0
 
     threats = threats_for(state, position, exclude_team=me)
     live = [t for t in threats if t.is_live]
@@ -128,6 +176,8 @@ def guidance_for(
         max_advisable_bid=advisable,
         suggested_low=low,
         suggested_high=high,
+        safe_legal_bid=safe,
+        unknown_prices=unknown_prices,
         fills_starter_gap=fills_gap,
         threats=threats,
         reasons=tuple(reasons),

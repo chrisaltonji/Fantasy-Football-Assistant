@@ -12,6 +12,7 @@ from typing import Iterable, Sequence
 
 from ffa.domain.enums import Position
 from ffa.domain.events import BaseEvent, DraftInitialized, EventUndone
+from ffa.domain.ids import PlayerRef
 from ffa.domain.models import DraftState
 from ffa.domain.reducers import undone_ids
 from ffa.ingest.manual.errors import CommandError
@@ -136,7 +137,7 @@ def looks_like_position(token: str) -> bool:
 # --- players ------------------------------------------------------------------
 
 
-def resolve_player(text: str, book=None) -> "PlayerRef":
+def resolve_player(text: str, book=None) -> PlayerRef:
     """Identify a typed name against the reference data.
 
     Three outcomes, and the middle one is the point:
@@ -152,8 +153,6 @@ def resolve_player(text: str, book=None) -> "PlayerRef":
     - **No match at all** → accept as free text. A player missing from the
       sheet is normal (deep sleepers, late adds); the tool must not block on it.
     """
-    from ffa.domain.ids import PlayerRef
-
     typed = (text or "").strip()
     if not typed:
         raise CommandError("no player name given")

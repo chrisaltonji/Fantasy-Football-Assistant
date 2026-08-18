@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 652 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 663 tests pass. Everything below is
 pushed.
 
 ---
@@ -382,22 +382,41 @@ is a draft that looks like it is working.
    config that then refuses to load. `config init` and `config check` both say
    which teams are still untypeable.
 
-652 tests pass, up from 578.
+663 tests pass, up from 578.
 
-**Correctness, not urgency**
+**Correctness, not urgency — CLOSED 2026-08-17**
 
-5. `BidGuidance` does not expose `remaining_is_floor` for **our own** ceiling,
-   only for rivals. The simulator proved this over-commits when our own prices
-   are incomplete. Rare with `--source espn`, but the wrong direction to err.
+5. ~~`BidGuidance` does not expose `remaining_is_floor` for **our own**
+   ceiling.~~ **DONE.** `BidGuidance` now carries `safe_legal_bid` and
+   `unknown_prices`, and `max_advisable_bid` is capped by the *safe* ceiling
+   rather than the optimistic one.
 
-**Tidy-up**
+   `remaining_budget` charges an unknown price at the $1 minimum. That floor is
+   the right way to be wrong about a rival — it over-states their ammunition, so
+   no bid they make is a surprise — and the wrong way to be wrong about us.
+   `safe_legal_bid` restates the same arithmetic with our own unpriced picks
+   charged at their inflation-adjusted sheet value, which is the number the tool
+   already trusts to advise a bid. A pick with no reference row is left on the
+   $1 floor; inventing a value there would be the same failure in the other
+   direction.
 
-6. `README.md` still says "Checkpoint 3 of 5" and lists ~10 modules that do not
-   exist, and now also predates `ffa config nicknames`, `--tab` and
-   `--allow-finished-board`. `docs/HANDOFF.md` is the document to trust.
-7. ~10 unused imports, and a dangling `"PlayerRef"` annotation in
-   `ingest/manual/resolve.py` (harmless under `from __future__ import
-   annotations`, but the name is not imported).
+   `max_legal_bid` is unchanged and still means what it meant. The two ceilings
+   this codebase keeps apart do not get a third blurred into them — the readout
+   shows `$115+ (~$71 priced)` and says why in a reason line, and `build_view`
+   ships both so the dashboard and the LLM layer cannot inherit the bug.
+
+**Tidy-up — CLOSED 2026-08-17**
+
+6. ~~`README.md` is stale.~~ **DONE.** Rewritten against what actually exists:
+   the real module tree, the live-draft flow with its three pre-flight refusals,
+   `config init` / `config nicknames` / `data fetch`, the safe-ceiling caveat,
+   and the probe's `INCONCLUSIVE` behaviour. `docs/HANDOFF.md` is still the
+   document to trust for state; the README is now for someone starting from
+   scratch.
+7. ~~Unused imports and a dangling `"PlayerRef"` annotation.~~ **DONE.**
+   `resolve_player` imports `PlayerRef` at module scope and annotates it
+   directly, so `get_type_hints` would resolve. `python -m pyflakes src tools
+   tests` is clean.
 
 ## After CP5
 

@@ -12,7 +12,7 @@ import queue
 from typing import Iterable, TextIO
 
 from ffa.domain.events import BaseEvent
-from ffa.ingest.manual.grammar import EmitCommand, ParseContext, parse_command
+from ffa.ingest.manual.grammar import EmitCommand, parse_command
 from ffa.ingest.source import SourceHealth, SourceStatus
 
 

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Mapping
 
-from ffa.domain.enums import Position, Provenance, RosterSlot
+from ffa.domain.enums import Position, RosterSlot
 from ffa.domain.ids import PlayerRef
 from ffa.domain.models import LeagueSnapshot
 from ffa.domain.sourced import Sourced

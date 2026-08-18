@@ -15,11 +15,10 @@ from ffa.domain.events import (
     EventUndone,
     FieldAmended,
     PlayerNominated,
-    PlayerSold,
     UnknownEvent,
 )
 from ffa.domain.ids import PlayerRef
-from ffa.domain.sourced import known, unknown
+from ffa.domain.sourced import known
 from tests.conftest import at, sold
 
 

@@ -181,6 +181,12 @@ def _nomination_view(state: DraftState, book: Any, advisory) -> dict[str, Any] |
     if guidance is not None:
         out["guidance"] = {
             "max_legal_bid": guidance.max_legal_bid,
+            # The same ceiling with our own unpriced picks charged at what they
+            # probably cost. `max_legal_bid` charges them $1, which over-states
+            # what we have; every surface should act on this one.
+            "safe_legal_bid": guidance.safe_legal_bid,
+            "unknown_prices": guidance.unknown_prices,
+            "ceiling_is_optimistic": guidance.ceiling_is_optimistic,
             "max_advisable_bid": guidance.max_advisable_bid,
             "suggested_low": guidance.suggested_low,
             "suggested_high": guidance.suggested_high,

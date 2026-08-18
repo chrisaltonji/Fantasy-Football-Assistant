@@ -33,7 +33,7 @@ from ffa.domain.events import (
     PlayerNominated,
     PlayerSold,
 )
-from ffa.domain.ids import EntityAddressError, PlayerRef, parse_entity_address
+from ffa.domain.ids import EntityAddressError, parse_entity_address
 from ffa.domain.models import DraftState
 from ffa.domain.sourced import known, unknown
 from ffa.ingest.manual.errors import CommandError

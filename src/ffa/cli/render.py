@@ -156,8 +156,15 @@ def render_guidance(guidance) -> str:
         f"  bid up to    ${guidance.max_advisable_bid}"
         f"   (range ${guidance.suggested_low}-${guidance.suggested_high})"
     )
+    # A trailing `+` marks the same thing it does on a rival's budget: this
+    # number rests on prices we do not have yet, so it is a best case.
+    ceiling = (
+        f"${guidance.max_legal_bid}+ (~${guidance.safe_legal_bid} priced)"
+        if guidance.ceiling_is_optimistic
+        else f"${guidance.max_legal_bid}"
+    )
     lines.append(
-        f"  legal max    ${guidance.max_legal_bid}"
+        f"  legal max    {ceiling}"
         f"   {'fills a starting slot' if guidance.fills_starter_gap else 'bench only for us'}"
     )
 

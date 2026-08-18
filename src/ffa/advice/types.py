@@ -110,6 +110,26 @@ class BidGuidance:
     threats: tuple[Threat, ...] = ()
     reasons: tuple[str, ...] = ()
 
+    # `max_legal_bid` charges our own unpriced picks at the $1 minimum, which
+    # *over*-states what we have left. That floor is the safe direction for
+    # judging a rival's ammunition — assume they can outbid us — and the
+    # dangerous one for setting our own ceiling. The simulator found this
+    # directly: with `--drop-prices 0.3`, teams bid against the inflated figure
+    # and finished over budget once the real prices landed.
+    #
+    # So `safe_legal_bid` restates the same arithmetic with those picks charged
+    # at what they most likely cost, and it is what caps the advisable bid.
+    # `max_legal_bid` is left alone — it is a defined quantity, and quietly
+    # redefining it would confuse the two ceilings this codebase is careful to
+    # keep apart.
+    safe_legal_bid: int = 0
+    unknown_prices: int = 0
+
+    @property
+    def ceiling_is_optimistic(self) -> bool:
+        """True when our own ceiling is a guess resting on unpriced picks."""
+        return self.unknown_prices > 0 and self.safe_legal_bid < self.max_legal_bid
+
     @property
     def live_threats(self) -> tuple[Threat, ...]:
         return tuple(t for t in self.threats if t.is_live)

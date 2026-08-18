@@ -15,7 +15,7 @@ force reading the raw views:
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from ffa.config.schema import ConfigError, LeagueConfig
 from ffa.domain.enums import Position, RosterSlot

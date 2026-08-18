@@ -20,7 +20,7 @@ from __future__ import annotations
 import difflib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Iterable, Sequence
 
 from ffa.domain.enums import Position
 from ffa.domain.ids import normalize_player_key

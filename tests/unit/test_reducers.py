@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import pytest
-
 from ffa.domain import reducers
-from ffa.domain.enums import Position, Provenance
-from ffa.domain.events import EventUndone, FieldAmended, PlayerNominated, PlayerSold
+from ffa.domain.enums import Provenance
+from ffa.domain.events import EventUndone, FieldAmended, PlayerNominated
 from ffa.domain.ids import PlayerRef
 from ffa.domain.models import DraftState
 from ffa.domain.projections import remaining_budget
-from ffa.domain.sourced import known, unknown
+from ffa.domain.sourced import known
 from tests.conftest import at, sold
 
 
