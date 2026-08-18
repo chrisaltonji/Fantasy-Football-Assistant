@@ -284,6 +284,11 @@ class DraftRoomReader:
     """
 
     port: int = CDP_DEFAULT_PORT
+
+    # Substring of the tab's URL, for the two-draft-rooms case below. Empty
+    # means "there had better be exactly one".
+    tab_match: str = ""
+
     _pw: Any = field(default=None, repr=False)
     _browser: Any = field(default=None, repr=False)
     _page: Any = field(default=None, repr=False)
@@ -309,21 +314,67 @@ class DraftRoomReader:
                 "Start it with:  python tools/draft_room_probe.py --launch"
             ) from None
 
-        self._page = self._find_page()
+        try:
+            self._page = self._find_page()
+        except DraftRoomError:
+            self.close()
+            raise
         if self._page is None:
             self.close()
             raise DraftRoomError(
                 "attached, but no draft room tab is open in that Chrome.\n"
-                f"Looked for a URL containing {DRAFT_URL_FRAGMENT!r}."
+                f"Looked for a URL containing {DRAFT_URL_FRAGMENT!r}"
+                + (f" and {self.tab_match!r}." if self.tab_match else ".")
             )
         return self
 
-    def _find_page(self):
+    def draft_tabs(self) -> tuple[str, ...]:
+        """Every open tab that looks like a draft room, in browser order."""
+        urls: list[str] = []
         for context in self._browser.contexts:
             for page in context.pages:
-                if DRAFT_URL_FRAGMENT in (page.url or ""):
-                    return page
-        return None
+                url = page.url or ""
+                if DRAFT_URL_FRAGMENT in url:
+                    urls.append(url)
+        return tuple(urls)
+
+    def _find_page(self):
+        """The one draft-room tab, or a refusal.
+
+        Returning the *first* match is the tempting version and it is wrong.
+        With two draft rooms open — the real league beside yesterday's practice
+        draft, or a stale tab left over from a reload — the tab that gets read
+        is whichever Chrome happens to list first. That failure is invisible:
+        the attach succeeds, the pre-flight reports `matched 12/12` because
+        both rooms belong to the same league, and the board simply never moves.
+        It was hit during the rehearsal.
+
+        So ambiguity is an error, never a coin flip. `tab_match` narrows it when
+        you do want a specific one.
+        """
+        candidates = []
+        for context in self._browser.contexts:
+            for page in context.pages:
+                url = page.url or ""
+                if DRAFT_URL_FRAGMENT not in url:
+                    continue
+                if self.tab_match and self.tab_match.lower() not in url.lower():
+                    continue
+                candidates.append(page)
+
+        if not candidates:
+            return None
+        if len(candidates) > 1:
+            listed = "\n".join(f"  {p.url}" for p in candidates)
+            raise DraftRoomError(
+                f"{len(candidates)} draft-room tabs are open in that Chrome, "
+                "and reading the wrong one looks exactly like a draft that "
+                "never starts:\n"
+                f"{listed}\n"
+                "Close the ones you are not drafting in, or single one out with "
+                "--tab <text from its URL>."
+            )
+        return candidates[0]
 
     def snapshot_raw(self) -> dict[str, Any]:
         """The untouched dict `SNAPSHOT_JS` returned.

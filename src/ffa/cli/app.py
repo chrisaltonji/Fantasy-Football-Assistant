@@ -50,6 +50,21 @@ def cmd_config_check(args: argparse.Namespace) -> int:
             "team is yours, so 'my budget' advice will be wrong.",
             file=sys.stderr,
         )
+
+    from ffa.config.nicknames import looks_generated
+
+    untypeable = [
+        t for t in config.effective_team_ids
+        if t not in config.managers or looks_generated(config.managers[t])
+    ]
+    if untypeable:
+        print(
+            "  WARNING: no typeable nickname for team(s) "
+            + ", ".join(str(t) for t in untypeable)
+            + " — correcting one of their picks would mean typing an ESPN "
+            "username under the clock. Fix once with:  ffa config nicknames",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -62,6 +77,7 @@ def cmd_config_init(args: argparse.Namespace) -> int:
     hand-editing against a fixture.
     """
     from ffa.config.loader import load_dotenv, write_config
+    from ffa.config.nicknames import carry_forward, looks_generated
     from ffa.ingest.espn.settings import config_from_payloads, fetch_league_payloads
 
     env = load_dotenv()
@@ -103,14 +119,34 @@ def cmd_config_init(args: argparse.Namespace) -> int:
         except ConfigError:
             previous = None
         if previous is not None:
+            # Nicknames are the one thing in this file that cannot be
+            # regenerated from ESPN — ESPN's answer is the username you ran this
+            # command to stop typing.
+            merged, notes = carry_forward(
+                previous_managers=dict(previous.managers),
+                previous_owners=dict(previous.owners),
+                fresh_managers=dict(config.managers),
+                fresh_owners=dict(config.owners),
+                team_ids=config.effective_team_ids,
+            )
             config = _replace(
                 config,
+                managers=merged,
                 reference_path=previous.reference_path or config.reference_path,
                 baseline_teams=previous.baseline_teams,
                 baseline_budget=previous.baseline_budget,
                 poll_interval_seconds=previous.poll_interval_seconds,
                 poll_failure_threshold=previous.poll_failure_threshold,
             )
+            kept = sum(
+                1
+                for tid, name in merged.items()
+                if previous.managers.get(tid) == name and not looks_generated(name)
+            )
+            if kept:
+                print(f"  kept {kept} hand-set nickname(s)")
+            for note in notes:
+                print(f"  {note}")
             if previous.reference_path:
                 print(f"  kept [reference].path = {previous.reference_path}")
 
@@ -129,6 +165,16 @@ def cmd_config_init(args: argparse.Namespace) -> int:
     for warning in warnings:
         print(f"! {warning}", file=sys.stderr)
 
+    generated = sorted(t for t, n in config.managers.items() if looks_generated(n))
+    if generated:
+        print(
+            "! teams "
+            + ", ".join(str(t) for t in generated)
+            + " still carry ESPN's generated usernames. Correcting a pick means "
+            "typing one of those exactly. Fix it once with:  ffa config nicknames",
+            file=sys.stderr,
+        )
+
     # Not fatal here — `config check` and `draft` both enforce it — but it is
     # the one field nothing can work around, so say so plainly.
     if not config.my_team_id:
@@ -139,6 +185,122 @@ def cmd_config_init(args: argparse.Namespace) -> int:
         )
         return 1
     return 0
+
+
+def cmd_config_nicknames(args: argparse.Namespace) -> int:
+    """Give every manager a name you can actually type mid-draft.
+
+    ESPN calls people `espn06814226`. That is what `[managers]` is seeded with,
+    and it is unusable under a clock: correcting a misattributed pick becomes
+    `sold barkley 62 espn78078705`. One pass, once, and the rest of the draft is
+    `sold barkley 62 dave`.
+    """
+    from dataclasses import replace as _replace
+
+    from ffa.config.loader import write_config
+    from ffa.config.nicknames import check_unique, looks_generated, parse_assignment
+
+    config = load_config(args.path)
+    managers = dict(config.managers)
+
+    if args.set:
+        for assignment in args.set:
+            try:
+                team_id, nickname = parse_assignment(assignment)
+            except ValueError as exc:
+                raise ConfigError(f"--set {assignment!r}: {exc}") from None
+            if team_id not in config.effective_team_ids:
+                raise ConfigError(
+                    f"--set {assignment!r}: team {team_id} is not in this league. "
+                    "Team ids: "
+                    + ", ".join(str(i) for i in config.effective_team_ids)
+                )
+            managers[team_id] = nickname
+    elif not args.list:
+        managers = _prompt_for_nicknames(config, managers)
+
+    try:
+        check_unique(managers)
+    except ValueError as exc:
+        raise ConfigError(f"nicknames must be unique: {exc}") from None
+
+    changed = managers != dict(config.managers)
+    if changed:
+        write_config(_replace(config, managers=managers), args.path)
+        print(f"wrote {args.path}")
+
+    print(_nickname_table(config, managers))
+    remaining = [t for t, n in sorted(managers.items()) if looks_generated(n)]
+    missing = [t for t in config.effective_team_ids if t not in managers]
+    if remaining or missing:
+        print(
+            "! still untypeable: "
+            + ", ".join(f"team {t}" for t in sorted(set(remaining) | set(missing)))
+            + "  (addressable as t<id> either way)",
+            file=sys.stderr,
+        )
+    elif not args.list:
+        print("every team has a typeable nickname.")
+    return 0
+
+
+def _prompt_for_nicknames(
+    config: LeagueConfig, managers: dict[int, str]
+) -> dict[int, str]:
+    """Walk the roster of managers once, interactively.
+
+    Blank keeps what is there, which makes a re-run cheap: the fix for one bad
+    name is to run this again and press Enter eleven times.
+    """
+    from ffa.config.nicknames import check_nickname, looks_generated
+
+    if not sys.stdin.isatty():
+        raise ConfigError(
+            "nothing to do: no --set given and stdin is not a terminal.\n"
+            "Either run this in a terminal, or pass --set 3=dave --set 5=mike."
+        )
+
+    print("One word each, no spaces. Enter keeps the current value; `-` clears it.")
+    print(_nickname_table(config, managers))
+    print("")
+
+    for team_id in config.effective_team_ids:
+        current = managers.get(team_id, "")
+        name = config.team_names.get(team_id, "")
+        hint = f" [{current}]" if current and not looks_generated(current) else ""
+        label = f"team {team_id}" + (f" ({name})" if name else "")
+        try:
+            typed = input(f"{label}{hint}: ").strip()
+        except EOFError:
+            print("")
+            break
+        if not typed:
+            continue
+        if typed == "-":
+            managers.pop(team_id, None)
+            continue
+        try:
+            managers[team_id] = check_nickname(typed)
+        except ValueError as exc:
+            print(f"  ! {exc}", file=sys.stderr)
+    return managers
+
+
+def _nickname_table(config: LeagueConfig, managers: dict[int, str]) -> str:
+    from ffa.config.nicknames import looks_generated
+
+    lines = []
+    for team_id in config.effective_team_ids:
+        nickname = managers.get(team_id, "")
+        mark = "  <- ESPN username" if looks_generated(nickname) else ""
+        if not nickname:
+            mark = "  <- unset"
+        mine = " (you)" if team_id == config.my_team_id else ""
+        team_name = config.team_names.get(team_id, "")
+        lines.append(
+            f"  {team_id:>3}  {nickname or '-':<16}{mine:<6} {team_name}{mark}"
+        )
+    return "\n".join(lines)
 
 
 SAMPLE_REFERENCE = Path("data/fixtures/sample_rankings.csv")
@@ -199,9 +361,10 @@ def cmd_draft(args: argparse.Namespace) -> int:
     # leaves an orphan run behind on failure — journal written, lockfile held —
     # and a later `--resume` would find that empty draft instead of the real
     # one. A failed attach should cost nothing.
-    source = _build_source(args, config)
+    resuming = bool(args.resume or args.resume_id)
+    source = _build_source(args, config, resuming=resuming)
 
-    if args.resume or args.resume_id:
+    if resuming:
         directory = _resolve_resume_dir(args, config)
         print(f"resuming {directory}")
         store = DraftStore.resume(directory)
@@ -230,7 +393,9 @@ def cmd_draft(args: argparse.Namespace) -> int:
             source.stop()
 
 
-def _build_source(args: argparse.Namespace, config: LeagueConfig):
+def _build_source(
+    args: argparse.Namespace, config: LeagueConfig, *, resuming: bool = False
+):
     """Resolve --source into an EventSource, or None for manual entry.
 
     Manual stays the default on purpose. It is the fallback that always works,
@@ -247,7 +412,7 @@ def _build_source(args: argparse.Namespace, config: LeagueConfig):
     # Attach once here purely to fail fast — a bad port or a missing draft tab
     # should be a clear message now, not ten silent poll failures later. The
     # same snapshot pays for the team-name pre-flight below.
-    reader = DraftRoomReader(port=args.cdp_port)
+    reader = DraftRoomReader(port=args.cdp_port, tab_match=args.tab or "")
     try:
         reader.connect()
         preflight = reader.snapshot()
@@ -259,6 +424,7 @@ def _build_source(args: argparse.Namespace, config: LeagueConfig):
         reader.close()
 
     print(f"attached to the draft room on port {args.cdp_port}")
+    _check_board_is_live(preflight, resuming=resuming, args=args)
 
     resolver = TeamResolver(config.team_names, config.effective_team_ids)
     matched, unmatched = resolver.audit(preflight)
@@ -287,10 +453,54 @@ def _build_source(args: argparse.Namespace, config: LeagueConfig):
     # greenlet-based and not thread-safe, so the connection must be made on the
     # thread that polls it; the source connects lazily on its first snapshot.
     return DraftRoomSource(
-        DraftRoomReader(port=args.cdp_port),
+        DraftRoomReader(port=args.cdp_port, tab_match=args.tab or ""),
         interval=config.poll_interval_seconds,
         resolver=resolver,
     )
+
+
+def _check_board_is_live(preflight, *, resuming: bool, args: argparse.Namespace) -> None:
+    """Refuse to start a *new* draft against a board that already finished.
+
+    A full board is not an edge case to reason about — it is a fact: this room
+    is a completed draft, so it is last season's, or a practice room from
+    yesterday, and it is not the one about to be run. Left alone the mistake is
+    slow and expensive. The attach succeeds, the pre-flight matches every team,
+    and then every one of those completed picks pours into a brand-new journal
+    as if it were happening now.
+
+    A *partly* filled board is the opposite: that is attaching mid-draft, which
+    works and is worth doing. It just gets said out loud, because those picks
+    are about to be recorded.
+    """
+    total = len(preflight.teams) * preflight.slots_per_team
+    filled = preflight.filled
+    if not filled:
+        return
+
+    if total and filled >= total and not resuming:
+        if not getattr(args, "allow_finished_board", False):
+            raise ConfigError(
+                f"that draft room is already finished — {filled}/{total} picks are "
+                "on the board.\n"
+                "A completed board means the wrong tab: last season's draft, or a "
+                "practice room. Open the room you are about to draft in.\n"
+                "To record a finished board anyway, pass --allow-finished-board; "
+                "to add to an existing run, use --resume."
+            )
+        print(
+            f"! recording a finished board: {filled}/{total} picks",
+            file=sys.stderr,
+        )
+        return
+
+    if not resuming:
+        print(
+            f"! the board already shows {filled} pick(s)"
+            + (f" of {total}" if total else "")
+            + " — they will be recorded into this new draft as it starts.",
+            file=sys.stderr,
+        )
 
 
 def cmd_sim(args: argparse.Namespace) -> int:
@@ -555,6 +765,16 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--public", action="store_true", help="skip cookie auth (public leagues)")
     init.set_defaults(func=cmd_config_init)
 
+    nick = config_sub.add_parser(
+        "nicknames",
+        help="name each manager something you can type mid-draft",
+    )
+    nick.add_argument("--path", type=Path, default=DEFAULT_CONFIG_PATH)
+    nick.add_argument("--set", action="append", metavar="ID=NAME", default=[],
+                      help="set one non-interactively; repeatable")
+    nick.add_argument("--list", action="store_true", help="show them and change nothing")
+    nick.set_defaults(func=cmd_config_nicknames)
+
     draft = sub.add_parser("draft", help="run a live draft session")
     draft.add_argument("--new", action="store_true", help="start a new draft")
     draft.add_argument("--resume", action="store_true", help="resume the most recent draft")
@@ -565,6 +785,12 @@ def build_parser() -> argparse.ArgumentParser:
                             "tools/draft_room_probe.py --launch")
     draft.add_argument("--cdp-port", type=int, default=9222,
                        help="Chrome remote-debugging port for --source espn")
+    draft.add_argument("--tab", default="",
+                       help="substring of the draft-room tab's URL, when more "
+                            "than one draft room is open")
+    draft.add_argument("--allow-finished-board", action="store_true",
+                       help="start a new draft against a board that is already "
+                            "complete (normally refused: it means the wrong tab)")
     draft.add_argument("--ignore-unmatched-teams", action="store_true",
                        help="start even if draft-room team names do not match "
                             "the config (picks for them may be misattributed)")

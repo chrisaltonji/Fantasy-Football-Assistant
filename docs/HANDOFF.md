@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 578 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 652 tests pass. Everything below is
 pushed.
 
 ---
@@ -286,6 +286,7 @@ Three commands, in the order you use them:
 ```
 python tools/draft_room_probe.py --launch   # one-time: a Chrome with the debug port
 ffa config init                             # rebuild config/league.toml from ESPN
+ffa config nicknames                        # one-time: names you can type
 ffa data fetch                              # 355 real ESPN auction values
 ffa draft --new --source espn               # draft
 ```
@@ -324,17 +325,64 @@ Bugs it found that every test had passed over, because they only existed live:
 
 ## Known debt, ranked by draft-day risk
 
-**Would bite during a draft**
+**Would bite during a draft — all four CLOSED 2026-08-17**
 
-1. **Async output collides with typing.** A command entered while a pick lands
-   comes out garbled. Hit at pick 14 of the rehearsal.
-2. **Multi-tab draft room.** `_find_page()` returns the *first* matching tab,
-   so with two draft rooms open it silently reads the wrong one — clean attach,
-   `matched 12/12`, frozen board. Hit during the rehearsal.
-3. **No stale-board guard.** `--new` against a finished `180/180` board should
-   refuse; it is unambiguously the wrong tab.
-4. **Manager nicknames are ESPN usernames** (`espn06814226`). You would have to
-   type `sold barkley 62 espn78078705`. Wants a one-off nickname pass.
+Every one of these was found by running the thing rather than by testing it,
+and every one was invisible from inside the tool: the failure mode in each case
+is a draft that looks like it is working.
+
+1. ~~**Async output collides with typing.**~~ **DONE.** `src/ffa/cli/console.py`
+   takes the echo away from the terminal. `RawConsole` reads one key at a time
+   and prints the characters itself, so it always knows what is on the input
+   line — and can wipe it, print the pick, and put your half-typed command back
+   underneath. Both `readline` and `notify` take one lock, which also fixes the
+   source thread printing straight at the screen from off the main thread.
+
+   Two deliberate limits. It engages **only when both stdin and stdout are a
+   terminal** — a piped transcript keeps the old byte-for-byte behaviour, which
+   is what every integration test drives — and a console it cannot take over
+   falls back rather than failing, because line editing is a comfort and
+   recording the draft is not. It uses **no ANSI**: erasing is spaces and
+   carriage returns, since Windows consoles need virtual-terminal processing
+   switched on first and a draft is the wrong place to find out this one did
+   not have it.
+
+   Ctrl-C now lands in the key reader instead of nowhere, and both it and EOF
+   drain the queue on the way out — a pick already in hand must not be dropped
+   by the exit.
+
+2. ~~**Multi-tab draft room.**~~ **DONE.** `_find_page()` collects every
+   matching tab and **refuses on more than one**, listing the URLs. Picking the
+   first was a coin flip whose failure is silent: both tabs attach cleanly and
+   both pre-flight `matched 12/12`, because they are the same league, so reading
+   the wrong one is indistinguishable from a draft that has not started.
+   `ffa draft --tab <text from the URL>` narrows it when two really are open.
+
+3. ~~**No stale-board guard.**~~ **DONE.** `_check_board_is_live` refuses a new
+   draft against a complete board — that is last season's draft or a practice
+   room, and starting anyway pours 180 finished picks into a fresh journal as if
+   they were happening now. `--allow-finished-board` overrides; `--resume` into a
+   finished board stays silent and normal. A **partly** filled board still
+   starts, because attaching mid-draft is worth doing, but says how many picks
+   it is about to record.
+
+4. ~~**Manager nicknames are ESPN usernames.**~~ **DONE.** `ffa config
+   nicknames` walks the twelve teams once — Enter keeps, `-` clears — or takes
+   `--set 3=dave` repeatably, or `--list` to just look. Names are validated
+   before they are written, not on the next load: no whitespace (the grammar
+   splits on it), nothing slot-shaped (`resolve_team` tries `t3`/`team3`/`3`
+   first, so a manager called `3` is unreachable), and no duplicates.
+
+   `config init --force` now **carries hand-set nicknames forward**, which
+   matters because regenerating is the documented fix for a lost config and
+   would otherwise wipe the one thing in that file ESPN cannot give back. It
+   drops a nickname when the team changed hands — the owner SWID is who a team
+   actually is — and resolves the case where a kept nickname collides with
+   ESPN's generated name for a different team, so the rebuild cannot write a
+   config that then refuses to load. `config init` and `config check` both say
+   which teams are still untypeable.
+
+652 tests pass, up from 578.
 
 **Correctness, not urgency**
 
@@ -345,7 +393,8 @@ Bugs it found that every test had passed over, because they only existed live:
 **Tidy-up**
 
 6. `README.md` still says "Checkpoint 3 of 5" and lists ~10 modules that do not
-   exist. `docs/HANDOFF.md` is the document to trust.
+   exist, and now also predates `ffa config nicknames`, `--tab` and
+   `--allow-finished-board`. `docs/HANDOFF.md` is the document to trust.
 7. ~10 unused imports, and a dangling `"PlayerRef"` annotation in
    `ingest/manual/resolve.py` (harmless under `from __future__ import
    annotations`, but the name is not imported).
