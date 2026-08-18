@@ -211,9 +211,17 @@ def player_index(player_payload: Mapping[str, Any] | None) -> dict[int, dict[str
     return out
 
 
-def _owners(team_payload: Mapping[str, Any] | None) -> tuple[dict[int, str], dict[int, str]]:
+def _owners(team_payload: Mapping[str, Any] | None):
+    """`(owners, team_names, finishes, points_for)` for one season.
+
+    `rankCalculatedFinal` is ESPN's settled end-of-season placing. Zero means
+    the season has not finished, and is dropped rather than recorded as a
+    twelfth-place finish nobody earned.
+    """
     owners: dict[int, str] = {}
     names: dict[int, str] = {}
+    finishes: dict[int, int] = {}
+    points: dict[int, float] = {}
     for team in (team_payload or {}).get("teams") or []:
         try:
             team_id = int(team["id"])
@@ -224,7 +232,13 @@ def _owners(team_payload: Mapping[str, Any] | None) -> tuple[dict[int, str], dic
         name = (team.get("name") or "").strip()
         if name:
             names[team_id] = name
-    return owners, names
+        rank = int(team.get("rankCalculatedFinal") or 0)
+        if rank > 0:
+            finishes[team_id] = rank
+        scored = float(team.get("points") or 0)
+        if scored > 0:
+            points[team_id] = scored
+    return owners, names, finishes, points
 
 
 def season_from_payload(
@@ -262,7 +276,7 @@ def season_from_payload(
 
     index = player_index(raw.get("kona_player_info"))
     reference, source = price_reference(raw.get("kona_player_info"))
-    owners, team_names = _owners(raw.get("mTeam"))
+    owners, team_names, finishes, points_for = _owners(raw.get("mTeam"))
 
     # Resolve **here**, at the boundary, rather than at each of the ten
     # downstream joins. Everything after this point compares already-resolved
@@ -311,6 +325,8 @@ def season_from_payload(
         picks=picks,
         owners=owners,
         team_names=team_names,
+        finishes=finishes,
+        points_for=points_for,
         reference_source=source,
         reference_coverage=(len(covered) / len(filled)) if filled else 0.0,
     )

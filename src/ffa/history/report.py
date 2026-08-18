@@ -211,6 +211,7 @@ EVIDENCE_WORDS = {
     "chasing": "Chasing — paid vs the reference price",
     "nomination_premium": "Nomination premium — $ over the going rate",
     "self_win_rate": "Self-win rate — winning your own nominations",
+    "finishing position": "Skill — where they finish in the league table",
 }
 
 
@@ -408,6 +409,13 @@ def _manager_card(
         for i, v in enumerate(prices)
     )
 
+    standing = getattr(profile, "standing", None)
+    table = (
+        f"{', '.join(str(f) for f in standing.finishes)}"
+        + (f"  ({standing.skill})" if standing.skill else "")
+        if standing is not None and standing.finishes
+        else "—"
+    )
     pays_up = ", ".join(profile.overpays_at) or "—"
     lets_go = ", ".join(profile.ignores) or "—"
 
@@ -429,6 +437,7 @@ def _manager_card(
 <div class=card id="m-{_e(profile.owner_id.strip('{}'))}">
   <h3>{_e(profile.manager or 'unknown manager')}</h3>
   <div class=kv><span>seasons <b>{_e(seasons)}</b></span>
+    <span>league table <b>{_e(table)}</b></span>
     <span>picks <b>{len(pooled.picks)}</b></span>
     <span>spent <b>${pooled.spend:,}</b></span>
     <span>biggest buy <b>${pooled.max_price}</b></span></div>

@@ -20,6 +20,7 @@ from ffa.config.schema import ConfigError
 from ffa.history.evidence import ROUNDS, assess
 from ffa.history.fetch import DEFAULT_CACHE, build_history, download_season, load_cached
 from ffa.history.metrics import build_profiles
+from ffa.history.standing import finish_evidence
 from ffa.history.precedent import (
     DEFAULT_PRECEDENT_PATH,
     build_precedent,
@@ -129,6 +130,10 @@ def cmd_history_report(args: argparse.Namespace) -> int:
     # cannot be re-derived goes stale while still sounding authoritative.
     print("\nscoring every signal against its null...")
     scores = assess(history, rounds=args.rounds)
+    # Not a draft statistic, so it carries its own null: shuffle who finished
+    # where, within each season. It is the only measured answer to "how good is
+    # this manager", which every other read is weighed against.
+    scores["finishing position"] = finish_evidence(history, rounds=args.rounds * 5)
     for name, ev in sorted(scores.items(), key=lambda kv: -kv[1].z):
         mark = "  " if ev.survives else "! "
         print(f"  {mark}{name:<20}{ev.null:<12}z={ev.z:+5.1f}   {ev.verdict}")

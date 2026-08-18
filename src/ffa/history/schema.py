@@ -75,6 +75,13 @@ class SeasonDraft:
     owners: Mapping[int, str] = field(default_factory=dict)
     team_names: Mapping[int, str] = field(default_factory=dict)
 
+    # Where each team finished, and what they scored. Not a draft fact — a
+    # *season* fact — but it is the only measured answer to "how good is this
+    # manager", which every other read is weighed against. Kept separate from
+    # `picks` so nothing confuses drafting well with finishing well.
+    finishes: Mapping[int, int] = field(default_factory=dict)
+    points_for: Mapping[int, float] = field(default_factory=dict)
+
     # Where the reference prices came from, and how far they reached. Printed
     # verbatim in the report: a metric computed off 160 of 180 players is a
     # different claim from one computed off all of them.

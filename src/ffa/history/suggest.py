@@ -7,6 +7,7 @@ are emitted** — see `ffa.history.evidence`:
 | field | z | emitted |
 |---|---|---|
 | `pace` | +3.4 | yes |
+| `skill`, from finishing position | +2.9 | yes |
 | `spend_shape` | +2.9 | yes |
 | TE bias, via `overpays_at` / `ignores` | +3.0 | yes |
 | `chases` | −1.1 | **no** |
@@ -103,6 +104,14 @@ def suggest_dossiers(
             if _agreed(profile, field, value):
                 entry[field] = value
 
+        # From the league table rather than the draft board. It clears its own
+        # null at z = +2.9 — people land in the same part of this table year
+        # after year — and it is the one archetype the record answers better
+        # than anybody's memory.
+        standing = getattr(profile, "standing", None)
+        if standing is not None and getattr(standing, "skill", ""):
+            entry["skill"] = standing.skill
+
         # TE only. The other positions do not clear the null, and a suggestion
         # is one `ffa dossier import` away from becoming an observation.
         overpays = [p for p in profile.overpays_at if p in SURVIVING_POSITIONS]
@@ -131,12 +140,16 @@ def _note(profile: ManagerProfile) -> str:
         if len(getattr(profile, "accounts", ())) > 1
         else ""
     )
+    standing = getattr(profile, "standing", None)
+    table = f" League table: {standing.summary()}." if standing is not None else ""
     return (
         f"Derived from ESPN draft history ({years}{accounts}): "
         f"{len(pooled.picks)} picks, ${pooled.spend:,} spent, "
         f"top-3 buys = {pooled.top3_share * 100:.0f}% of budget, "
         f"{pooled.first_share * 100:.0f}% of money gone in the first third, "
-        f"nominations ran {pooled.nomination_premium:+.1f} vs the going rate. "
-        "Only signals that cleared a permutation test are filled in above; "
-        "review before trusting."
+        f"nominations ran {pooled.nomination_premium:+.1f} vs the going rate."
+        f"{table} "
+        "Only signals that cleared a permutation test are filled in above, and "
+        "`skill` is inferred from finishing position rather than from how "
+        "somebody drafts. Nothing here can see a tell; review before trusting."
     )

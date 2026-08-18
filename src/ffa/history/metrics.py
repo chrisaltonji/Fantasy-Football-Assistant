@@ -226,6 +226,9 @@ class ManagerProfile:
     # was declared, and the report should say so rather than quietly presenting
     # a merged record as a single account's.
     accounts: tuple[str, ...] = ()
+    # Where they finished, season by season. A season fact rather than a draft
+    # fact, and the only measured answer to "how good is this manager".
+    standing: object | None = None
     seasons: tuple[ManagerSeason, ...] = ()
     pooled: ManagerSeason | None = None
     overpays_at: tuple[str, ...] = ()
@@ -568,7 +571,10 @@ def _mode(values: Sequence[str]) -> str:
 
 def build_profiles(history: History, managers: Mapping[str, str] | None = None):
     """One profile per manager, plus the per-season detail behind it."""
+    from ffa.history.standing import standings_for
+
     managers = managers or {}
+    standings = standings_for(history)
     by_owner: dict[str, list[ManagerSeason]] = {}
     all_picks: list[DraftPick] = []
     my_picks: dict[str, list[DraftPick]] = {}
@@ -639,6 +645,7 @@ def build_profiles(history: History, managers: Mapping[str, str] | None = None):
                 owner_id=owner_id,
                 manager=managers.get(owner_id, ""),
                 accounts=tuple(sorted(accounts.get(owner_id, {owner_id}))),
+                standing=standings.get(owner_id),
                 seasons=tuple(seasons),
                 pooled=pooled,
                 overpays_at=tuple(
