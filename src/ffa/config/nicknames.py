@@ -20,6 +20,7 @@ Pure: no I/O, no config loading. The CLI wraps it.
 from __future__ import annotations
 
 import re
+from typing import Mapping
 
 # ESPN's placeholder display name for a member who never set one.
 _GENERATED = re.compile(r"^espn\d+$", re.IGNORECASE)
@@ -52,6 +53,91 @@ def check_nickname(nickname: str) -> str:
             "to team 3 first, so a manager named that is unreachable."
         )
     return text
+
+
+def _slug(text: str) -> str:
+    """`"O'Brien"` -> `obrien`. Lower case, letters and digits only."""
+    return "".join(c for c in (text or "").lower() if c.isalnum())
+
+
+def derive_nicknames(
+    real_names: Mapping[int, str],
+    fallbacks: Mapping[int, str] | None = None,
+) -> dict[int, str]:
+    """First names, made unique and typeable.
+
+    ESPN's `mTeam` view carries `firstName`/`lastName` for every member *and* an
+    account `displayName` like `macurl1392`. Preferring the username was a plain
+    ordering mistake: the real names were there the whole time, and a nickname
+    exists to be typed by a person under a clock.
+
+    A full name cannot be the nickname — the command grammar splits on
+    whitespace, so `sold barkley 62 michael curley` parses `curley` as a
+    separate token. So this takes the first name, and escalates only as far as
+    it has to:
+
+    1. `michael`
+    2. on a collision, add the last initial — this league has two Nicks and two
+       Andrews, and `nick` silently resolving to whichever came first is exactly
+       the ambiguity `resolve_team` refuses to guess at
+    3. still colliding, the whole last name
+    4. still no good, whatever `fallbacks` offers (ESPN's username), which is
+       ugly but unique and typeable
+
+    A candidate that cannot survive `check_nickname` is dropped rather than
+    written: a config entry that never resolves is worse than none, because the
+    team stays addressable as `t3` either way and only one of the two is honest
+    about it.
+    """
+    fallbacks = fallbacks or {}
+    parts = {
+        team_id: [_slug(p) for p in str(name).split() if _slug(p)]
+        for team_id, name in real_names.items()
+    }
+
+    def candidate(team_id: int, level: int) -> str:
+        words = parts.get(team_id) or []
+        if not words:
+            return ""
+        first, rest = words[0], words[1:]
+        if level == 0 or not rest:
+            return first
+        if level == 1:
+            return first + rest[-1][0]
+        return first + rest[-1]
+
+    chosen: dict[int, str] = {}
+    unresolved = set(parts)
+
+    for level in (0, 1, 2):
+        proposals: dict[int, str] = {}
+        for team_id in sorted(unresolved):
+            name = candidate(team_id, level)
+            try:
+                proposals[team_id] = check_nickname(name)
+            except ValueError:
+                continue
+
+        counts: dict[str, int] = {}
+        for name in proposals.values():
+            counts[name.lower()] = counts.get(name.lower(), 0) + 1
+
+        for team_id, name in proposals.items():
+            taken = {v.lower() for v in chosen.values()}
+            if counts[name.lower()] == 1 and name.lower() not in taken:
+                chosen[team_id] = name
+                unresolved.discard(team_id)
+
+    for team_id in sorted(unresolved):
+        fallback = fallbacks.get(team_id, "")
+        try:
+            name = check_nickname(fallback)
+        except ValueError:
+            continue
+        if name.lower() not in {v.lower() for v in chosen.values()}:
+            chosen[team_id] = name
+
+    return chosen
 
 
 def parse_assignment(text: str) -> tuple[int, str]:
@@ -90,6 +176,7 @@ def carry_forward(
     fresh_managers: dict[int, str],
     fresh_owners: dict[int, str],
     team_ids: tuple[int, ...],
+    machine_names: Mapping[int, "set[str] | tuple[str, ...]"] | None = None,
 ) -> tuple[dict[int, str], list[str]]:
     """Keep hand-set nicknames across a `config init --force`.
 
@@ -99,8 +186,11 @@ def carry_forward(
     is not just ``previous | fresh``:
 
     - A hand-set nickname is kept. That is the whole point.
-    - A nickname that *is* just ESPN's generated username is not kept — the
-      fresh one is equally good and is current.
+    - A nickname ESPN supplied is not kept. `looks_generated` catches the
+      `espn06814226` shape, and `machine_names` catches the rest: an account
+      username like `macurl1392` was never typed by anyone, so preserving it
+      would pin the config to a worse name than the one now on offer and there
+      would be no way to escape it short of editing the file by hand.
     - A nickname whose team changed hands is dropped. The owner SWID is the
       anchor for who a team actually is; carrying ``dave`` onto the manager who
       replaced Dave would produce advice addressed to the wrong human, which is
@@ -122,7 +212,8 @@ def carry_forward(
                 "this league"
             )
             continue
-        if looks_generated(nickname):
+        supplied = {n.lower() for n in (machine_names or {}).get(team_id, ())}
+        if looks_generated(nickname) or nickname.lower() in supplied:
             continue
 
         before, after = previous_owners.get(team_id), fresh_owners.get(team_id)

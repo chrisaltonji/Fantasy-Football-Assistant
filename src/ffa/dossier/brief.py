@@ -118,11 +118,13 @@ def render_brief(
     seats: Mapping[int, str],
     labels: Mapping[int, str] | None = None,
     team_names: Mapping[int, str] | None = None,
+    real_names: Mapping[int, str] | None = None,
     league_name: str = "",
 ) -> str:
     """The whole interview as one pasteable prompt."""
     labels = labels or {}
     team_names = team_names or {}
+    real_names = real_names or {}
     out = [PREAMBLE]
 
     for question in QUESTIONS:
@@ -138,22 +140,23 @@ def render_brief(
     if league_name:
         out.append(f"League: **{league_name}**\n")
 
-    out.append("| team id | team name | ESPN username | already recorded |")
-    out.append("|---|---|---|---|")
+    out.append("| team id | manager | team name | nickname | already recorded |")
+    out.append("|---|---|---|---|---|")
     for team_id in sorted(seats):
         dossier = book.for_team(team_id) or OwnerDossier(owner_id=seats[team_id])
-        username = labels.get(team_id) or dossier.label or "-"
+        who = dossier.real_name or real_names.get(team_id) or "-"
+        nickname = labels.get(team_id) or dossier.label or "-"
         team_name = team_names.get(team_id) or "-"
         out.append(
-            f"| {team_id} | {team_name} | {username} | {_summarize(dossier)} |"
+            f"| {team_id} | {who} | {team_name} | {nickname} | {_summarize(dossier)} |"
         )
 
     out.append("")
     out.append(
-        "Refer to people by **team name** — that is what I will recognise. The "
-        "ESPN username is there so you can tell two similar teams apart, and the "
-        "team id is only for keying the JSON. A team name can change mid-season, "
-        "so never treat it as an identity."
+        "**Call people by their name** — the manager column. The team name is "
+        "there because it is what shows on the draft board, and the nickname is "
+        "what I type mid-draft. The team id is only for keying the JSON. A team "
+        "name can change mid-season, so never treat it as an identity."
     )
     out.append("")
     out.append(

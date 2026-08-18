@@ -150,6 +150,7 @@ def cmd_dossier_form(args: argparse.Namespace) -> int:
         seats=seats,
         labels=dict(config.managers),
         team_names=dict(config.team_names),
+        real_names=dict(config.real_names),
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(text, encoding="utf-8")
@@ -175,6 +176,7 @@ def cmd_dossier_brief(args: argparse.Namespace) -> int:
         seats=seats,
         labels=dict(config.managers),
         team_names=dict(config.team_names),
+        real_names=dict(config.real_names),
         league_name=config.name,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -255,7 +257,7 @@ def cmd_dossier_show(args: argparse.Namespace) -> int:
     for team_id in team_ids:
         dossier = book.for_team(team_id) or OwnerDossier(owner_id=seats.get(team_id, ""))
         heading = seat_heading(
-            team_id, config.managers, config.team_names, dossier
+            team_id, config.managers, config.team_names, dossier, config.real_names
         )
         print(f"\n{heading}"
               f"   ({len(dossier.answered)}/{len(QUESTIONS)} answered)")
@@ -290,6 +292,7 @@ def cmd_dossier_status(args: argparse.Namespace) -> int:
         team_name = config.team_names.get(team_id) or "-"
         who = (
             (dossier.real_name if dossier else "")
+            or config.real_names.get(team_id)
             or config.managers.get(team_id)
             or "-"
         )
@@ -333,7 +336,8 @@ def cmd_dossier_interview(args: argparse.Namespace) -> int:
                 owner_id, team_id=team_id, label=config.managers.get(team_id, "")
             )
             heading = seat_heading(
-                team_id, config.managers, config.team_names, current
+                team_id, config.managers, config.team_names, current,
+                config.real_names,
             )
             print(f"--- {heading} " + "-" * 24)
 

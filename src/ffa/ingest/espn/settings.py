@@ -15,8 +15,10 @@ force reading the raw views:
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from ffa.config.nicknames import derive_nicknames
 from ffa.config.schema import ConfigError, LeagueConfig
 from ffa.domain.enums import Position, RosterSlot
 
@@ -85,27 +87,61 @@ def roster_from_lineup_counts(
     return roster, warnings
 
 
-def _members_by_id(payload: Mapping[str, Any]) -> dict[str, str]:
-    out: dict[str, str] = {}
+@dataclass(frozen=True)
+class Member:
+    """One ESPN account. Three different names, and they are not interchangeable."""
+
+    member_id: str
+    display_name: str = ""   # the account handle: `macurl1392`, `espn06814226`
+    real_name: str = ""      # `firstName lastName`: "Michael Curley"
+
+
+@dataclass(frozen=True)
+class TeamDirectory:
+    """Who sits where, under every name ESPN knows them by.
+
+    Returned as a record rather than a tuple because the useful thing about it
+    is that these are *different* names for the same person and picking the
+    wrong one is invisible. That is not a hypothetical: preferring
+    `display_name` over `real_name` is what put `macurl1392` on every surface
+    while "Michael Curley" sat in the same payload.
+    """
+
+    team_ids: tuple[int, ...] = ()
+    owners: dict[int, str] = field(default_factory=dict)
+    team_names: dict[int, str] = field(default_factory=dict)
+    real_names: dict[int, str] = field(default_factory=dict)
+    display_names: dict[int, str] = field(default_factory=dict)
+
+
+def _members_by_id(payload: Mapping[str, Any]) -> dict[str, Member]:
+    """Every member, keeping both names rather than choosing between them.
+
+    ESPN sends `displayName`, `firstName` and `lastName` together. Collapsing
+    them to one string here is what forced the choice up at the call site and
+    got it wrong; keeping both means the caller can use the real name for
+    display and the handle as a fallback.
+    """
+    out: dict[str, Member] = {}
     for member in payload.get("members") or []:
         member_id = member.get("id")
         if not member_id:
             continue
-        name = (
-            member.get("displayName")
-            or " ".join(
-                p for p in (member.get("firstName"), member.get("lastName")) if p
-            ).strip()
+        real = " ".join(
+            str(p).strip()
+            for p in (member.get("firstName"), member.get("lastName"))
+            if p and str(p).strip()
         )
-        if name:
-            out[str(member_id)] = str(name)
+        out[str(member_id)] = Member(
+            member_id=str(member_id),
+            display_name=str(member.get("displayName") or "").strip(),
+            real_name=real,
+        )
     return out
 
 
-def teams_from_payload(
-    payload: Mapping[str, Any]
-) -> tuple[tuple[int, ...], dict[int, str], dict[int, str], dict[int, str]]:
-    """Return (team_ids, owners, managers, team_names).
+def teams_from_payload(payload: Mapping[str, Any]) -> TeamDirectory:
+    """Who holds each seat, and what they are called.
 
     Ids come back sorted and exactly as ESPN reports them. Never generate them:
     the real league runs 1-5 and 7-13, and `range(1, count + 1)` would invent a
@@ -114,8 +150,9 @@ def teams_from_payload(
     members = _members_by_id(payload)
     team_ids: list[int] = []
     owners: dict[int, str] = {}
-    managers: dict[int, str] = {}
     names: dict[int, str] = {}
+    real_names: dict[int, str] = {}
+    display_names: dict[int, str] = {}
 
     for team in payload.get("teams") or []:
         try:
@@ -131,11 +168,20 @@ def teams_from_payload(
         owner = team.get("primaryOwner")
         if owner:
             owners[team_id] = str(owner)
-            nickname = members.get(str(owner))
-            if nickname:
-                managers[team_id] = nickname
+            member = members.get(str(owner))
+            if member is not None:
+                if member.real_name:
+                    real_names[team_id] = member.real_name
+                if member.display_name:
+                    display_names[team_id] = member.display_name
 
-    return tuple(sorted(team_ids)), owners, managers, names
+    return TeamDirectory(
+        team_ids=tuple(sorted(team_ids)),
+        owners=owners,
+        team_names=names,
+        real_names=real_names,
+        display_names=display_names,
+    )
 
 
 def my_team_id(owners: Mapping[int, str], swid: str | None) -> int:
@@ -182,7 +228,17 @@ def config_from_payloads(
             "size and max-bid arithmetic cannot be derived."
         )
 
-    team_ids, owners, managers, team_names = teams_from_payload(teams_payload)
+    directory = teams_from_payload(teams_payload)
+    team_ids = directory.team_ids
+    owners = directory.owners
+    team_names = directory.team_names
+    real_names = directory.real_names
+
+    # First names, disambiguated only as far as they have to be. The account
+    # handle is the fallback, not the default — `sold barkley 62 espn78078705`
+    # is not a command anyone gets right twice under a clock.
+    managers = derive_nicknames(real_names, directory.display_names)
+
     mine = my_team_id(owners, swid)
     if not mine:
         warnings.append(
@@ -222,7 +278,18 @@ def config_from_payloads(
         managers=managers,
         owners=owners,
         team_names=team_names,
+        real_names=real_names,
     )
+
+    unnamed = [t for t in team_ids if not real_names.get(t)]
+    if unnamed:
+        warnings.append(
+            "ESPN has no real name on file for team(s) "
+            + ", ".join(str(t) for t in unnamed)
+            + " — they fall back to the account handle. `ffa config nicknames` "
+            "fixes it in one pass."
+        )
+
     return config, warnings
 
 

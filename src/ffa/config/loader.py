@@ -88,6 +88,7 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
     managers_raw = data.get("managers", {})
     owners_raw = data.get("owners", {})
     team_names_raw = data.get("team_names", {})
+    real_names_raw = data.get("real_names", {})
     reference = data.get("reference", {})
     polling = data.get("polling", {})
 
@@ -150,6 +151,7 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
         managers=managers,
         owners=owners,
         team_names={int(k): str(v) for k, v in team_names_raw.items()},
+        real_names={int(k): str(v) for k, v in real_names_raw.items()},
         reference_path=str(reference.get("path", "")),
         baseline_teams=int(reference.get("baseline_teams", 12)),
         baseline_budget=int(reference.get("baseline_budget", 200)),
@@ -198,6 +200,7 @@ def config_to_dict(config: LeagueConfig) -> dict[str, Any]:
         "managers": {str(k): v for k, v in sorted(config.managers.items())},
         "owners": {str(k): v for k, v in sorted(config.owners.items())},
         "team_names": {str(k): v for k, v in sorted(config.team_names.items())},
+        "real_names": {str(k): v for k, v in sorted(config.real_names.items())},
         "reference": {
             "path": config.reference_path,
             "baseline_teams": config.baseline_teams,

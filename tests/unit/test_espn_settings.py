@@ -101,30 +101,54 @@ def test_team_ids_are_read_never_generated(teams_payload):
     `range(1, count + 1)` would invent one and drop team 13 — silently
     attributing picks to a team that does not exist.
     """
-    team_ids, owners, _, _ = teams_from_payload(teams_payload)
-    assert 6 not in team_ids
-    assert team_ids == tuple(sorted(team_ids)), "ids come back sorted"
-    assert len(owners) == len(team_ids)
+    directory = teams_from_payload(teams_payload)
+    assert 6 not in directory.team_ids
+    assert directory.team_ids == tuple(sorted(directory.team_ids)), "ids come back sorted"
+    assert len(directory.owners) == len(directory.team_ids)
 
 
-def test_managers_resolve_through_member_swids(teams_payload):
-    """Nicknames come from `members[]`, joined on `primaryOwner`."""
-    _, owners, managers, _ = teams_from_payload(teams_payload)
-    assert managers, "expected at least one resolved manager"
-    for team_id in managers:
-        assert team_id in owners
+def test_members_resolve_through_the_owner_swid(teams_payload):
+    """Names come from `members[]`, joined on `primaryOwner`."""
+    directory = teams_from_payload(teams_payload)
+    assert directory.display_names, "expected at least one resolved member"
+    for team_id in directory.display_names:
+        assert team_id in directory.owners
+
+
+def test_both_names_are_kept_because_they_are_not_interchangeable(teams_payload):
+    """The bug this replaced: `displayName` was preferred and the real name
+    thrown away, so every surface showed `macurl1392` while "Michael Curley"
+    sat in the same payload."""
+    directory = teams_from_payload(teams_payload)
+
+    assert directory.real_names, "expected firstName/lastName to survive"
+    assert directory.display_names
+    for team_id, real in directory.real_names.items():
+        assert real != directory.display_names.get(team_id)
+
+
+def test_a_member_with_no_real_name_still_yields_a_handle():
+    """ESPN leaves firstName/lastName off some accounts. That is not an error."""
+    payload = {
+        "teams": [{"id": 1, "primaryOwner": "{A}"}],
+        "members": [{"id": "{A}", "displayName": "espn06814226"}],
+    }
+    directory = teams_from_payload(payload)
+
+    assert directory.real_names == {}
+    assert directory.display_names == {1: "espn06814226"}
 
 
 def test_a_team_with_no_owner_still_gets_an_id():
     payload = {"teams": [{"id": 4}], "members": []}
-    team_ids, owners, managers, _ = teams_from_payload(payload)
-    assert team_ids == (4,)
-    assert owners == {} and managers == {}
+    directory = teams_from_payload(payload)
+    assert directory.team_ids == (4,)
+    assert directory.owners == {} and directory.display_names == {}
 
 
 def test_unreadable_team_entries_are_skipped():
     payload = {"teams": [{"id": 1}, {"nope": True}, {"id": "x"}]}
-    assert teams_from_payload(payload)[0] == (1,)
+    assert teams_from_payload(payload).team_ids == (1,)
 
 
 # --- identifying ourselves --------------------------------------------------
@@ -231,9 +255,9 @@ def test_team_names_are_captured_for_draft_room_matching(teams_payload):
 
     Stored as a hint rather than identity — see `TeamResolver`.
     """
-    team_ids, _, _, names = teams_from_payload(teams_payload)
-    assert names, "expected ESPN to report team names"
-    assert set(names) <= set(team_ids)
+    directory = teams_from_payload(teams_payload)
+    assert directory.team_names, "expected ESPN to report team names"
+    assert set(directory.team_names) <= set(directory.team_ids)
 
 
 def test_the_rebuilt_config_carries_team_names(settings_payload, teams_payload):
@@ -242,3 +266,36 @@ def test_the_rebuilt_config_carries_team_names(settings_payload, teams_payload):
     )
     assert config.team_names
     assert set(config.team_names) <= set(config.effective_team_ids)
+
+
+def test_the_rebuilt_config_carries_the_managers_real_names(
+    settings_payload, teams_payload
+):
+    """The whole point of the fix: a person's name reaches the config."""
+    config, _ = config_from_payloads(
+        settings_payload, teams_payload, league_id=1, year=2026,
+    )
+
+    assert config.real_names
+    assert set(config.real_names) <= set(config.effective_team_ids)
+
+
+def test_nicknames_are_derived_from_first_names_not_account_handles(
+    settings_payload, teams_payload
+):
+    """`[managers]` is what you type under a clock, so it comes from the name.
+
+    The handle stays available as a fallback for anyone ESPN has no real name
+    for, but it is no longer the default.
+    """
+    config, _ = config_from_payloads(
+        settings_payload, teams_payload, league_id=1, year=2026,
+    )
+    directory = teams_from_payload(teams_payload)
+
+    for team_id, nickname in config.managers.items():
+        real = directory.real_names.get(team_id)
+        if real:
+            assert nickname.startswith(real.split()[0].lower())
+        # And it is always typeable, whichever source it came from.
+        assert " " not in nickname

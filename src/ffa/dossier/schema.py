@@ -195,9 +195,11 @@ class Question:
 QUESTIONS: tuple[Question, ...] = (
     Question(
         field="real_name",
-        prompt="Who is this, in real life?",
-        why="So a readout mid-draft names a person you recognise instantly, not "
-            "a handle you have to translate.",
+        prompt="What do you actually call them?",
+        why="ESPN already gives us the name on the account — 'Michael Curley'. "
+            "This is the one you would use out loud, which is what a readout "
+            "should say when four seconds matter. It overrides ESPN's version "
+            "wherever a name is shown.",
         kind="text",
     ),
     Question(

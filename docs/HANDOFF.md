@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 744 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 764 tests pass. Everything below is
 pushed.
 
 ---
@@ -366,7 +366,27 @@ is a draft that looks like it is working.
    starts, because attaching mid-draft is worth doing, but says how many picks
    it is about to record.
 
-4. ~~**Manager nicknames are ESPN usernames.**~~ **DONE.** `ffa config
+4. ~~**Manager nicknames are ESPN usernames.**~~ **DONE — and the root cause
+   was ours, found 2026-08-18.** ESPN's `mTeam` sends `firstName`/`lastName`
+   *alongside* `displayName`; `_members_by_id` preferred the handle and threw
+   the real name away, so `macurl1392` reached every surface while "Michael
+   Curley" sat in the same payload. `teams_from_payload` now returns a
+   `TeamDirectory` keeping both — a record rather than a tuple precisely because
+   these are different names for the same person and picking the wrong one is
+   invisible.
+
+   `[managers]` is now derived from first names, escalating only as far as it
+   must: `michael`, then `nickl`/`nickc` on a collision (this league has two
+   Nicks and two Andrews), then the full last name, then the handle. `[real_names]`
+   carries the full name for display. A candidate that cannot survive
+   `check_nickname` is dropped rather than written — a config entry that never
+   resolves is worse than none, since the team stays addressable as `t3` either
+   way and only one of the two is honest about it.
+
+   `carry_forward` gained `machine_names` so a rebuild does not mistake a stale
+   *handle* for a hand-set nickname; `looks_generated` only catches the
+   `espn06814226` shape, and without this a config written before the fix would
+   pin `macurl1392` forever. `ffa config
    nicknames` walks the twelve teams once — Enter keeps, `-` clears — or takes
    `--set 3=dave` repeatably, or `--list` to just look. Names are validated
    before they are written, not on the next load: no whitespace (the grammar
@@ -382,7 +402,7 @@ is a draft that looks like it is working.
    config that then refuses to load. `config init` and `config check` both say
    which teams are still untypeable.
 
-744 tests pass, up from 578.
+764 tests pass, up from 578.
 
 **Correctness, not urgency — CLOSED 2026-08-17**
 

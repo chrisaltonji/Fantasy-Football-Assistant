@@ -44,6 +44,7 @@ def cmd_config_check(args: argparse.Namespace) -> int:
     print(f"  league money ${config.total_league_money}")
     print(f"  managers     {_manager_summary(config)}")
     print(f"  credentials  {'loaded' if creds else 'none (public league)'}")
+    _print_roster(config)
 
     if not config.my_team_id:
         print(
@@ -108,6 +109,23 @@ def cmd_config_init(args: argparse.Namespace) -> int:
         private=not args.public,
     )
 
+    # Every name ESPN itself offers for each seat. Anything in here was supplied
+    # rather than chosen, so it must never be preserved as if you had typed it.
+    from ffa.ingest.espn.settings import teams_from_payload
+
+    directory = teams_from_payload(teams_payload)
+    machine_names = {
+        team_id: {
+            n
+            for n in (
+                directory.display_names.get(team_id, ""),
+                config.managers.get(team_id, ""),
+            )
+            if n
+        }
+        for team_id in config.effective_team_ids
+    }
+
     # Carry forward the settings ESPN knows nothing about. Regenerating is the
     # documented fix for a lost config, so it must not silently undo local
     # choices — wiping [reference].path in particular would drop the draft back
@@ -123,12 +141,18 @@ def cmd_config_init(args: argparse.Namespace) -> int:
             # Nicknames are the one thing in this file that cannot be
             # regenerated from ESPN — ESPN's answer is the username you ran this
             # command to stop typing.
+            # `machine_names` is what stops a stale *account handle* being
+            # mistaken for a hand-set nickname. Without it, a config written
+            # before real names were read would pin `macurl1392` forever:
+            # `looks_generated` only catches the `espn06814226` shape, so there
+            # would be no way out short of editing the file by hand.
             merged, notes = carry_forward(
                 previous_managers=dict(previous.managers),
                 previous_owners=dict(previous.owners),
                 fresh_managers=dict(config.managers),
                 fresh_owners=dict(config.owners),
                 team_ids=config.effective_team_ids,
+                machine_names=machine_names,
             )
             config = _replace(
                 config,
@@ -162,6 +186,7 @@ def cmd_config_init(args: argparse.Namespace) -> int:
     print(f"  roster       {config.draftable_slots} draftable slots, "
           f"{config.starting_slots} starters")
     print(f"  managers     {_manager_summary(config)}")
+    _print_roster(config)
 
     for warning in warnings:
         print(f"! {warning}", file=sys.stderr)
@@ -758,6 +783,26 @@ def _resolve_resume_dir(args: argparse.Namespace, config: LeagueConfig) -> Path:
             "Start one with `ffa draft --new`."
         )
     return directory
+
+
+def _print_roster(config: LeagueConfig) -> None:
+    """Who is in which seat, under all three names.
+
+    None of the three is sufficient alone, which is the lesson of the bug this
+    was written for. The nickname is what you type, the real name is who they
+    are, the team name is what you see on the draft board — and for a long time
+    only ESPN's account handle reached any surface, so the roster read
+    `macurl1392` while "Michael Curley" sat unused in the same payload.
+    """
+    if not (config.real_names or config.team_names):
+        return
+    print("  who is who")
+    for team_id in config.effective_team_ids:
+        nickname = config.managers.get(team_id, "-")
+        real = config.real_names.get(team_id, "") or "(no name on ESPN)"
+        team_name = config.team_names.get(team_id, "")
+        mine = "*" if team_id == config.my_team_id else " "
+        print(f"   {mine}{team_id:>3}  {nickname:<14} {real:<24} {team_name}")
 
 
 def _manager_summary(config: LeagueConfig) -> str:

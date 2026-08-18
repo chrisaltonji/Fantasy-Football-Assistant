@@ -92,6 +92,15 @@ class LeagueConfig:
     # the wrong manager.
     owners: Mapping[int, str] = field(default_factory=dict)
 
+    # The manager's actual name, keyed by team id — "Michael Curley". ESPN
+    # carries this in `mTeam`'s `members[].firstName/lastName`, alongside the
+    # account handle, and for a long time this codebase read only the handle.
+    #
+    # Display only, and never a nickname: it has a space in it, and the command
+    # grammar splits on whitespace, so `sold barkley 62 michael curley` would
+    # parse `curley` as a separate token. `managers` holds the typeable form.
+    real_names: Mapping[int, str] = field(default_factory=dict)
+
     # Team names keyed by team id. A **matching hint, not identity** — the one
     # place a name is unavoidable. ESPN's draft room board carries no team id
     # anywhere in its DOM, and its column order is draft order rather than id

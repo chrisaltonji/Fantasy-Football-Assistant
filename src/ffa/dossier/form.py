@@ -23,6 +23,7 @@ def seat_heading(
     labels: Mapping[int, str],
     team_names: Mapping[int, str],
     dossier: "OwnerDossier | None" = None,
+    real_names: Mapping[int, str] | None = None,
 ) -> str:
     """How one seat is announced to a person: id, team name, username.
 
@@ -37,7 +38,11 @@ def seat_heading(
     nothing downstream may key off what this returns.
     """
     username = labels.get(team_id) or (dossier.label if dossier else "") or ""
-    real_name = dossier.real_name if dossier else ""
+    # A dossier answer wins over ESPN's record: you know what people are
+    # actually called better than their account does.
+    real_name = (dossier.real_name if dossier else "") or (real_names or {}).get(
+        team_id, ""
+    )
     team_name = team_names.get(team_id, "")
 
     who = real_name or team_name or username or f"team{team_id}"
@@ -82,10 +87,12 @@ def render_form(
     seats: Mapping[int, str],
     labels: Mapping[int, str] | None = None,
     team_names: Mapping[int, str] | None = None,
+    real_names: Mapping[int, str] | None = None,
 ) -> str:
     """One page per seat, pre-filled with whatever is already known."""
     labels = labels or {}
     team_names = team_names or {}
+    real_names = real_names or {}
     out = [HEADER]
 
     for question in QUESTIONS:
@@ -99,7 +106,9 @@ def render_form(
     for team_id in sorted(seats):
         owner_id = seats[team_id]
         dossier = book.for_owner(owner_id) or OwnerDossier(owner_id=owner_id)
-        out.append(f"## {seat_heading(team_id, labels, team_names, dossier)}\n")
+        out.append(
+            f"## {seat_heading(team_id, labels, team_names, dossier, real_names)}\n"
+        )
         for question in QUESTIONS:
             current = render_answer(question, getattr(dossier, question.field, None))
             out.append(f"- **{question.field}**: {current}")
