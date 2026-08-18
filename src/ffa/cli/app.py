@@ -1017,6 +1017,16 @@ def main(argv: list[str] | None = None) -> int:
         # All user-fixable; a traceback would only bury the message.
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    except KeyboardInterrupt:
+        # The live loop catches its own Ctrl-C, but only while it is parked on
+        # the queue. One pressed during a redraw, inside the source thread's
+        # shutdown, or a second one landing during the first one's cleanup, all
+        # arrive here instead. A rehearsal ended on a KeyboardInterrupt
+        # traceback, which reads like lost work and is not: every event is
+        # fsynced before the next prompt appears, so there is nothing in flight
+        # to lose. Say that, rather than printing a stack.
+        print("\nstopped. everything is saved.", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -368,13 +368,36 @@ def _run_source(source: EventSource, inbox: "queue.Queue", emit) -> None:
     try:
         source.start(_TaggingQueue(inbox, EVENT))
     except Exception as exc:  # noqa: BLE001 - surfaced, never swallowed
-        inbox.put((LINE, "\n"))
         emit(f"\n! {source.name} failed: {type(exc).__name__}: {exc}")
+        _wake(inbox, emit)
         return
 
     status = source.status()
     if status.health is not SourceHealth.STOPPED or status.detail:
         emit(f"\n! {source.name} stopped: {status.detail or status.health.value}")
+    _wake(inbox, emit)
+
+
+def _wake(inbox: "queue.Queue", emit) -> None:
+    """Unblock the main loop after the source is gone, whatever killed it.
+
+    Found in a live rehearsal, and it is worse than it sounds. Only the *raise*
+    path used to post here, so the ordinary ending — the reader giving up after
+    its failure threshold, which is exactly what a closed draft-room tab looks
+    like — printed its notice and left the main thread parked on `inbox.get()`
+    forever. The tool looked alive, the prompt was on screen, and nothing typed
+    into it was read, because nothing was reading. Ctrl-C was the only way out
+    of a draft that was still perfectly recoverable by hand.
+
+    A blank line rather than EOF, deliberately: the reader dying is not a reason
+    to end the draft. Every manual command still works, and typing the rest of
+    the picks yourself is the fallback the whole grammar exists for.
+    """
+    emit(
+        "the live reader is gone, but this draft is not. Keep recording by hand "
+        "-- `sold <player> <price> <team>` -- or `quit` to stop."
+    )
+    inbox.put((LINE, ""))
 
 
 class _LineOutcome:

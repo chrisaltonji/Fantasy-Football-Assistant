@@ -776,3 +776,46 @@ There is no CP6. What remains is product work:
 
 **Draft-day gate: MET.** Ran end to end against a live ESPN practice draft on
 2026-08-17 — attach, pre-flight, live ingest, correct attribution, bid guidance.
+
+**Second rehearsal, 2026-08-18 — everything shipped since the 17th, live.**
+
+Confirmed working against a real practice draft: the stale-board guard, attach
+with 12/12 team matching, the pace readout against four seasons, live bid
+guidance through roughly 320 picks, and **capability 4** — `ffa config init
+--force` read the nomination order straight off ESPN and `config check` printed
+it back as typeable names.
+
+**Two bugs it found, both draft-day paths, both fixed with tests.**
+
+1. **A source that gave up left the loop parked forever.** Only the *raise* path
+   in `_run_source` posted to the inbox. The ordinary ending — the reader
+   hitting its failure threshold, which is exactly what closing the draft-room
+   tab looks like — printed its notice and returned, leaving the main thread
+   blocked on `inbox.get()`. The prompt was on screen and nothing typed into it
+   was read, because nothing was reading. It now wakes the loop and says the
+   draft is still recoverable by hand, which it always was.
+2. **Ctrl-C exited on a traceback.** The live loop catches its own, but only
+   while parked on the queue; one pressed during a redraw or during the source
+   thread's shutdown got past it. `main` now catches it and says the work is
+   saved — which it is, since every event is fsynced before the next prompt.
+
+**Two rehearsal artefacts worth not mistaking for bugs.**
+
+- **Pace reads compare autodraft bots to real people.** The readout had
+  `andrewr 92% of budget out, usually 21% by now`. That is arithmetically
+  correct — team 12 really had spent $183 — but the seat was played by ESPN's
+  autodrafter, not by Andrew. In a practice draft every rival is a bot, so
+  every pace read is measuring the wrong person. On draft day the seats are the
+  people the history is about. Do not tune anything on a practice draft's pace
+  numbers.
+- **Nominations overlap.** `#20 nominated James Cook III`, `#21 nominated
+  Jeremiyah Love`, `#22 sold James Cook III`. Two in flight at once, and sales
+  arriving out of nomination order. The journal is unaffected — `turns_taken`
+  counts sales, which stay sequential and total 180 — but `current_nominator`
+  can name the previous seat while a newer nomination is on the block. It costs
+  a display line and nothing else, and it is *why* leaving `nominated_by`
+  unwired was right: a disagreement banner keyed on a lagging index would have
+  cried wolf all night.
+
+**Not exercised, still:** `safe_legal_bid`'s optimistic ceiling. No pick arrived
+without a price, so `legal max` never showed its `+`.

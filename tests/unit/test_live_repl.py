@@ -17,7 +17,7 @@ import queue
 import threading
 import time
 
-from ffa.cli.repl import EVENT, _TaggingQueue, run_repl
+from ffa.cli.repl import EVENT, LINE, _TaggingQueue, _run_source, run_repl
 from ffa.domain.enums import Provenance
 from ffa.domain.events import PlayerSold
 from ffa.domain.ids import PlayerRef
@@ -349,3 +349,105 @@ def test_no_source_means_the_original_blocking_loop(tmp_path, init_event):
         assert "live source" not in out.getvalue()
     finally:
         store.close()
+
+
+# --- the source dying must not take the draft with it -----------------------
+
+
+class DyingSource:
+    """A source that stops on its own, the way a closed draft-room tab does."""
+
+    name = "espn-draftroom"
+
+    def __init__(self, *, raises: bool = False):
+        self._raises = raises
+        self.stopped = False
+
+    def start(self, out) -> None:
+        if self._raises:
+            raise RuntimeError("Target page, context or browser has been closed")
+
+    def stop(self) -> None:
+        self.stopped = True
+
+    def status(self) -> SourceStatus:
+        return SourceStatus(
+            name=self.name, health=SourceHealth.STOPPED,
+            detail="giving up after 10 consecutive failures",
+        )
+
+
+def test_a_source_that_gives_up_unblocks_the_loop():
+    """The rehearsal bug, and it is worse than it sounds.
+
+    Only the *raise* path used to post to the queue. The ordinary ending — the
+    reader hitting its failure threshold, which is exactly what a closed
+    draft-room tab looks like — printed its notice and left the main thread
+    parked on `inbox.get()` forever. The prompt was on screen and nothing typed
+    into it was read, because nothing was reading.
+    """
+    inbox: "queue.Queue" = queue.Queue()
+    said: list[str] = []
+
+    _run_source(DyingSource(), inbox, said.append)
+
+    assert not inbox.empty(), "the main loop would still be blocked on get()"
+    tag, _ = inbox.get_nowait()
+    assert tag == LINE
+
+
+def test_a_source_that_raises_also_unblocks_the_loop():
+    inbox: "queue.Queue" = queue.Queue()
+    said: list[str] = []
+
+    _run_source(DyingSource(raises=True), inbox, said.append)
+
+    assert not inbox.empty()
+    assert any("failed" in line for line in said)
+
+
+def test_losing_the_reader_is_not_the_end_of_the_draft():
+    """A blank line rather than EOF, deliberately: every manual command still
+    works, and typing the rest of the picks yourself is the fallback the whole
+    grammar exists for."""
+    inbox: "queue.Queue" = queue.Queue()
+    said: list[str] = []
+
+    _run_source(DyingSource(), inbox, said.append)
+
+    text = "\n".join(said)
+    assert "sold" in text, "it should say how to carry on by hand"
+    assert "quit" in text
+
+
+# --- Ctrl-C is an exit, not a crash -----------------------------------------
+
+
+def test_ctrl_c_reports_saved_work_rather_than_a_traceback(monkeypatch, capsys):
+    """A rehearsal ended on a KeyboardInterrupt traceback, which reads like
+    lost work and is not: every event is fsynced before the next prompt, so
+    there is nothing in flight to lose.
+
+    The live loop catches its own Ctrl-C, but only while parked on the queue.
+    One pressed during a redraw, or inside the source thread's shutdown, or a
+    second one landing during the first one's cleanup, all get past it.
+    """
+    from ffa.cli import app
+
+    def boom(_args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(app, "build_parser", lambda: _ParserStub(boom))
+
+    assert app.main([]) == 130
+    assert "everything is saved" in capsys.readouterr().err
+
+
+class _ParserStub:
+    def __init__(self, func):
+        self._func = func
+
+    def parse_args(self, argv):
+        import argparse
+
+        return argparse.Namespace(func=self._func)

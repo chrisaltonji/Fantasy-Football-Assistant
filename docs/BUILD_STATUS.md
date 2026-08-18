@@ -11,7 +11,7 @@ stage-by-stage picture of *where they stand*.
 > 2026-08-17. Everything listed as not started is an improvement, not a
 > prerequisite.
 
-964 tests · 78 source modules · 38 test modules.
+968 tests · 78 source modules · 38 test modules.
 
 ---
 
@@ -135,34 +135,38 @@ arithmetic and is finished; intent is inference and is not.**
 
 ## What is actually left
 
-**One thing on the critical path:**
+**Nothing.** The second live rehearsal ran on 2026-08-18 — see below.
 
-> **A second live rehearsal.** Everything shipped since 2026-08-17 — the raw
-> console, the multi-tab guard, the stale-board guard, `safe_legal_bid`, the
-> pace readout — is unit-tested and dry-run, but has never touched real ESPN
-> traffic.
->
-> ```
-> python tools/draft_room_probe.py --launch
-> ffa draft --new --source espn
-> ```
->
-> Start an ESPN practice draft, buy three or four players. Half an hour, and it
-> is the only thing between "tested" and "proven".
+**What the rehearsal settled, and what it did not:**
 
-**One thing that needs a command before it works:** the nomination order is read
-by `ffa config init`, and your current `config/league.toml` predates that — it
-loads fine, but carries no order, so `turns` cannot name a seat. One command
-fixes it, and `ffa config check` now says so.
+> **Confirmed live:** the stale-board guard (`the board already shows 6 pick(s)
+> of 180`), attach and 12/12 team matching, the pace readout against four
+> seasons, live bid guidance through ~320 picks, and **capability 4** — `ffa
+> config init --force` read the real nomination order off ESPN and `config
+> check` printed it back as names.
+>
+> **Two bugs found, both fixed:** a source that gave up left the main loop
+> parked on the queue forever, and Ctrl-C exited on a traceback. Both are
+> draft-day paths and both now have tests.
+>
+> **Not exercised:** `safe_legal_bid`'s optimistic-ceiling path never fired —
+> no pick arrived without a price, so `legal max` never showed its `+`.
+>
+> **Still unobserved:** what `--selecting` means while bidding runs.
+
+**One command still outstanding.** `ffa config init --force` has been run, so
+the nomination order is on file. The *plan* is not: C2 landed after that
+rebuild, so `[strategy]` is still empty and `plan` has nothing to measure.
 
 ```
-ffa config init --force
+ffa strategy init      # needs `ffa data fetch` to have run; it has
+ffa config check       # prints the plan back, and says when there is none
 ```
 
 **Two large optional builds:** the dashboard and the LLM layer. Both fully
 unblocked. Neither is needed on 2026-08-31.
 
-**One question a rehearsal answers for free.** The draft room marks a seat
+**One question the next rehearsal can still answer for free.** The draft room marks a seat
 `--selecting`, and `RoomTeam.is_nominating` already parses it, but what it means
 *while bidding runs* — the seat that put this player up, or the seat due to put
 up the next one — has never been observed. It is deliberately not wired to
