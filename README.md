@@ -15,8 +15,10 @@ picks in by hand and every downstream calculation works identically.
 > What remains is product work, not plumbing: the dashboard, the inference
 > layer, and the owner dossiers that layer would read.
 >
-> **[`docs/HANDOFF.md`](docs/HANDOFF.md) is the document to trust** for current
-> state, everything learned about ESPN's internals, and what is still open.
+> **[`docs/BUILD_STATUS.md`](docs/BUILD_STATUS.md) is where things stand** —
+> every checkpoint, all twelve capabilities, and what is actually left.
+> **[`docs/HANDOFF.md`](docs/HANDOFF.md)** is the running record of the
+> decisions behind them and everything learned about ESPN's internals.
 
 ---
 

@@ -6,6 +6,11 @@ two weeks out.
 Branch: `claude/plan-file-review-g05z77`. 892 tests pass. Everything below is
 pushed.
 
+> **Looking for where things stand rather than how they got there?**
+> [`BUILD_STATUS.md`](BUILD_STATUS.md) is the stage-by-stage picture — every
+> checkpoint, all twelve capabilities, the three surfaces, and what is actually
+> left. This file is the running record of the decisions behind them.
+
 ---
 
 ## What this is
