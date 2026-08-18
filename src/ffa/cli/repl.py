@@ -17,6 +17,7 @@ from typing import Callable, TextIO
 
 from ffa.advice.engine import advise
 from ffa.cli import render
+from ffa.cli.console import make_console
 from ffa.domain.events import PlayerNominated
 from ffa.domain.models import DraftState
 from ffa.ingest.manual.errors import CommandError
@@ -62,20 +63,29 @@ class _TaggingQueue(queue.Queue):
         self._target.put((self._tag, item), block=block, timeout=timeout)
 
 
-def _pump_stdin(stdin: TextIO, out: "queue.Queue") -> None:
+def _pump_stdin(console, out: "queue.Queue") -> None:
     """Move blocking reads off the main thread.
 
     Without this the loop sits in `readline()` and a pick that lands while you
     are not typing would not appear until you pressed Enter — which is exactly
     when you are least able to press it.
+
+    Reads through the console rather than the raw stream: on a terminal that is
+    what keeps a half-typed command intact when a pick prints over it.
     """
     try:
         while True:
-            line = stdin.readline()
+            line = console.readline()
             if line == "":
                 out.put((EOF, None))
                 return
             out.put((LINE, line))
+    except KeyboardInterrupt:
+        # Ctrl-C arrives here rather than on the main thread, because that is
+        # where the keys are read. Say the same thing the manual loop says: a
+        # draft that exits without a word looks like a crash.
+        console.notify("stopped. everything is saved.")
+        out.put((EOF, None))
     except Exception:  # noqa: BLE001 - a dead stdin is an EOF, not a crash
         out.put((EOF, None))
 
@@ -228,7 +238,12 @@ def _run_live(
     source: EventSource,
 ) -> int:
     """The same draft loop, fed by two producers instead of one."""
-    emit = _writer(stdout)
+    # Everything that reaches the screen goes through the console, including the
+    # source thread's failure notices. That is what makes the writes orderly:
+    # two threads printing straight at a terminal is precisely the collision
+    # this is here to stop.
+    console = make_console(stdin, stdout, prompt)
+    emit = console.notify
     inbox: "queue.Queue" = queue.Queue()
 
     if store.load_warnings:
@@ -238,7 +253,7 @@ def _run_live(
     emit(f"live source: {source.name} — picks arrive on their own. "
          "Type to correct them, `quit` to stop.")
 
-    threading.Thread(target=_pump_stdin, args=(stdin, inbox), daemon=True).start()
+    threading.Thread(target=_pump_stdin, args=(console, inbox), daemon=True).start()
     threading.Thread(
         target=_run_source, args=(source, inbox, emit), daemon=True
     ).start()
@@ -246,18 +261,21 @@ def _run_live(
     seen_warnings = len(store.state.warnings)
     try:
         while True:
-            stdout.write(prompt)
-            stdout.flush()
-            tag, payload = inbox.get()
+            console.begin()
+            try:
+                tag, payload = inbox.get()
+            except KeyboardInterrupt:  # pragma: no cover - interactive only
+                emit("stopped. everything is saved.")
+                return 0
 
             if tag is EOF or tag == EOF:
-                emit("")
+                # Same argument as quitting: a pick already in the queue was
+                # observed and is in hand, and dropping it would leave the
+                # journal disagreeing with what ESPN plainly showed.
+                _drain(inbox, store, emit)
                 return 0
 
             if tag == EVENT:
-                # Async output lands where the prompt was, so start a fresh
-                # line before printing and let the loop redraw the prompt.
-                emit("")
                 try:
                     store.dispatch(payload)
                 except Exception as exc:  # pragma: no cover - journal failures
@@ -277,6 +295,9 @@ def _run_live(
             seen_warnings = outcome.seen_warnings
     finally:
         source.stop()
+        # Hand the terminal back the way we found it, whatever happened. On
+        # POSIX this is what stops a crash leaving the shell with echo off.
+        console.close()
 
 
 def _drain(inbox: "queue.Queue", store: DraftStore, emit) -> None:

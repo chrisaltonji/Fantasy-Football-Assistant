@@ -262,6 +262,78 @@ def test_the_live_banner_says_where_picks_come_from(tmp_path, init_event):
         store.close()
 
 
+# --- typing while picks land ------------------------------------------------
+
+
+class HeldSource(FakeSource):
+    """Emits nothing until released, so the test controls when a pick lands."""
+
+    def __init__(self, events):
+        super().__init__(events)
+        self.release = threading.Event()
+
+    def start(self, out) -> None:
+        self.release.wait(5.0)
+        super().start(out)
+
+
+def test_a_pick_landing_mid_command_does_not_garble_what_you_typed(
+    tmp_path, init_event, monkeypatch
+):
+    """The pick-14 failure, through the real loop rather than the console alone.
+
+    Before this, the sale printed wherever the cursor happened to be and the
+    half-typed command was left split across two lines — still in the terminal's
+    buffer, no longer under its prompt. The command has to survive both the
+    redraw and the submit.
+    """
+    import io as _io
+
+    from ffa.cli.console import RawConsole
+    from tests.unit.test_console import BlockingKeys, _wait_for
+
+    keys = BlockingKeys()
+    screen = _io.StringIO()
+    monkeypatch.setattr(
+        "ffa.cli.repl.make_console",
+        lambda stdin, stdout, prompt: RawConsole(stdin, screen, prompt, keys=keys),
+    )
+
+    source = HeldSource([sale("mahomes", 3, 45)])
+    store = DraftStore.create(tmp_path / "run", init_event)
+    finished: list[int] = []
+    loop = threading.Thread(
+        target=lambda: finished.append(
+            run_repl(store, stdin=_io.StringIO(), stdout=_io.StringIO(),
+                     book=None, source=source)
+        ),
+        daemon=True,
+    )
+    loop.start()
+    try:
+        keys.type("sold barkl")
+        _wait_for(screen, "> sold barkl")
+
+        source.release.set()
+        deadline = time.monotonic() + 5.0
+        while "mahomes" not in screen.getvalue() and time.monotonic() < deadline:
+            time.sleep(0.005)
+
+        # The sale printed, and the half-typed command is back under it.
+        assert "mahomes" in screen.getvalue()
+        assert screen.getvalue().endswith("> sold barkl")
+
+        keys.type("ey 62 t1\r")
+        keys.type("quit\r")
+        loop.join(timeout=5)
+
+        assert finished == [0]
+        assert {p.ref.key for p in store.state.sold_players()} == {"mahomes", "barkley"}
+    finally:
+        source.stop()
+        store.close()
+
+
 # --- the manual path is untouched -------------------------------------------
 
 
