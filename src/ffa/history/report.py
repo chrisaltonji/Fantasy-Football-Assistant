@@ -46,10 +46,9 @@ CHASE_WORDS = {
 }
 
 NOM_WORDS = {
-    "enforcer": "enforcer",
-    "targets": "targeter",
-    "best_available": "best available",
-    "random": "no pattern",
+    "nominates_high": "nominates high",
+    "nominates_low": "nominates low",
+    "no_pattern": "no pattern",
 }
 
 # One place that turns any machine label into English, so a raw `value_hunter`
@@ -202,6 +201,78 @@ draft&rdquo; support very different conclusions, and only one of them is true.</
 </div>"""
 
 
+EVIDENCE_WORDS = {
+    "pace": "Pace — share of budget spent by the 30% mark",
+    "spend_shape": "Spend shape — top-3 buys as a share of budget",
+    "te_share": "TE allocation",
+    "rb_share": "RB allocation",
+    "wr_share": "WR allocation",
+    "qb_share": "QB allocation",
+    "chasing": "Chasing — paid vs the reference price",
+    "nomination_premium": "Nomination premium — $ over the going rate",
+    "self_win_rate": "Self-win rate — winning your own nominations",
+}
+
+
+def _evidence(scores) -> str:
+    """What was tested, and what did not survive.
+
+    This section exists because the first version of this report shipped four
+    findings that were noise, and one of them was about the reader. The numbers
+    are recomputed on every run rather than quoted from a comment, so the claim
+    cannot go stale while still sounding authoritative.
+    """
+    if not scores:
+        return ""
+
+    rows = ""
+    for name, ev in sorted(scores.items(), key=lambda kv: -kv[1].z):
+        colour = "var(--good)" if ev.survives else "var(--muted)"
+        weight = "600" if ev.survives else "400"
+        rows += (
+            f"<tr><td style=\"font-weight:{weight}\">"
+            f"{_e(EVIDENCE_WORDS.get(name, name))}</td>"
+            f"<td class=n>{_e(ev.null)}</td>"
+            f"<td class=n>{ev.observed:.4f}</td><td class=n>{ev.mean:.4f}</td>"
+            f"<td class=n style=\"color:{colour};font-weight:{weight}\">"
+            f"{ev.z:+.1f}</td>"
+            f"<td style=\"color:{colour}\">{_e(ev.verdict)}</td></tr>"
+        )
+
+    survivors = [n for n, e in scores.items() if e.survives]
+    rounds = next(iter(scores.values())).rounds
+
+    return f"""
+<h2>What was tested, and what did not survive</h2>
+<p class=sub>Four seasons of twelve managers is about fifteen picks each &mdash;
+enough to rank people, nowhere near enough to stop a plausible pattern appearing
+on its own. So every claim is scored against a null: shuffle the thing that is
+supposed to carry the signal {rounds} times and ask whether the real spread is
+wider than the shuffled one. <b>{len(survivors)} of {len(scores)} survived.</b></p>
+<div class="card scroll"><table>
+<tr><th>Signal</th><th class=n>Null</th><th class=n>Observed</th>
+<th class=n>Chance</th><th class=n>z</th><th>Verdict</th></tr>
+{rows}</table>
+<p class=note><b>The null has to respect what generated the data.</b> Shuffling
+individual picks is right for NFL-team affinity or who nominated what, and wrong
+for anything the $200 and the fifteen slots constrain &mdash; it lets an
+imaginary manager hold three $70 players. Under that null, pace scored
+<b>z = &minus;1.7</b>: a spread <em>narrower</em> than random, which a real
+effect cannot produce and which is the signature of a broken test rather than a
+finding. Swapping whole rosters instead moved it to +3.4.</p>
+<p class=note><b>Homer teams and repeat buys are gone from this report.</b> Both
+were tested at pick level, where the shuffle is valid, and neither is
+distinguishable from chance (z = &minus;0.3 and +1.2). Thirty-two NFL teams
+across twelve managers is 384 chances to find a streak, so finding several is
+the expected outcome and not a discovery. The dossier asks the question directly
+instead &mdash; somebody who has drafted in the room can answer it and this
+arithmetic cannot.</p>
+<p class=note>Nomination premium is the strongest signal here, and it still only
+says <em>what</em> somebody nominates. Telling an enforcer from a targeter needs
+the self-win rate, which does not survive, so no intent is claimed.</p>
+</div>"""
+
+
 def _method() -> str:
     return """
 <h2>How to read a label</h2>
@@ -269,28 +340,35 @@ def _manager_card(
     pooled: ManagerSeason = profile.pooled
     seasons = ", ".join(str(y) for y in profile.years)
 
+    te = next((s for s in pooled.positions if s.position == "TE"), None)
     chips = (
         _chip(
             say(pooled.spend_shape),
-            f"top-3 = {_pct(pooled.top3_share)} of budget · {say_agreement(profile.consistency['spend_shape'])}",
+            f"top-3 = {_pct(pooled.top3_share)} of budget · "
+            f"{say_agreement(profile.consistency['spend_shape'])}",
             "var(--s1)",
         )
         + _chip(
             say(pooled.pace),
-            f"{_pct(pooled.first_share)} spent in the first third · {say_agreement(profile.consistency['pace'])}",
+            f"{_pct(pooled.first_share)} spent in the first third · "
+            f"{say_agreement(profile.consistency['pace'])}",
             "var(--s2)",
         )
         + _chip(
-            say(pooled.chases),
-            f"pays {pooled.premium_index:.2f}× reference · {say_agreement(profile.consistency['chases'])}",
+            say(pooled.nomination_style),
+            f"{pooled.nomination_premium:+.1f} vs the going rate · "
+            f"{say_agreement(profile.consistency['nomination_style'])}",
             "var(--s3)",
         )
-        + _chip(
-            say(pooled.nomination_style),
-            f"wins {_pct(pooled.self_win_rate)} of own noms, "
-            f"{pooled.nomination_premium:+.1f} vs going rate · "
-            f"{say_agreement(profile.consistency['nomination_style'])}",
-            "var(--s1)",
+        + (
+            _chip(
+                "TE money" if te.allocation_index >= 1.25
+                else ("TE ignored" if te.allocation_index <= 0.65 else ""),
+                f"{te.allocation_index:.2f}× the league's TE split · ${te.spend}",
+                "var(--s1)",
+            )
+            if te
+            else ""
         )
     )
 
@@ -330,8 +408,6 @@ def _manager_card(
         for i, v in enumerate(prices)
     )
 
-    homers = ", ".join(profile.homer_teams) or "—"
-    avoids = ", ".join(profile.avoids_teams) or "—"
     pays_up = ", ".join(profile.overpays_at) or "—"
     lets_go = ", ".join(profile.ignores) or "—"
 
@@ -378,8 +454,7 @@ def _manager_card(
   <div class=kv style="margin-top:16px">
     <span>pays up at <b>{_e(pays_up)}</b></span>
     <span>lets go cheap <b>{_e(lets_go)}</b></span>
-    <span>drafts more of <b>{_e(homers)}</b></span>
-    <span>stays off <b>{_e(avoids)}</b></span>
+    <span>ESPN accounts <b>{len(profile.accounts) or 1}</b></span>
   </div>
 
   <h4 style="margin:18px 0 6px;font-size:13px;color:var(--muted);
@@ -395,7 +470,11 @@ def _manager_card(
 
 
 def render_report(
-    history: History, profiles: Sequence[ManagerProfile], *, generated: str = ""
+    history: History,
+    profiles: Sequence[ManagerProfile],
+    *,
+    generated: str = "",
+    scores=None,
 ) -> str:
     league_first = sum(
         p.first_share for pr in profiles for p in [pr.pooled] if p
@@ -429,6 +508,7 @@ read pick by pick: what each manager paid, when they spent it, what they
 nominated, and who they nominated it at. Seasons used: <b>{_e(seasons_used)}</b>.
 {_e(generated)}</p>
 {_provenance(history)}
+{_evidence(scores)}
 {_method()}
 <h2>Managers</h2>
 <p class=sub>{index}</p>

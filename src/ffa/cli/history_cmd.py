@@ -17,6 +17,7 @@ from pathlib import Path
 from ffa.config.identity import OwnerResolver, richest_name, seats
 from ffa.config.loader import DEFAULT_CONFIG_PATH, load_config, load_credentials
 from ffa.config.schema import ConfigError
+from ffa.history.evidence import ROUNDS, assess
 from ffa.history.fetch import DEFAULT_CACHE, build_history, download_season, load_cached
 from ffa.history.metrics import build_profiles
 from ffa.history.report import render_report
@@ -119,9 +120,18 @@ def cmd_history_report(args: argparse.Namespace) -> int:
             f"{pooled.nomination_style or '—'}"
         )
 
+    # Recomputed on every run rather than quoted from a comment: a claim that
+    # cannot be re-derived goes stale while still sounding authoritative.
+    print("\nscoring every signal against its null...")
+    scores = assess(history, rounds=args.rounds)
+    for name, ev in sorted(scores.items(), key=lambda kv: -kv[1].z):
+        mark = "  " if ev.survives else "! "
+        print(f"  {mark}{name:<20}{ev.null:<12}z={ev.z:+5.1f}   {ev.verdict}")
+
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
-        render_report(history, profiles, generated=args.stamp or ""), encoding="utf-8"
+        render_report(history, profiles, generated=args.stamp or "", scores=scores),
+        encoding="utf-8",
     )
     print(f"\nwrote {args.out}")
 
@@ -159,4 +169,6 @@ def add_parser(sub) -> None:
     report.add_argument("--suggest", type=Path,
                         default=Path("docs/dossier_suggested.json"))
     report.add_argument("--stamp", default="", help="text to print in the header")
+    report.add_argument("--rounds", type=int, default=ROUNDS,
+                        help="permutation rounds when scoring signals against chance")
     report.set_defaults(func=cmd_history_report)

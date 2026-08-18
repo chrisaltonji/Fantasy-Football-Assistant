@@ -59,7 +59,7 @@ flex_positions = ["RB", "WR", "TE"]
 # ESPN member SWIDs keyed by team id. The stable anchor for who a team actually
 # is -- team names change constantly, so nothing keys off them. Written by
 # `ffa config init`; you should not need to touch it.
-[owners]
+# [owners]
 # 1 = "{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}"
 
 # Two ESPN accounts, one human. A manager who drafts under a second login is two
@@ -69,15 +69,15 @@ flex_positions = ["RB", "WR", "TE"]
 #
 # Declared by hand and NEVER inferred -- two similar names are not evidence.
 # Find candidates with:  ffa config alias
-[aliases]
+# [aliases]
 # "{OLD-ACCOUNT-SWID}" = "{CURRENT-ACCOUNT-SWID}"
 
 # Team names and real names keyed by team id, both written by `ffa config init`.
 # Display only: a team name changes mid-season, so nothing resolves against one.
-[team_names]
+# [team_names]
 # 1 = "Fighting Finkelsteins"
 
-[real_names]
+# [real_names]
 # 1 = "Michael Curley"
 
 [scoring]

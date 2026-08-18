@@ -1,9 +1,29 @@
 """Turning four drafts into a dossier draft you can argue with.
 
-The archetypes the dossier asks about — spend shape, pace, chasing, nomination
-style, positional bias, homerism — are exactly what four seasons of real prices
-measure. So this emits them in the interchange format `ffa dossier import`
-already accepts.
+Some of the archetypes the dossier asks about are exactly what four seasons of
+real prices measure, and some are not. **Only the ones that cleared a null test
+are emitted** — see `ffa.history.evidence`:
+
+| field | z | emitted |
+|---|---|---|
+| `pace` | +3.4 | yes |
+| `spend_shape` | +2.9 | yes |
+| TE bias, via `overpays_at` / `ignores` | +3.0 | yes |
+| `chases` | −1.1 | **no** |
+| `homer_teams` / `avoids_teams` | −0.3 | **no** |
+| RB / WR / QB bias | +0.2 … +1.1 | **no** |
+| `nomination_style` | see below | **no** |
+
+`nomination_style` is the interesting exclusion. The *premium* a manager
+nominates at — how far above the going rate the players they put up cost — is
+the strongest signal in the whole record at z = +5.2. But the dossier's question
+is about **intent**: enforcer, targeter, best-available. Telling those apart
+needs the self-win rate, which does not survive (z = +0.6), so the data can say
+what somebody nominates and not why. The number goes in the report; the question
+stays for a human who was in the room.
+
+Positional bias is filtered rather than dropped: TE allocation survives at +3.0
+while RB, WR and QB do not, so only TE reaches the file.
 
 **It is never written straight into the record.** Not because measurement is
 untrustworthy, but because the dossier is a store of *observations*, and there
@@ -28,10 +48,14 @@ from ffa.history.metrics import ManagerProfile
 # is worth putting in front of somebody as a suggestion.
 MIN_AGREEMENT = 0.5
 
-# `random` is the residual bucket in the nomination classifier — it means "no
-# pattern found", which is not the same as "this person nominates at random" and
-# should never be presented as a finding.
-NOT_A_FINDING = {"random"}
+# The labels that cleared a null test in `ffa.history.evidence`. Everything
+# else is computed and shown in the report as a number, but never handed to the
+# dossier — a suggestion there is one `ffa dossier import` away from becoming a
+# recorded observation, and a false observation is worse than a missing one.
+SURVIVING_LABELS: tuple[str, ...] = ("spend_shape", "pace")
+
+# TE allocation survives at z = +3.0; RB, WR and QB sit between +0.2 and +1.1.
+SURVIVING_POSITIONS: frozenset[str] = frozenset({"TE"})
 
 
 def _agreed(profile: ManagerProfile, field: str, label: str) -> bool:
@@ -74,23 +98,19 @@ def suggest_dossiers(
             entry["real_name"] = profile.manager
         entry["seasons_in_league"] = len(profile.seasons)
 
-        for field in ("spend_shape", "pace", "chases"):
+        for field in SURVIVING_LABELS:
             value = getattr(pooled, field)
             if _agreed(profile, field, value):
                 entry[field] = value
 
-        style = pooled.nomination_style
-        if style not in NOT_A_FINDING and _agreed(profile, "nomination_style", style):
-            entry["nomination_style"] = style
-
-        if profile.overpays_at:
-            entry["overpays_at"] = list(profile.overpays_at)
-        if profile.ignores:
-            entry["ignores"] = list(profile.ignores)
-        if profile.homer_teams:
-            entry["homer_teams"] = list(profile.homer_teams)
-        if profile.avoids_teams:
-            entry["avoids_teams"] = list(profile.avoids_teams)
+        # TE only. The other positions do not clear the null, and a suggestion
+        # is one `ffa dossier import` away from becoming an observation.
+        overpays = [p for p in profile.overpays_at if p in SURVIVING_POSITIONS]
+        ignores = [p for p in profile.ignores if p in SURVIVING_POSITIONS]
+        if overpays:
+            entry["overpays_at"] = overpays
+        if ignores:
+            entry["ignores"] = ignores
 
         entry["notes"] = _note(profile)
         out[str(team_id)] = entry
@@ -106,12 +126,17 @@ def _note(profile: ManagerProfile) -> str:
     """
     pooled = profile.pooled
     years = ", ".join(str(y) for y in profile.years)
+    accounts = (
+        f" across {len(profile.accounts)} ESPN accounts"
+        if len(getattr(profile, "accounts", ())) > 1
+        else ""
+    )
     return (
-        f"Derived from ESPN draft history ({years}): "
+        f"Derived from ESPN draft history ({years}{accounts}): "
         f"{len(pooled.picks)} picks, ${pooled.spend:,} spent, "
         f"top-3 buys = {pooled.top3_share * 100:.0f}% of budget, "
         f"{pooled.first_share * 100:.0f}% of money gone in the first third, "
-        f"paid {pooled.premium_index:.2f}x reference, "
-        f"won {pooled.self_win_rate * 100:.0f}% of own nominations. "
-        "Review before trusting."
+        f"nominations ran {pooled.nomination_premium:+.1f} vs the going rate. "
+        "Only signals that cleared a permutation test are filled in above; "
+        "review before trusting."
     )

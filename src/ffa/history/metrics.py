@@ -222,6 +222,10 @@ class ManagerProfile:
 
     owner_id: str
     manager: str = ""
+    # Every ESPN account folded into this person. More than one means an alias
+    # was declared, and the report should say so rather than quietly presenting
+    # a merged record as a single account's.
+    accounts: tuple[str, ...] = ()
     seasons: tuple[ManagerSeason, ...] = ()
     pooled: ManagerSeason | None = None
     overpays_at: tuple[str, ...] = ()
@@ -453,9 +457,10 @@ def _classify(seasons: Sequence[ManagerSeason], *, has_nominations: bool) -> lis
     first = [s.first_share for s in seasons]
     last = [s.last_share for s in seasons]
     premium = [s.premium_index for s in seasons]
-    self_win = [s.self_win_rate for s in seasons]
+    # `self_win_rate` and `best_available_index` are still computed and still
+    # reported as numbers; they simply no longer decide a label, because neither
+    # clears its null (z = +0.6 and, once z-scored, indistinguishable too).
     nom_premium = [s.nomination_premium for s in seasons]
-    bpa = [s.best_available_index for s in seasons]
 
     out = []
     for season in seasons:
@@ -483,20 +488,21 @@ def _classify(seasons: Sequence[ManagerSeason], *, has_nominations: bool) -> lis
                 "to judge chasing"
             )
 
+        # What somebody nominates is measurable; *why* is not. The premium a
+        # manager nominates at is the strongest signal in the record (z = +5.2),
+        # but telling an enforcer from a targeter needs the self-win rate, which
+        # does not survive its null (z = +0.6). So this reports the observable
+        # and stops — the intent question stays in the dossier for a human who
+        # was in the room.
         style = ""
         if has_nominations and season.nominations >= 5:
-            z_win = _z(season.self_win_rate, self_win)
             z_premium = _z(season.nomination_premium, nom_premium)
-            z_bpa = _z(season.best_available_index, bpa)
-            if z_win >= LABEL_Z:
-                style = "targets"
-            elif z_win <= -LABEL_Z and z_premium >= 0:
-                # Puts up players above the going rate and does not buy them.
-                style = "enforcer"
-            elif z_bpa >= LABEL_Z:
-                style = "best_available"
+            if z_premium >= LABEL_Z:
+                style = "nominates_high"
+            elif z_premium <= -LABEL_Z:
+                style = "nominates_low"
             else:
-                style = "random"
+                style = "no_pattern"
         elif not has_nominations:
             notes.append("ESPN recorded no nomination order for this season")
 
@@ -566,11 +572,13 @@ def build_profiles(history: History, managers: Mapping[str, str] | None = None):
     by_owner: dict[str, list[ManagerSeason]] = {}
     all_picks: list[DraftPick] = []
     my_picks: dict[str, list[DraftPick]] = {}
+    accounts: dict[str, set[str]] = {}
 
     for draft in history.seasons:
         for season in analyse_season(draft, managers):
             by_owner.setdefault(season.owner_id, []).append(season)
             my_picks.setdefault(season.owner_id, []).extend(season.picks)
+            accounts.setdefault(season.owner_id, set()).add(season.owner_id)
         all_picks.extend(draft.picks)
 
     profiles: list[ManagerProfile] = []
@@ -630,6 +638,7 @@ def build_profiles(history: History, managers: Mapping[str, str] | None = None):
             ManagerProfile(
                 owner_id=owner_id,
                 manager=managers.get(owner_id, ""),
+                accounts=tuple(sorted(accounts.get(owner_id, {owner_id}))),
                 seasons=tuple(seasons),
                 pooled=pooled,
                 overpays_at=tuple(

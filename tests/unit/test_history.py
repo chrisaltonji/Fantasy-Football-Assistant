@@ -293,17 +293,30 @@ def test_a_season_without_nomination_data_says_so_instead_of_guessing():
     assert any("no nomination order" in n for n in season.notes)
 
 
-def test_winning_your_own_nominations_reads_as_targeting():
+def test_only_a_manager_who_nominated_enough_gets_a_reading():
+    """Nomination labels describe *what* somebody puts up, never why.
+
+    Telling an enforcer from a targeter needs the self-win rate, which does not
+    survive its null, so the classifier reports the premium and stops.
+    """
     draft = _league(
         {1: [20] * 8, 2: [20] * 8, 3: [20] * 8},
         nominators={1: 1, 2: 1, 3: 1},  # team 1 nominates everything
     )
     styles = {s.team_id: s.nomination_style for s in analyse_season(draft)}
 
-    # Team 1 nominated 24 players and won 8 — a third — while 2 and 3 nominated
-    # nothing at all, so only team 1 gets a reading.
-    assert styles[1] in {"targets", "enforcer", "best_available", "random"}
+    assert styles[1] in {"nominates_high", "nominates_low", "no_pattern"}
     assert styles[2] == "" and styles[3] == ""
+
+
+def test_no_intent_label_is_ever_produced():
+    """`enforcer` and `targeter` are claims about motive the data cannot make."""
+    draft = _league({1: [90, 80, 20] + [1] * 5, 2: [40] * 5 + [1] * 3,
+                     3: [30] * 6 + [1] * 2})
+
+    produced = {s.nomination_style for s in analyse_season(draft)}
+
+    assert not produced & {"enforcer", "targets", "best_available"}
 
 
 # --- pooling across seasons ----------------------------------------------------------
@@ -360,14 +373,36 @@ def test_every_suggestion_says_where_it_came_from():
     suggested = suggest_dossiers(_profiles_for_suggest(), OWNERS)
 
     assert "Derived from ESPN draft history" in suggested["1"]["notes"]
-    assert "Review before trusting" in suggested["1"]["notes"]
+    assert "review before trusting" in suggested["1"]["notes"]
+    assert "permutation test" in suggested["1"]["notes"]
 
 
-def test_no_pattern_is_never_offered_as_a_finding():
-    """`random` is the residual bucket — "nothing found", not a discovery."""
+def test_only_signals_that_cleared_a_null_are_suggested():
+    """A suggestion is one `ffa dossier import` away from being an observation.
+
+    Homer teams (z = −0.3), chasing (−1.1) and nomination style all failed their
+    null tests, so none of them may reach the file — a false observation is far
+    worse than a missing one.
+    """
     suggested = suggest_dossiers(_profiles_for_suggest(), OWNERS)
 
-    assert all(e.get("nomination_style") != "random" for e in suggested.values())
+    banned = {"homer_teams", "avoids_teams", "chases", "nomination_style"}
+    assert not {k for entry in suggested.values() for k in entry} & banned
+
+
+def test_positional_bias_is_filtered_to_the_position_that_survived():
+    """TE clears its null at +3.0; RB, WR and QB sit between +0.1 and +1.1.
+
+    Dropping both lists would throw away a survivor; keeping them whole would
+    ship three failures.
+    """
+    from ffa.history.suggest import SURVIVING_POSITIONS
+
+    suggested = suggest_dossiers(_profiles_for_suggest(), OWNERS)
+
+    for entry in suggested.values():
+        for field in ("overpays_at", "ignores"):
+            assert set(entry.get(field, [])) <= SURVIVING_POSITIONS
 
 
 def test_a_manager_with_one_season_is_left_out_of_the_suggestions():
