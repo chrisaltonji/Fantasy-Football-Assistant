@@ -102,6 +102,19 @@ def test_the_book_reports_nothing_past_its_own_window():
     assert book.discriminates_at(0.31) is False
 
 
+def test_nothing_is_claimed_about_the_opening_picks():
+    """Before the curves diverge, expected share and its uncertainty are both
+    near zero, so buying one player reads as being far "ahead of script". A dry
+    run printed exactly that: `6% of budget out, usually 0% by now`. Nobody is
+    ahead of anything at pick four — there is no script yet to be ahead of.
+    """
+    book = PrecedentBook(window=0.3, managers={"ANN": script(LINEAR)})
+
+    assert book.discriminates_at(0.01) is False
+    assert book.discriminates_at(0.04) is False
+    assert book.discriminates_at(0.05) is True
+
+
 def test_a_book_with_no_window_never_claims_to_discriminate():
     assert PrecedentBook(managers={"ANN": script(LINEAR)}).discriminates_at(0.1) is False
 
@@ -175,11 +188,15 @@ def test_precedent_never_moves_the_bid_arithmetic(init_event, tmp_path):
 
     rows = [
         ReferenceRow(key=normalize_player_key(f"P{i}"), name=f"P{i}",
-                     position=Position.RB, auction_value=float(40 - i), overall_rank=i)
-        for i in range(1, 20)
+                     position=Position.RB, auction_value=float(40 - i % 30), overall_rank=i)
+        for i in range(1, 40)
     ]
     book = PlayerBook.from_report(LoadReport(source=_P("t"), rows=tuple(rows)))
-    state = reducers.replay([init_event] + [sold(i + 2, f"P{i}", 1, 20) for i in range(1, 8)])
+    # Past MIN_PROGRESS: 12 teams x 15 slots is a 180-pick board, so the first
+    # nine sales are the opening 5% where nothing is claimed.
+    state = reducers.replay(
+        [init_event] + [sold(i + 2, f"P{i}", (i % 11) + 1, 12) for i in range(1, 19)]
+    )
 
     seats = {t: f"OWNER-{t:02d}" for t in state.teams}
     curve = script(LINEAR)

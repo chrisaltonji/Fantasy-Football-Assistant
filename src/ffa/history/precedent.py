@@ -47,6 +47,13 @@ MIN_DOLLARS = 8
 # Two seasons is a pattern of two. Enough to show, flagged as thin.
 THIN_SEASONS = 2
 
+# Nothing is said about the first few picks. Before this point the expected
+# share and its uncertainty are both near zero, so buying a single player reads
+# as being "ahead of script" by whatever he cost — which a dry run duly printed
+# as `6% of budget out, usually 0% by now`. Nobody is ahead of anything at pick
+# four; there is simply no script yet to be ahead of.
+MIN_PROGRESS = 0.05
+
 
 @dataclass(frozen=True)
 class ManagerPrecedent:
@@ -134,8 +141,13 @@ class PrecedentBook:
         return self.for_owner(seats.get(int(team_id)))
 
     def discriminates_at(self, progress: float) -> bool:
-        """Is the board still early enough for this to mean anything?"""
-        return bool(self.window) and progress <= self.window
+        """Is the board in the range where a comparison means anything?
+
+        Bounded at both ends. Past `window` the curves have converged and every
+        manager looks the same; before `MIN_PROGRESS` they have not diverged yet
+        and everyone looks extraordinary.
+        """
+        return bool(self.window) and MIN_PROGRESS <= progress <= self.window
 
     def __len__(self) -> int:
         return len(self.managers)

@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 891 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 892 tests pass. Everything below is
 pushed.
 
 ---
@@ -323,6 +323,30 @@ Bugs it found that every test had passed over, because they only existed live:
   and polling from the worker failed on every poll. The reader connects lazily
   on the thread that uses it.
 
+## Dry run of the whole draft path (2026-08-18)
+
+A full 180-pick auction driven through the real `run_repl` with the reference
+book, the dossiers and the precedent artifact all loaded. **180/180 picks, exit
+0, no state warnings** — every path added this session (raw console, tab guard,
+stale-board guard, `safe_legal_bid`, pace readout) survives a complete draft.
+
+It found one bug the unit tests could not, because it only appears in sequence:
+at pick 4 the readout said `6% of budget out, usually 0% by now`. Before the
+curves diverge, both the expected share and its uncertainty are near zero, so
+buying a single player reads as being far ahead of a script that does not exist
+yet. `MIN_PROGRESS = 0.05` now bounds the window at the near end as well as the
+far one.
+
+**Validate the pace readout against a real season, never against the simulator.**
+The sim's bots are far more uniform than the league — replaying 2025's actual
+draft, every nomination inside the 30% window would have shown a line, with
+departures of ±$50 and up to eight managers flagged at once (hence the cap of
+three). The same run through the sim looks extreme in the other direction
+because the bots front-load absurdly and drive the market to 1.37x. Neither is a
+defect in the feature; they are different populations.
+
+---
+
 ## Draft history in the live draft (2026-08-18)
 
 `ffa history report` writes three things now: the HTML, a dossier draft, and
@@ -500,7 +524,7 @@ is a draft that looks like it is working.
    config that then refuses to load. `config init` and `config check` both say
    which teams are still untypeable.
 
-891 tests pass, up from 578.
+892 tests pass, up from 578.
 
 **Correctness, not urgency — CLOSED 2026-08-17**
 
