@@ -439,6 +439,22 @@ mid-draft payload.
 
 ---
 
+## Where the build stands
+
+[`docs/status.html`](docs/status.html) — open it in a browser. Checkpoints, all
+twelve capabilities, every layer, what is blocking, what is next, and a
+countdown to draft day. Generated from `docs/status.json`:
+
+```bash
+python tools/status_page.py           # rebuild the page
+python tools/status_page.py --open    # rebuild and open it
+python tools/status_page.py --check   # fail if it is out of date
+```
+
+Judgement is declared in the JSON; facts about the repo — test count, module
+count, lines, commits, days remaining — are derived at render time, so the two
+cannot drift.
+
 ## Design in one page
 
 **There is no "API mode" and no "manual mode."** There are event *producers*,

@@ -50,3 +50,7 @@ htmlcov/
 .vscode/
 .idea/
 .DS_Store
+
+# --- Local preview leftovers from browser screenshots ---
+.playwright-mcp/
+/status-*.png

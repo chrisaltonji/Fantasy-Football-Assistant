@@ -3,8 +3,24 @@
 **As of 2026-08-18. Draft day is 2026-08-31 — 13 days out.**
 
 Read this first. [`HANDOFF.md`](HANDOFF.md) is the running record of *how* things
-came to be the way they are, and it has grown to 645 lines; this is the
-stage-by-stage picture of *where they stand*.
+came to be the way they are; this is the stage-by-stage picture of *where they
+stand*.
+
+> **Want it as a page rather than a document?** [`status.html`](status.html) is
+> the same picture, rendered — open it in a browser and refresh it. It is
+> generated from [`status.json`](status.json), which is the structured half of
+> this file:
+>
+> ```
+> python tools/status_page.py          # regenerate after a phase lands
+> python tools/status_page.py --check  # fail if it is out of date
+> ```
+>
+> Update `status.json`, re-run the generator, and the page, the counts and the
+> countdown all move together. The volatile numbers — tests, modules, lines,
+> commits, days to draft — are **derived from the repo at render time** rather
+> than typed in, because those are exactly the ones that go stale in a
+> hand-maintained status doc.
 
 > **You can draft today.** Every checkpoint is complete, all v1 capabilities
 > ship, and the whole path was rehearsed against a live ESPN practice draft on

@@ -1,0 +1,215 @@
+{
+  "_comment": [
+    "The declared half of the build status. `tools/status_page.py` renders it to",
+    "docs/status.html, and derives the volatile numbers — tests, modules, commits,",
+    "days to draft — from the repo itself rather than from this file, so they",
+    "cannot go stale here.",
+    "",
+    "Update this when a phase lands, then re-run the generator. Same discipline as",
+    "the dossier question set: one table drives every surface, so they cannot",
+    "drift apart."
+  ],
+
+  "project": "ESPN Live Auction Draft Assistant",
+  "subtitle": "A live companion for a 12-team, $200 ESPN auction draft",
+  "draft_day": "2026-08-31",
+  "draft_time": "8pm ET",
+  "as_of": "2026-08-18",
+
+  "verdict": {
+    "state": "ready",
+    "headline": "You can draft today.",
+    "detail": "Every engine checkpoint is complete, the terminal REPL is rehearsed live twice, and all v1 capabilities ship. Everything still open is an improvement, not a prerequisite."
+  },
+
+  "checkpoints": [
+    { "id": "CP1", "scope": "Scaffold, config layer, ESPN probe", "status": "done" },
+    { "id": "CP2", "scope": "State engine, event journal, REPL, undo, crash-resume, view-model contract", "status": "done" },
+    { "id": "CP3", "scope": "Reference-data loader + deterministic advisory layer", "status": "done" },
+    { "id": "CP4", "scope": "Auction simulator with budget-aware bots", "status": "done" },
+    { "id": "CP5", "scope": "Live ESPN draft-room reader, config init, data fetch", "status": "done" }
+  ],
+  "checkpoints_note": "There is no CP6. Everything below is product work.",
+
+  "capabilities": [
+    { "n": 1,  "name": "Opponent snapshot",    "tier": "v1",   "status": "done",    "where": "advice/bidding.py::threats_for" },
+    { "n": 2,  "name": "Bid forecasting",      "tier": "v1",   "status": "partial", "where": "capacity ships; intent needs the LLM layer" },
+    { "n": 3,  "name": "Our bid recommendation","tier": "v1",  "status": "done",    "where": "guidance_for, incl. safe_legal_bid" },
+    { "n": 4,  "name": "Nomination strategy",  "tier": "v1.1", "status": "done",    "where": "advice/nomination.py", "new": true },
+    { "n": 5,  "name": "Overspend alerts",     "tier": "v1",   "status": "done",    "where": "advice/market.py::value_alert" },
+    { "n": 6,  "name": "Ambient feed",         "tier": "v1.1", "status": "todo",    "where": "needs a surface allowed to interrupt" },
+    { "n": 7,  "name": "Owner dossiers",       "tier": "v1",   "status": "done",    "where": "dossier/ — 100% filled" },
+    { "n": 8,  "name": "Post-pick fit",        "tier": "v1.1", "status": "todo",    "where": "inputs exist: starter_gaps, open_slots_by_pos" },
+    { "n": 9,  "name": "Danger-zone watchlist","tier": "v1.1", "status": "todo",    "where": "" },
+    { "n": 10, "name": "Positional scarcity",  "tier": "v1",   "status": "done",    "where": "advice/scarcity.py" },
+    { "n": 11, "name": "Post-draft grade",     "tier": "v2",   "status": "todo",    "where": "fires after the final pick — zero draft-day risk" },
+    { "n": 12, "name": "Strategy adherence",   "tier": "v1.1", "status": "done",    "where": "advice/strategy.py — needs a plan declared", "new": true },
+    { "n": null,"name": "Market inflation",    "tier": "v1",   "status": "done",    "where": "advice/market.py::market_state" }
+  ],
+  "capabilities_note": "Capability 2 is the only partial one, and the split is deliberate: capacity is arithmetic and is finished; intent is inference and is not.",
+
+  "layers": [
+    {
+      "name": "Engine & state",
+      "blurb": "Append-only journal, undo as a replay filter, crash-resume, single writer.",
+      "items": [
+        { "name": "domain/ — events, reducers, projections, models", "status": "done" },
+        { "name": "state/ — journal, store, recovery", "status": "done" },
+        { "name": "config/ — schema, loader, nicknames, identity, carry, strategy", "status": "done" },
+        { "name": "reference/ — loader, playerbook", "status": "done" }
+      ]
+    },
+    {
+      "name": "Advisory layer",
+      "blurb": "Deterministic arithmetic over ground truth. The inference half lives elsewhere by design.",
+      "items": [
+        { "name": "market.py — inflation, overpay alerts", "status": "done" },
+        { "name": "scarcity.py — tiering vs. league demand", "status": "done" },
+        { "name": "bidding.py — threats, ceilings, pace reads", "status": "done" },
+        { "name": "nomination.py — schedule + candidates", "status": "done", "new": true },
+        { "name": "strategy.py — plan adherence", "status": "done", "new": true },
+        { "name": "Inference half — who will actually bid", "status": "todo" }
+      ]
+    },
+    {
+      "name": "Ingest & config",
+      "blurb": "One EventSource seam. Nothing downstream knows where an event came from.",
+      "items": [
+        { "name": "espn/draftroom.py — live DOM reader over CDP", "status": "done" },
+        { "name": "espn/settings.py — config init, pickOrder", "status": "done" },
+        { "name": "espn/players.py — data fetch", "status": "done" },
+        { "name": "manual/ — grammar, resolve", "status": "done" },
+        { "name": "sim/ — bots, engine, fault injection", "status": "done" }
+      ]
+    },
+    {
+      "name": "Surfaces",
+      "blurb": "Three planned. One built, and it is the one you will actually type into.",
+      "items": [
+        { "name": "Terminal REPL", "status": "done", "note": "rehearsed live 2026-08-17 and 2026-08-18" },
+        { "name": "view/model.py — the JSON contract every surface reads", "status": "done" },
+        { "name": "Dashboard", "status": "todo", "note": "297-line spec, zero code" },
+        { "name": "Chat / LLM layer", "status": "todo", "note": "every input now in place" }
+      ]
+    },
+    {
+      "name": "Data & history",
+      "blurb": "What the record supports, and nothing it does not.",
+      "items": [
+        { "name": "Auction values — 355 players from ESPN", "status": "done" },
+        { "name": "Draft history — 4 seasons, 720 priced picks", "status": "done" },
+        { "name": "Evidence harness — 5 of 9 signals dropped as noise", "status": "done" },
+        { "name": "Owner dossiers — 12 managers, 100% covered", "status": "done" },
+        { "name": "Manager aliases, precedent, pace", "status": "done" }
+      ]
+    }
+  ],
+
+  "blocking": [
+    { "id": "A1", "item": "Auction values", "status": "done", "note": "ffa data fetch — 355 players" },
+    { "id": "A4", "item": "ESPN cookies", "status": "done", "note": "" },
+    { "id": "A5", "item": "Prior-season capture", "status": "done", "note": "" },
+    { "id": "B1", "item": "Does ESPN populate prices? Is there a real-time channel?", "status": "done", "note": "Both halves answered. Prices yes; the draft room is SSE and REST stays empty — hence the CDP reader." },
+    { "id": "C1", "item": "Owner dossiers", "status": "done", "note": "5 fields derived, 11 managers interviewed" },
+    { "id": "C2", "item": "Draft strategy preset", "status": "done", "note": "ffa strategy init — market-derived, editable" },
+    { "id": "Debt 1–7", "item": "Accumulated debt", "status": "done", "note": "all closed" }
+  ],
+
+  "next": [
+    {
+      "title": "Declare your draft plan",
+      "owner": "you",
+      "urgency": "now",
+      "detail": "C2 landed after your last config rebuild, so [strategy] is still empty and `plan` has nothing to measure.",
+      "command": "ffa strategy init\nffa config check"
+    },
+    {
+      "title": "Dashboard",
+      "owner": "build",
+      "urgency": "long pole",
+      "detail": "The largest remaining build, and it gates capabilities 6, 8 and 9. build_view() already emits every key the spec asks for, so it is front-end work against a frozen contract.",
+      "command": ""
+    },
+    {
+      "title": "LLM layer",
+      "owner": "build",
+      "urgency": "after the dashboard",
+      "detail": "Completes capability 2's intent half. Must sit beside the hot path, never inside it — advice is instant and cannot fail, and a network call in that loop would add latency and a failure mode while a clock runs.",
+      "command": ""
+    },
+    {
+      "title": "Join the plan to nomination strategy",
+      "owner": "build",
+      "urgency": "cheap",
+      "detail": "nomination.py ships two candidate lists and deliberately no ranking, because ranking needed a strategy. There is now a strategy.",
+      "command": ""
+    },
+    {
+      "title": "Post-draft grade (capability 11)",
+      "owner": "build",
+      "urgency": "can slip",
+      "detail": "Fires after the final pick, so it carries zero draft-day risk. The only item that can move past 08-31 without cost.",
+      "command": ""
+    }
+  ],
+
+  "rehearsals": [
+    {
+      "date": "2026-08-17",
+      "title": "First live practice draft",
+      "confirmed": [
+        "Attach, pre-flight, live ingest",
+        "Correct pick attribution",
+        "Bid guidance end to end"
+      ],
+      "found": []
+    },
+    {
+      "date": "2026-08-18",
+      "title": "Second live practice draft — everything shipped since the 17th",
+      "confirmed": [
+        "Stale-board guard fired correctly",
+        "12/12 draft-room teams matched to league ids",
+        "Pace readout against four seasons",
+        "Live bid guidance through ~320 picks",
+        "Capability 4 — real nomination order read off ESPN"
+      ],
+      "found": [
+        "A source that gave up left the main loop parked on the queue forever — fixed, with a test",
+        "Ctrl-C exited on a traceback instead of saying the work was saved — fixed, with a test"
+      ],
+      "artefacts": [
+        "Pace reads in a practice draft compare ESPN's autodrafter to the real manager's four seasons — the numbers are about the wrong person",
+        "Nominations overlap: two in flight, sales landing out of nomination order. Costs one display line; the journal is unaffected"
+      ]
+    }
+  ],
+
+  "open_questions": [
+    {
+      "q": "What does the draft room's --selecting modifier mean while bidding is running?",
+      "why": "The seat that put this player up, or the seat due to put up the next one. Those are different teams, so nominated_by is deliberately left unwired rather than guessed — picking wrong would fire the stale-order banner on nearly every pick.",
+      "how": "tools/draft_watch.py already flashes it on change. One nomination landing in a rehearsal settles it.",
+      "blocking": false
+    },
+    {
+      "q": "Does the real league's mDraftDetail backfill when the real draft completes?",
+      "why": "It would be a usable end-of-draft reconciliation pass. A practice draft can never answer it — ESPN reaps the ephemeral league the moment the draft ends.",
+      "how": "Only draft day can answer it. Nothing depends on it: the live path is the DOM either way.",
+      "blocking": false
+    },
+    {
+      "q": "safe_legal_bid's optimistic ceiling has never fired live.",
+      "why": "No pick has yet arrived without a price, so `legal max` has never shown its `+`. Unit-tested and dry-run, but not seen in real traffic.",
+      "how": "Will exercise itself the first time ESPN sends a pick with no winning price.",
+      "blocking": false
+    }
+  ],
+
+  "notes": [
+    {
+      "title": "advise() cost",
+      "body": "~40 ms at 100 sales, of which ~34 ms is nomination_plan scanning the remaining board. Fires once per user action, so it is invisible today. A surface that polls it many times a second is the case that would change that."
+    }
+  ]
+}
