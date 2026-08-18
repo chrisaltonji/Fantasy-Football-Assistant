@@ -117,10 +117,12 @@ def render_brief(
     *,
     seats: Mapping[int, str],
     labels: Mapping[int, str] | None = None,
+    team_names: Mapping[int, str] | None = None,
     league_name: str = "",
 ) -> str:
     """The whole interview as one pasteable prompt."""
     labels = labels or {}
+    team_names = team_names or {}
     out = [PREAMBLE]
 
     for question in QUESTIONS:
@@ -136,14 +138,23 @@ def render_brief(
     if league_name:
         out.append(f"League: **{league_name}**\n")
 
-    out.append("| team id | manager | already recorded |")
-    out.append("|---|---|---|")
+    out.append("| team id | team name | ESPN username | already recorded |")
+    out.append("|---|---|---|---|")
     for team_id in sorted(seats):
         dossier = book.for_team(team_id) or OwnerDossier(owner_id=seats[team_id])
-        label = labels.get(team_id) or dossier.label or f"team{team_id}"
-        known = _summarize(dossier)
-        out.append(f"| {team_id} | {label} | {known} |")
+        username = labels.get(team_id) or dossier.label or "-"
+        team_name = team_names.get(team_id) or "-"
+        out.append(
+            f"| {team_id} | {team_name} | {username} | {_summarize(dossier)} |"
+        )
 
+    out.append("")
+    out.append(
+        "Refer to people by **team name** — that is what I will recognise. The "
+        "ESPN username is there so you can tell two similar teams apart, and the "
+        "team id is only for keying the JSON. A team name can change mid-season, "
+        "so never treat it as an identity."
+    )
     out.append("")
     out.append(
         "Start with whichever manager I name. If I do not name one, start at the "

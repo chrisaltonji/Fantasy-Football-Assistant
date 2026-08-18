@@ -29,7 +29,7 @@ from pathlib import Path
 from ffa.config.loader import load_config
 from ffa.config.schema import ConfigError, LeagueConfig
 from ffa.dossier.brief import render_brief
-from ffa.dossier.form import render_form
+from ffa.dossier.form import render_form, seat_heading
 from ffa.dossier.ingest import apply_payload, extract_payload
 from ffa.dossier.schema import (
     QUESTIONS,
@@ -145,7 +145,12 @@ def cmd_dossier_form(args: argparse.Namespace) -> int:
     seats = _require_seats(config)
     book = _book(config, args.path)
 
-    text = render_form(book, seats=seats, labels=dict(config.managers))
+    text = render_form(
+        book,
+        seats=seats,
+        labels=dict(config.managers),
+        team_names=dict(config.team_names),
+    )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(text, encoding="utf-8")
 
@@ -166,7 +171,11 @@ def cmd_dossier_brief(args: argparse.Namespace) -> int:
     book = _book(config, args.path)
 
     text = render_brief(
-        book, seats=seats, labels=dict(config.managers), league_name=config.name
+        book,
+        seats=seats,
+        labels=dict(config.managers),
+        team_names=dict(config.team_names),
+        league_name=config.name,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(text, encoding="utf-8")
@@ -208,9 +217,9 @@ def cmd_dossier_import(args: argparse.Namespace) -> int:
         return 1
 
     for team_id in report.changed_teams:
-        label = config.managers.get(team_id) or f"team{team_id}"
+        label = config.team_names.get(team_id) or config.managers.get(team_id) or ""
         fields = ", ".join(report.applied[team_id])
-        print(f"  team {team_id:<3} {label:<16} {fields}")
+        print(f"  team {team_id:<3} {label[:24]:<26} {fields}")
 
     if args.dry_run:
         print(f"\n--dry-run: {report.field_count} answer(s) across "
@@ -245,8 +254,10 @@ def cmd_dossier_show(args: argparse.Namespace) -> int:
 
     for team_id in team_ids:
         dossier = book.for_team(team_id) or OwnerDossier(owner_id=seats.get(team_id, ""))
-        label = config.managers.get(team_id) or dossier.label or f"team{team_id}"
-        print(f"\nteam {team_id} — {label}"
+        heading = seat_heading(
+            team_id, config.managers, config.team_names, dossier
+        )
+        print(f"\n{heading}"
               f"   ({len(dossier.answered)}/{len(QUESTIONS)} answered)")
         for question in QUESTIONS:
             value = render_answer(question, getattr(dossier, question.field, None))
@@ -272,15 +283,21 @@ def cmd_dossier_status(args: argparse.Namespace) -> int:
         return 1
 
     print(f"{args.path}   {len(book)} entr(ies)")
-    print(f"  {'TEAM':<6} {'MANAGER':<14} {'ANSWERED':<10} MISSING")
+    # Team name first: it is the only column anybody recognises at a glance.
+    print(f"  {'TEAM':<5} {'TEAM NAME':<26} {'WHO':<20} {'DONE':<7} MISSING")
     for team_id in sorted(seats):
         dossier = book.for_team(team_id)
-        label = config.managers.get(team_id) or (dossier.label if dossier else "") or "-"
+        team_name = config.team_names.get(team_id) or "-"
+        who = (
+            (dossier.real_name if dossier else "")
+            or config.managers.get(team_id)
+            or "-"
+        )
         answered = len(dossier.answered) if dossier else 0
         missing = ", ".join(dossier.missing) if dossier else "everything"
         mark = "*" if team_id == config.my_team_id else " "
-        print(f" {mark}{team_id:<5} {label:<14} {answered:>2}/{len(QUESTIONS):<7} "
-              f"{missing[:60]}")
+        print(f" {mark}{team_id:<4} {team_name[:25]:<26} {who[:19]:<20} "
+              f"{answered:>2}/{len(QUESTIONS):<4} {missing[:44]}")
 
     covered = book.coverage(seats)
     print(f"\n{covered:.0%} of the league has some read on them.")
@@ -315,8 +332,10 @@ def cmd_dossier_interview(args: argparse.Namespace) -> int:
             current = book.for_owner(owner_id) or seed(
                 owner_id, team_id=team_id, label=config.managers.get(team_id, "")
             )
-            label = config.managers.get(team_id) or current.label or f"team{team_id}"
-            print(f"--- team {team_id} — {label} " + "-" * 30)
+            heading = seat_heading(
+                team_id, config.managers, config.team_names, current
+            )
+            print(f"--- {heading} " + "-" * 24)
 
             updated, touched = _ask_all(current)
             if touched:

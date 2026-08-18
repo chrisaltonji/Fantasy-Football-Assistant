@@ -24,7 +24,10 @@ from ffa.dossier.schema import QUESTIONS, DossierError, Pace, Skill, seed
 from ffa.dossier.store import DossierBook
 
 SEATS = {1: "{OWNER-01}", 2: "{OWNER-02}", 3: "{OWNER-03}"}
-LABELS = {1: "chris", 2: "dave", 3: "sam"}
+# What ESPN calls the *member* — an account username, often a generated one.
+LABELS = {1: "caltonji", 2: "macurl1392", 3: "espn06814226"}
+# What ESPN calls the *team*. The only one of the three a person recognises.
+TEAM_NAMES = {1: "Gibbs Me Dat", 2: "Fighting Finkelsteins", 3: "King Nothing"}
 
 
 def book_with(*dossiers) -> DossierBook:
@@ -46,7 +49,10 @@ def apply(payload, book=None):
 
 def test_the_brief_carries_every_question_with_its_reason():
     """The answers go shallow fast unless whoever is asking knows what they are for."""
-    text = render_brief(DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS)
+    text = render_brief(
+        DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS,
+        team_names=TEAM_NAMES,
+    )
 
     for question in QUESTIONS:
         assert question.prompt in text
@@ -55,7 +61,10 @@ def test_the_brief_carries_every_question_with_its_reason():
 
 def test_the_brief_lists_the_exact_keys_a_choice_will_accept():
     """Import validates strictly, so the prompt has to say what will pass."""
-    text = render_brief(DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS)
+    text = render_brief(
+        DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS,
+        team_names=TEAM_NAMES,
+    )
 
     for question in QUESTIONS:
         for choice in question.choices:
@@ -68,7 +77,10 @@ def test_the_brief_tells_the_far_end_not_to_invent_answers():
     An empty dossier is honest and costs nothing. An invented one gets read as
     observation by a layer whose entire job is to trust it.
     """
-    text = render_brief(DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS)
+    text = render_brief(
+        DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS,
+        team_names=TEAM_NAMES,
+    )
 
     assert "Never invent an answer" in text
     assert "Omit any field I did not actually answer" in text
@@ -79,17 +91,22 @@ def test_the_brief_is_keyed_by_team_id_not_swid():
 
     One wrong character would file a read against the wrong person, silently.
     """
-    text = render_brief(DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS)
+    text = render_brief(
+        DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS,
+        team_names=TEAM_NAMES,
+    )
 
     assert "keyed by **team id**" in text
-    assert "OWNER-01" not in text
+    assert not any(swid.strip("{}") in text for swid in SEATS.values())
 
 
 def test_the_brief_shows_what_is_already_recorded_so_a_second_pass_is_about_gaps():
     known = seed(SEATS[2], team_id=2, label="dave")
     known = known.__class__(**{**known.__dict__, "skill": Skill.SHARP})
 
-    text = render_brief(book_with(known), seats=SEATS, labels=LABELS)
+    text = render_brief(
+        book_with(known), seats=SEATS, labels=LABELS, team_names=TEAM_NAMES
+    )
 
     assert "skill=sharp" in text
     assert "nothing yet" in text  # the other two
@@ -262,7 +279,10 @@ def test_a_brief_and_an_import_meet_in_the_middle(tmp_path: Path):
     They are written in different files and drift is invisible until the far end
     hands back an answer nothing will take.
     """
-    brief = render_brief(DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS)
+    brief = render_brief(
+        DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS,
+        team_names=TEAM_NAMES,
+    )
 
     # The example block in the brief, imported verbatim.
     example = extract_payload(brief)
@@ -275,3 +295,74 @@ def test_a_brief_and_an_import_meet_in_the_middle(tmp_path: Path):
     # absent, not present-and-empty.
     assert "avoids_teams" not in example["3"]
     assert book.for_team(3).avoids_teams == ()
+
+
+# --- which name a person actually recognises ---------------------------------------
+
+
+def test_the_roster_leads_with_the_team_name_not_the_espn_username():
+    """The bug this fixes: a roster of `macurl1392` and `espn06814226`.
+
+    ESPN's member display name is an account username and four of the twelve in
+    the real league are machine-generated. Nobody can fill in a dossier for
+    `espn06814226`; everybody knows "King Nothing".
+    """
+    text = render_brief(
+        DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS,
+        team_names=TEAM_NAMES,
+    )
+
+    for name in TEAM_NAMES.values():
+        assert name in text
+    # The username stays, to tell two similar teams apart.
+    assert "espn06814226" in text
+    # Team name first in the row, because that is the column being scanned.
+    row = next(line for line in text.splitlines() if "King Nothing" in line and "|" in line)
+    assert row.index("King Nothing") < row.index("espn06814226")
+
+
+def test_the_brief_says_a_team_name_is_display_and_not_identity():
+    """It is the one field here that changes mid-season.
+
+    Showing it is right; letting anything key off it is the failure the whole
+    TeamResolver exists to prevent.
+    """
+    text = render_brief(
+        DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS,
+        team_names=TEAM_NAMES,
+    )
+
+    assert "never treat it as an identity" in text
+    assert "team id is only for keying the JSON" in text
+
+
+def test_the_form_headings_name_the_team_rather_than_the_username():
+    from ffa.dossier.form import render_form
+
+    text = render_form(
+        DossierBook({}, owners=SEATS), seats=SEATS, labels=LABELS,
+        team_names=TEAM_NAMES,
+    )
+
+    assert "## team 3 — King Nothing" in text
+    assert "espn06814226" in text  # still there, in parentheses
+
+
+def test_a_real_name_takes_over_the_heading_once_we_have_one():
+    """The whole point of asking `real_name` first is to stop saying "King
+    Nothing" about a person you actually call Rob."""
+    from ffa.dossier.form import seat_heading
+    from ffa.dossier.schema import OwnerDossier
+
+    known = OwnerDossier(owner_id="OWNER-03", real_name="Rob")
+
+    heading = seat_heading(3, LABELS, TEAM_NAMES, known)
+
+    assert heading.startswith("team 3 — Rob")
+    assert "King Nothing" in heading
+
+
+def test_a_seat_with_no_names_at_all_still_reads_as_something():
+    from ffa.dossier.form import seat_heading
+
+    assert seat_heading(7, {}, {}) == "team 7 — team7"
