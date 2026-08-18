@@ -124,7 +124,7 @@ def section(title: str, body: str, *, sub: str = "", id_: str = "") -> str:
     )
 
 
-def render(data: dict) -> str:
+def render(data: dict, *, fragment: bool = False) -> str:
     tests = count_tests()
     src_modules = count_files("*.py", "src")
     test_modules = len(list((ROOT / "tests").rglob("test_*.py")))
@@ -360,9 +360,12 @@ def render(data: dict) -> str:
         )
     )
 
-    return TEMPLATE.format(
+    # The page has its own name, separate from the project's. In a gallery of
+    # artifacts "Draft Day Readiness" says what this page is; the project name
+    # would only say which repo it came from.
+    return (FRAGMENT if fragment else TEMPLATE).format(
         css=CSS,
-        title=e(data.get("project", "Build status")),
+        title=e(data.get("page_title") or data.get("project", "Build status")),
         nav=nav,
         head=head,
         body="".join([
@@ -375,19 +378,39 @@ def render(data: dict) -> str:
 
 
 CSS = """
+/* Palette grounded in the subject rather than defaulted: an auction ledger.
+   Warm neutrals, oxblood accent. The semantic three — done / half / not
+   started — are deliberately a separate hue family from the accent, so a
+   status never reads as "branded" and the accent never reads as a status.
+
+   Three theme states, not two. A viewer who has chosen stamps data-theme on
+   the root; a viewer on the default "system" setting stamps nothing, and only
+   prefers-color-scheme separates them. So: :root carries the whole light
+   palette, the media query redefines tokens for the unstamped dark case, and
+   the [data-theme] blocks let an explicit choice win either way. Nothing below
+   declares a colour anywhere except through these tokens. */
 :root{
-  --bg:#f6f7f9; --panel:#fff; --ink:#14161a; --muted:#5f6672; --line:#e3e6ea;
-  --ok:#1f7a44; --ok-bg:#e7f4ec; --warn:#96590a; --warn-bg:#fdf1dd;
-  --todo:#5f6672; --todo-bg:#eef0f3; --new:#1e4fd6; --new-bg:#e7edfd;
-  --accent:#1e4fd6; --shadow:0 1px 2px rgba(16,20,28,.05),0 4px 16px rgba(16,20,28,.05);
+  --bg:#faf8f6; --panel:#fff; --ink:#1a1614; --muted:#6b625d; --line:#e8e2dd;
+  --ok:#1f7a44; --ok-bg:#e8f3ec; --warn:#8a5209; --warn-bg:#fbf0dc;
+  --todo:#6b625d; --todo-bg:#efebe7; --new:#8c2f39; --new-bg:#f7e9ea;
+  --accent:#8c2f39;
+  --shadow:0 1px 2px rgba(26,22,20,.05),0 4px 16px rgba(26,22,20,.05);
 }
 @media (prefers-color-scheme:dark){
-  :root{
-    --bg:#0f1115; --panel:#161a20; --ink:#e8eaed; --muted:#9aa3af; --line:#252b33;
+  :root:not([data-theme="light"]){
+    --bg:#14110f; --panel:#1c1917; --ink:#ede8e4; --muted:#a09590; --line:#2b2521;
     --ok:#5fd08a; --ok-bg:#12281c; --warn:#e8b463; --warn-bg:#2b210f;
-    --todo:#9aa3af; --todo-bg:#1d222a; --new:#8ab0ff; --new-bg:#152036;
-    --accent:#8ab0ff; --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 20px rgba(0,0,0,.25);
+    --todo:#a09590; --todo-bg:#241f1c; --new:#e79aa3; --new-bg:#2e1a1d;
+    --accent:#e79aa3;
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 4px 20px rgba(0,0,0,.28);
   }
+}
+:root[data-theme="dark"]{
+  --bg:#14110f; --panel:#1c1917; --ink:#ede8e4; --muted:#a09590; --line:#2b2521;
+  --ok:#5fd08a; --ok-bg:#12281c; --warn:#e8b463; --warn-bg:#2b210f;
+  --todo:#a09590; --todo-bg:#241f1c; --new:#e79aa3; --new-bg:#2e1a1d;
+  --accent:#e79aa3;
+  --shadow:0 1px 2px rgba(0,0,0,.35),0 4px 20px rgba(0,0,0,.28);
 }
 *{box-sizing:border-box}
 body{
@@ -396,7 +419,7 @@ body{
   -webkit-font-smoothing:antialiased;
 }
 .wrap{max-width:1080px;margin:0 auto;padding:32px 20px 80px}
-h1{font-size:26px;line-height:1.2;margin:0 0 4px;letter-spacing:-.02em}
+h1{font-size:26px;line-height:1.2;margin:0 0 4px;letter-spacing:-.02em;text-wrap:balance}
 h2{font-size:18px;margin:0 0 14px;letter-spacing:-.01em}
 h3{font-size:15px;margin:0}
 h4{font-size:12px;margin:0 0 6px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
@@ -412,7 +435,7 @@ header{display:flex;gap:20px;align-items:flex-start;justify-content:space-betwee
   background:var(--panel);border:1px solid var(--line);border-radius:12px;
   padding:12px 18px;text-align:center;box-shadow:var(--shadow);white-space:nowrap;
 }
-.count strong{display:block;font-size:30px;line-height:1;letter-spacing:-.03em}
+.count strong{display:block;font-size:30px;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .count.urgent{color:var(--warn);border-color:var(--warn)}
 
 .verdict{border-radius:12px;padding:16px 18px;margin-bottom:18px;border:1px solid var(--line);background:var(--panel);box-shadow:var(--shadow)}
@@ -422,14 +445,14 @@ header{display:flex;gap:20px;align-items:flex-start;justify-content:space-betwee
 
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:18px}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;box-shadow:var(--shadow)}
-.stat .figure{display:block;font-size:22px;font-weight:640;letter-spacing:-.02em}
+.stat .figure{display:block;font-size:22px;font-weight:640;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .stat .label{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 
 .progress-wrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:26px;box-shadow:var(--shadow)}
 .progress-head{display:flex;justify-content:space-between;gap:12px;font-size:13px;color:var(--muted);margin-bottom:8px;flex-wrap:wrap}
 .progress-head strong{color:var(--ink)}
 .bar{height:8px;border-radius:99px;background:var(--todo-bg);overflow:hidden}
-.fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--ok),var(--accent))}
+.fill{height:100%;border-radius:99px;background:var(--ok)}
 
 nav{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0;margin-bottom:8px;border-bottom:1px solid var(--line);display:flex;gap:14px;flex-wrap:wrap}
 nav a{color:var(--muted);text-decoration:none;font-size:13px}
@@ -496,6 +519,9 @@ summary::before{content:"▸";color:var(--muted);display:inline-block;width:16px
 details[open] summary::before{content:"▾"}
 details p{color:var(--muted);font-size:13.5px;margin:8px 0 0 16px}
 
+a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
 footer{color:var(--muted);font-size:12.5px;text-align:center;margin-top:26px;line-height:1.7}
 
 @media (max-width:640px){
@@ -509,13 +535,31 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin-top:26px;lin
 }
 """
 
+# Body-only. A published Artifact is wrapped in its own
+# `<!doctype html><head>…</head><body>` skeleton, so a full document here would
+# nest one inside another. The `<title>` is kept because that is what names the
+# page in the gallery and the browser tab.
+FRAGMENT = """<title>{title}</title>
+<style>{css}</style>
+<div class="wrap">
+{head}
+<nav>{nav}</nav>
+{body}
+<footer>
+  Generated {generated} from <code>docs/status.json</code> ·
+  status as of {as_of}<br>
+  Regenerate with <code>python tools/status_page.py</code>
+</footer>
+</div>
+"""
+
 TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title} — build status</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231e4fd6'/%3E%3Cpath d='M8 21V13M14 21V9M20 21V16M26 21V11' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<title>{title}</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%238c2f39'/%3E%3Cpath d='M8 21V13M14 21V9M20 21V16M26 21V11' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <meta name="color-scheme" content="light dark">
 <style>{css}</style>
 </head>
@@ -543,6 +587,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="exit 1 if the page would change (for CI)")
     parser.add_argument("--open", dest="open_it", action="store_true",
                         help="open the page in a browser afterwards")
+    parser.add_argument("--fragment", action="store_true",
+                        help="emit body-only HTML, for publishing where the "
+                             "host supplies the page skeleton")
     args = parser.parse_args(argv)
 
     if not args.source.is_file():
@@ -555,7 +602,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {args.source} is not valid JSON: {exc}", file=sys.stderr)
         return 2
 
-    html = render(data)
+    html = render(data, fragment=args.fragment)
 
     if args.check:
         # The timestamp changes every run, so compare everything else. Without

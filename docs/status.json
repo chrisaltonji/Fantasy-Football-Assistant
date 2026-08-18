@@ -11,6 +11,7 @@
   ],
 
   "project": "ESPN Live Auction Draft Assistant",
+  "page_title": "Draft Day Readiness",
   "subtitle": "A live companion for a 12-team, $200 ESPN auction draft",
   "draft_day": "2026-08-31",
   "draft_time": "8pm ET",
