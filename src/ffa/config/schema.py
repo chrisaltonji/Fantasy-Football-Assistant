@@ -92,6 +92,19 @@ class LeagueConfig:
     # the wrong manager.
     owners: Mapping[int, str] = field(default_factory=dict)
 
+    # Second accounts. `{secondary SWID} = "{primary SWID}"`, both folded.
+    #
+    # A manager who drafts under two ESPN logins is two people to every join in
+    # this codebase, and the arithmetic stays perfectly correct about somebody
+    # who does not exist. This league has two cases: Brian Cona held team 6
+    # through 2023 under one account and returned at team 13 under another, and
+    # there is an orphan second login with no seat at all.
+    #
+    # Declared by hand and never inferred — two similar names are not evidence,
+    # and guessing at identity is what `resolve_team` and `PlayerBook` both
+    # refuse to do. See `ffa.config.identity`.
+    aliases: Mapping[str, str] = field(default_factory=dict)
+
     # The manager's actual name, keyed by team id — "Michael Curley". ESPN
     # carries this in `mTeam`'s `members[].firstName/lastName`, alongside the
     # account handle, and for a long time this codebase read only the handle.

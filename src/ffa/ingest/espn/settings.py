@@ -184,7 +184,10 @@ def teams_from_payload(payload: Mapping[str, Any]) -> TeamDirectory:
     )
 
 
-def my_team_id(owners: Mapping[int, str], swid: str | None) -> int:
+def my_team_id(
+    owners: Mapping[int, str], swid: str | None,
+    aliases: Mapping[str, str] | None = None,
+) -> int:
     """Which team belongs to the SWID in `.env`.
 
     Returns 0 when it cannot be determined, which the caller must treat as a
@@ -193,9 +196,16 @@ def my_team_id(owners: Mapping[int, str], swid: str | None) -> int:
     """
     if not swid:
         return 0
-    wanted = {swid, swid.strip("{}"), "{" + swid.strip("{}") + "}"}
+
+    # The shared fold, not a local one. This function grew its own — which
+    # omitted `.upper()` — so a SWID copied out of a browser in lower case
+    # silently failed to match and left `my_team_id` at 0.
+    from ffa.config.identity import OwnerResolver, fold_owner_id
+
+    resolver = OwnerResolver(aliases, owners)
+    wanted = resolver.resolve(swid)
     for team_id, owner in owners.items():
-        if owner in wanted or owner.strip("{}") in {w.strip("{}") for w in wanted}:
+        if resolver.resolve(owner) == wanted or fold_owner_id(owner) == fold_owner_id(swid):
             return team_id
     return 0
 

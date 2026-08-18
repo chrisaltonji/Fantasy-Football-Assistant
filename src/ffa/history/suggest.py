@@ -56,11 +56,13 @@ def suggest_dossiers(
     min_seasons: int = 2,
 ) -> dict[str, dict]:
     """`{team_id: {field: value}}`, keyed the way the importer expects."""
-    by_owner = {owner.strip("{}").upper(): team_id for team_id, owner in seats.items()}
+    from ffa.config.identity import fold_owner_id
+
+    by_owner = {fold_owner_id(owner): team_id for team_id, owner in seats.items()}
     out: dict[str, dict] = {}
 
     for profile in profiles:
-        team_id = by_owner.get(profile.owner_id.strip("{}").upper())
+        team_id = by_owner.get(fold_owner_id(profile.owner_id))
         if team_id is None:
             continue  # no longer in the league
         pooled = profile.pooled

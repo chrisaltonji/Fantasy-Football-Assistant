@@ -89,6 +89,7 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
     owners_raw = data.get("owners", {})
     team_names_raw = data.get("team_names", {})
     real_names_raw = data.get("real_names", {})
+    aliases_raw = data.get("aliases", {})
     reference = data.get("reference", {})
     polling = data.get("polling", {})
 
@@ -135,6 +136,21 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
                 f"[owners] keys must be ESPN team ids, got {raw_id!r}"
             ) from exc
 
+    # Folded on the way in, so `{ABC}` in the file and `ABC` from a cookie are
+    # the same key rather than two entries that shadow each other after a sort.
+    from ffa.config.identity import fold_owner_id
+
+    aliases: dict[str, str] = {}
+    for raw_secondary, raw_primary in aliases_raw.items():
+        secondary = fold_owner_id(str(raw_secondary))
+        primary = fold_owner_id(str(raw_primary))
+        if not secondary or not primary:
+            raise ConfigError(
+                f"[aliases] entries must both be ESPN member SWIDs, got "
+                f"{raw_secondary!r} = {raw_primary!r}"
+            )
+        aliases[secondary] = primary
+
     config = LeagueConfig(
         league_id=int(_require(league, "league", "league_id")),
         year=int(_require(league, "league", "year")),
@@ -152,6 +168,7 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
         owners=owners,
         team_names={int(k): str(v) for k, v in team_names_raw.items()},
         real_names={int(k): str(v) for k, v in real_names_raw.items()},
+        aliases=aliases,
         reference_path=str(reference.get("path", "")),
         baseline_teams=int(reference.get("baseline_teams", 12)),
         baseline_budget=int(reference.get("baseline_budget", 200)),
@@ -201,6 +218,7 @@ def config_to_dict(config: LeagueConfig) -> dict[str, Any]:
         "owners": {str(k): v for k, v in sorted(config.owners.items())},
         "team_names": {str(k): v for k, v in sorted(config.team_names.items())},
         "real_names": {str(k): v for k, v in sorted(config.real_names.items())},
+        "aliases": {str(k): v for k, v in sorted(config.aliases.items())},
         "reference": {
             "path": config.reference_path,
             "baseline_teams": config.baseline_teams,

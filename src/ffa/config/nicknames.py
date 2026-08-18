@@ -216,7 +216,13 @@ def carry_forward(
         if looks_generated(nickname) or nickname.lower() in supplied:
             continue
 
-        before, after = previous_owners.get(team_id), fresh_owners.get(team_id)
+        # Resolved, not raw. `{ABC}` and `ABC` are the same seat, and an
+        # aliased second account is the same person — either would otherwise
+        # read as a new manager and throw the nickname away.
+        from ffa.config.identity import fold_owner_id
+
+        before = fold_owner_id(previous_owners.get(team_id, ""))
+        after = fold_owner_id(fresh_owners.get(team_id, ""))
         if before and after and before != after:
             notes.append(
                 f"dropped nickname {nickname!r}: team {team_id} has a different "

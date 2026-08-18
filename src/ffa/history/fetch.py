@@ -227,7 +227,9 @@ def _owners(team_payload: Mapping[str, Any] | None) -> tuple[dict[int, str], dic
     return owners, names
 
 
-def season_from_payload(raw: Mapping[str, Any]) -> SeasonDraft | SeasonGap:
+def season_from_payload(
+    raw: Mapping[str, Any], resolver=None
+) -> SeasonDraft | SeasonGap:
     """One cached season -> a usable draft, or a stated reason it is not one."""
     year = int(raw.get("year") or 0)
     settings_payload = raw.get("mSettings")
@@ -261,6 +263,13 @@ def season_from_payload(raw: Mapping[str, Any]) -> SeasonDraft | SeasonGap:
     index = player_index(raw.get("kona_player_info"))
     reference, source = price_reference(raw.get("kona_player_info"))
     owners, team_names = _owners(raw.get("mTeam"))
+
+    # Resolve **here**, at the boundary, rather than at each of the ten
+    # downstream joins. Everything after this point compares already-resolved
+    # ids, so a second account cannot split a manager in a call site somebody
+    # forgot to update.
+    if resolver is not None:
+        owners = {team_id: resolver.resolve(swid) for team_id, swid in owners.items()}
 
     # Scale the reference to the money actually spent this season. Without it a
     # season covered by 160 editorial values and one covered by 350 consensus
@@ -309,7 +318,7 @@ def season_from_payload(raw: Mapping[str, Any]) -> SeasonDraft | SeasonGap:
 
 def build_history(
     years: "list[int]", *, cache: Path = DEFAULT_CACHE, league_name: str = "",
-    league_id: int = 0,
+    league_id: int = 0, resolver=None,
 ) -> History:
     """Assemble every cached season into one record, gaps included."""
     seasons: list[SeasonDraft] = []
@@ -320,7 +329,7 @@ def build_history(
         if raw is None:
             gaps.append(SeasonGap(year, "not fetched — no cached payload"))
             continue
-        result = season_from_payload(raw)
+        result = season_from_payload(raw, resolver)
         if isinstance(result, SeasonGap):
             gaps.append(result)
         else:

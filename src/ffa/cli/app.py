@@ -78,6 +78,7 @@ def cmd_config_init(args: argparse.Namespace) -> int:
     machine. Losing it should cost one command, not an afternoon of
     hand-editing against a fixture.
     """
+    from ffa.config.carry import carried
     from ffa.config.loader import load_dotenv, write_config
     from ffa.config.nicknames import carry_forward, looks_generated
     from ffa.ingest.espn.settings import config_from_payloads, fetch_league_payloads
@@ -154,15 +155,14 @@ def cmd_config_init(args: argparse.Namespace) -> int:
                 team_ids=config.effective_team_ids,
                 machine_names=machine_names,
             )
-            config = _replace(
-                config,
-                managers=merged,
-                reference_path=previous.reference_path or config.reference_path,
-                baseline_teams=previous.baseline_teams,
-                baseline_budget=previous.baseline_budget,
-                poll_interval_seconds=previous.poll_interval_seconds,
-                poll_failure_threshold=previous.poll_failure_threshold,
-            )
+            # The field list lives in `ffa.config.carry` beside a test that
+            # walks every field of `LeagueConfig`. It used to be six names
+            # inlined here, which meant every new setting was silently wiped by
+            # the documented recovery command until somebody noticed.
+            keep = carried(previous)
+            keep["managers"] = merged
+            keep["reference_path"] = previous.reference_path or config.reference_path
+            config = _replace(config, **keep)
             kept = sum(
                 1
                 for tid, name in merged.items()
@@ -734,7 +734,9 @@ def _load_dossiers(config: LeagueConfig | None, path: Path):
         return None
     from ffa.dossier.store import load_dossiers
 
-    book = load_dossiers(path, owners=dict(config.owners))
+    from ffa.config.identity import seats
+
+    book = load_dossiers(path, owners=seats(config))
     for warning in book.warnings:
         print(f"! {warning}", file=sys.stderr)
     return book if len(book) else None
@@ -829,6 +831,10 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--force", action="store_true", help="overwrite an existing config")
     init.add_argument("--public", action="store_true", help="skip cookie auth (public leagues)")
     init.set_defaults(func=cmd_config_init)
+
+    from ffa.cli.alias_cmd import add_parser as add_alias_parser
+
+    add_alias_parser(config_sub)
 
     nick = config_sub.add_parser(
         "nicknames",

@@ -26,6 +26,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+from ffa.config.identity import seats
 from ffa.config.loader import load_config
 from ffa.config.schema import ConfigError, LeagueConfig
 from ffa.dossier.brief import render_brief
@@ -49,17 +50,13 @@ from ffa.util.clock import now_utc
 
 
 def _seats(config: LeagueConfig) -> dict[int, str]:
-    """`team_id -> SWID`, for every seat we can identify.
+    """`team_id -> resolved owner`. Thin wrapper over the shared implementation.
 
-    A team with no recorded owner cannot hold a dossier, because there is
-    nothing stable to attach it to. Saying so beats inventing a key that breaks
-    the moment somebody leaves the league.
+    Three copies of this used to exist and had already drifted — two filtered
+    out teams with no owner and the third did not, so the same league produced
+    different seat maps depending on which command you ran.
     """
-    return {
-        team_id: config.owners[team_id]
-        for team_id in config.effective_team_ids
-        if config.owners.get(team_id)
-    }
+    return seats(config)
 
 
 def _book(config: LeagueConfig, path: Path) -> DossierBook:

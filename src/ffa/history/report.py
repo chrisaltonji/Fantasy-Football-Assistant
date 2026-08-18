@@ -402,10 +402,13 @@ def render_report(
     ) / max(len(profiles), 1)
     league = {"first": league_first}
 
+    from ffa.config.identity import fold_owner_id
+
+    by_owner = {fold_owner_id(p.owner_id): p for p in profiles}
     team_of: dict[int, str] = {}
     for season in history.seasons:
         for team_id, owner in season.owners.items():
-            match = next((p for p in profiles if p.owner_id == owner), None)
+            match = by_owner.get(fold_owner_id(owner))
             if match and match.manager:
                 team_of[team_id] = match.manager
 

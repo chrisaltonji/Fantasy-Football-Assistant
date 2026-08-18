@@ -41,16 +41,10 @@ class DossierError(Exception):
     """A problem the user can fix. Shown without a traceback."""
 
 
-def fold_owner_id(swid: str | None) -> str:
-    """The canonical form of a SWID: no braces, upper case.
-
-    ESPN hands the same member id out both ways — `{ABC-123}` from `mTeam`,
-    `ABC-123` from a pasted cookie — and users copy whichever they saw. Folding
-    at *construction* rather than only at lookup is what stops the file growing
-    two entries for one person: two keys that differ only by punctuation, both
-    valid, one of them silently shadowing the other after a sort.
-    """
-    return (swid or "").strip().strip("{}").upper()
+# Re-exported, not reimplemented. Folding a SWID is an identity concern rather
+# than a dossier one, and three modules had grown their own copy — one of which
+# omitted the `.upper()`. `ffa.config.identity` is now the only definition.
+from ffa.config.identity import fold_owner_id  # noqa: E402,F401
 
 
 # --- the vocabulary -------------------------------------------------------------

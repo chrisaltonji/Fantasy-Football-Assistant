@@ -51,22 +51,53 @@ class DossierBook:
         owners: Mapping[int, str] | None = None,
         source: Path | None = None,
         warnings: tuple[str, ...] = (),
+        resolver=None,
     ) -> None:
-        self._by_owner = {
-            fold_owner_id(owner_id): dossier
-            for owner_id, dossier in (by_owner or {}).items()
-        }
+        self._resolver = resolver
+        extra: list[str] = []
+
+        def key(swid):
+            return resolver.resolve(swid) if resolver is not None else fold_owner_id(swid)
+
+        # Two accounts for one person means two entries on disk. Fold them, but
+        # **never merge answers silently**: a dossier is a record of what
+        # somebody told us, and quietly picking one of two contradictory
+        # answers would fabricate an observation. The primary wins and the
+        # collision is named.
+        self._by_owner: dict[str, OwnerDossier] = {}
+        for owner_id, dossier in (by_owner or {}).items():
+            folded = key(owner_id)
+            existing = self._by_owner.get(folded)
+            if existing is None:
+                self._by_owner[folded] = dossier
+                continue
+            keep, drop = (existing, dossier) if key(existing.owner_id) == fold_owner_id(
+                existing.owner_id
+            ) else (dossier, existing)
+            clashes = [
+                f for f in drop.answered
+                if f in keep.answered and getattr(keep, f) != getattr(drop, f)
+            ]
+            self._by_owner[folded] = keep
+            if clashes:
+                extra.append(
+                    f"two aliased accounts both answer {', '.join(sorted(clashes))} "
+                    f"for {folded} — kept the primary's answers"
+                )
+
         self._owners = {
-            int(team_id): fold_owner_id(swid) for team_id, swid in (owners or {}).items()
+            int(team_id): key(swid) for team_id, swid in (owners or {}).items()
         }
         self.source = source
-        self.warnings = tuple(warnings)
+        self.warnings = tuple(warnings) + tuple(extra)
 
     # -- lookup ---------------------------------------------------------------
 
     def for_owner(self, owner_id: str | None) -> OwnerDossier | None:
         if not owner_id:
             return None
+        if self._resolver is not None:
+            return self._by_owner.get(self._resolver.resolve(owner_id))
         return self._by_owner.get(fold_owner_id(owner_id))
 
     def for_team(self, team_id: int) -> OwnerDossier | None:
@@ -104,7 +135,8 @@ class DossierBook:
         merged = dict(self._by_owner)
         merged[fold_owner_id(dossier.owner_id)] = dossier
         return DossierBook(
-            merged, owners=self._owners, source=self.source, warnings=self.warnings
+            merged, owners=self._owners, source=self.source, warnings=self.warnings,
+            resolver=self._resolver,
         )
 
     def with_seats(self, owners: Mapping[int, str], labels: Mapping[int, str] | None = None):
@@ -142,6 +174,7 @@ def load_dossiers(
     path: Path = DEFAULT_DOSSIER_PATH,
     *,
     owners: Mapping[int, str] | None = None,
+    resolver=None,
 ) -> DossierBook:
     """Read the file. A missing or broken one is an empty book, never an error.
 
@@ -184,7 +217,9 @@ def load_dossiers(
             continue
         book[dossier.owner_id] = dossier
 
-    return DossierBook(book, owners=owners, source=path, warnings=tuple(warnings))
+    return DossierBook(
+        book, owners=owners, source=path, warnings=tuple(warnings), resolver=resolver
+    )
 
 
 def save_dossiers(

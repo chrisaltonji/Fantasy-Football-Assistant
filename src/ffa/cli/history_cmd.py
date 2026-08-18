@@ -14,6 +14,7 @@ import json
 import sys
 from pathlib import Path
 
+from ffa.config.identity import OwnerResolver, richest_name, seats
 from ffa.config.loader import DEFAULT_CONFIG_PATH, load_config, load_credentials
 from ffa.config.schema import ConfigError
 from ffa.history.fetch import DEFAULT_CACHE, build_history, download_season, load_cached
@@ -33,13 +34,17 @@ def _years(args, config) -> list[int]:
     return list(range(first, config.year))
 
 
-def _managers(cache: Path, years) -> dict[str, str]:
-    """SWID -> real name, pooled across every cached season.
+def _managers(cache: Path, years, resolver=None) -> dict[str, str]:
+    """Resolved owner id -> real name, pooled across every cached season.
 
     Pooled because somebody who left in 2023 is still a manager in the seasons
     they played, and their name only appears in those payloads.
+
+    Where two accounts resolve to one person they also carry two names — ESPN
+    has this league's Brian Cona as `Brian Cona` on one and `B C` on the other —
+    so the most informative one wins rather than whichever season was read last.
     """
-    out: dict[str, str] = {}
+    candidates: dict[str, list[str]] = {}
     for year in years:
         raw = load_cached(year, cache) or {}
         for member in (raw.get("mTeam") or {}).get("members") or []:
@@ -49,8 +54,13 @@ def _managers(cache: Path, years) -> dict[str, str]:
                 if p and str(p).strip()
             )
             if name and member.get("id"):
-                out[str(member["id"])] = name
-    return out
+                key = (
+                    resolver.resolve(str(member["id"]))
+                    if resolver is not None
+                    else str(member["id"])
+                )
+                candidates.setdefault(key, []).append(name)
+    return {key: richest_name(names) for key, names in candidates.items()}
 
 
 def cmd_history_fetch(args: argparse.Namespace) -> int:
@@ -77,8 +87,10 @@ def cmd_history_fetch(args: argparse.Namespace) -> int:
 def cmd_history_report(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     years = _years(args, config)
+    resolver = OwnerResolver.from_config(config)
     history = build_history(
-        years, cache=args.cache, league_name=config.name, league_id=config.league_id
+        years, cache=args.cache, league_name=config.name, league_id=config.league_id,
+        resolver=resolver,
     )
 
     if not history.seasons:
@@ -88,8 +100,10 @@ def cmd_history_report(args: argparse.Namespace) -> int:
             "auction or had no prices recorded."
         )
 
-    managers = _managers(args.cache, years)
+    managers = _managers(args.cache, years, resolver)
     profiles = build_profiles(history, managers)
+    if resolver:
+        print(f"{len(resolver)} alias(es) applied — second accounts merged")
 
     print(f"seasons used: {', '.join(str(y) for y in history.years)}")
     for gap in sorted(history.gaps, key=lambda g: g.year):
@@ -111,12 +125,7 @@ def cmd_history_report(args: argparse.Namespace) -> int:
     )
     print(f"\nwrote {args.out}")
 
-    seats = {
-        team_id: config.owners[team_id]
-        for team_id in config.effective_team_ids
-        if config.owners.get(team_id)
-    }
-    suggested = suggest_dossiers(profiles, seats)
+    suggested = suggest_dossiers(profiles, seats(config))
     args.suggest.parent.mkdir(parents=True, exist_ok=True)
     args.suggest.write_text(json.dumps(suggested, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {args.suggest} — {len(suggested)} manager(s)")
