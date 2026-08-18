@@ -169,6 +169,20 @@ def nomination_event(nomination: RoomNomination) -> BaseEvent:
     bid in progress, not an outcome, and the price event has to come from the
     completed pick or a later observation would be overwritten by a number
     that was never paid.
+
+    **`nominated_by` is deliberately left unset here, and wiring it is not the
+    obvious one-liner it looks like.** The board does carry a `--selecting`
+    modifier and `RoomTeam.is_nominating` already parses it, so the temptation is
+    to hand that straight over. What is *not* established is what the modifier
+    means while bidding is running: the seat that put this player up, or the seat
+    due to put the next one up. Those are different teams, and picking wrong
+    would make `NominationPlan.disagreement` — which exists to catch a stale
+    draft order — fire on almost every pick and cry wolf about a correct one.
+
+    The manual path sets `nominated_by` because the user typed a name, and that
+    is a real observation. This one stays silent until a rehearsal settles it:
+    `tools/draft_watch.py` already flashes `is_nominating` on change, so watching
+    one nomination land answers it with no new code.
     """
     at = now_utc()
     return PlayerNominated(

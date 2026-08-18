@@ -44,8 +44,19 @@ def cmd_config_check(args: argparse.Namespace) -> int:
           f"{config.starting_slots} starters")
     print(f"  league money ${config.total_league_money}")
     print(f"  managers     {_manager_summary(config)}")
+    print(f"  nominations  {_nomination_summary(config)}")
     print(f"  credentials  {'loaded' if creds else 'none (public league)'}")
     _print_roster(config)
+
+    if not config.nomination_order:
+        # Not fatal, and deliberately not a WARNING on stderr: everything else
+        # still works. But `config check` is the last gate before draft day, and
+        # a config written before this existed carries no order at all — which is
+        # invisible until `turns` says it cannot name a seat.
+        print(
+            "  note: no nomination order on file, so `turns` cannot say whose "
+            "turn it is. `ffa config init --force` re-reads it from ESPN."
+        )
 
     if not config.my_team_id:
         print(
@@ -187,6 +198,7 @@ def cmd_config_init(args: argparse.Namespace) -> int:
     print(f"  roster       {config.draftable_slots} draftable slots, "
           f"{config.starting_slots} starters")
     print(f"  managers     {_manager_summary(config)}")
+    print(f"  nominations  {_nomination_summary(config)}")
     _print_roster(config)
 
     for warning in warnings:
@@ -789,6 +801,7 @@ def _init_event(config: LeagueConfig, draft_id: str) -> DraftInitialized:
         my_team_id=config.my_team_id,
         roster=dict(config.roster),
         flex_positions=tuple(config.flex_positions),
+        nomination_order=tuple(config.nomination_order),
     )
     teams = tuple(
         TeamSeed(
@@ -841,6 +854,18 @@ def _print_roster(config: LeagueConfig) -> None:
         team_name = config.team_names.get(team_id, "")
         mine = "*" if team_id == config.my_team_id else " "
         print(f"   {mine}{team_id:>3}  {nickname:<14} {real:<24} {team_name}")
+
+
+def _nomination_summary(config) -> str:
+    """Who nominates in what order, in the names you actually type."""
+    if not config.nomination_order:
+        return "unknown (ESPN published no pickOrder)"
+    names = [config.managers.get(t, f"t{t}") for t in config.nomination_order]
+    mine = config.nomination_order.index(config.my_team_id) + 1 if (
+        config.my_team_id in config.nomination_order
+    ) else 0
+    seat = f"  (you nominate {mine} of {len(names)})" if mine else ""
+    return " -> ".join(names) + seat
 
 
 def _manager_summary(config: LeagueConfig) -> str:

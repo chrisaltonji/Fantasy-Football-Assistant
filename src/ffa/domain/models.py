@@ -44,6 +44,12 @@ class LeagueSnapshot:
     roster: Mapping[RosterSlot, int]
     flex_positions: tuple[Position, ...]
 
+    # The nomination cycle, one entry per seat, captured here for the same
+    # reason every other setting is: who is on the clock must not change because
+    # someone edited `config/league.toml` while the draft was running. Empty
+    # means unknown, and no reader may substitute id order for it.
+    nomination_order: tuple[int, ...] = ()
+
     @property
     def draftable_slots(self) -> int:
         """Roster spots that must be bought. IR is excluded — you don't draft into it."""
@@ -60,6 +66,29 @@ class LeagueSnapshot:
         if RosterSlot.BE in self.roster:
             out.append(RosterSlot.BE)
         return tuple(out)
+
+    @property
+    def total_nominations(self) -> int:
+        """Every nomination the draft will contain, first to last.
+
+        One per roster spot per team: an auction resolves each nomination with a
+        sale, so the board and the nomination sequence are the same length.
+        """
+        return self.team_count * self.draftable_slots
+
+    def nominator_at(self, index: int) -> int | None:
+        """Who nominates at 0-based `index`, or `None` if that is unknowable.
+
+        The cycle repeats verbatim every round — measured, not assumed — so this
+        is a modulo and nothing more. Returns `None` past the last nomination as
+        well as when the order is unknown; a caller must not be handed a
+        plausible seat for a turn that does not exist.
+        """
+        if not self.nomination_order or index < 0:
+            return None
+        if self.total_nominations and index >= self.total_nominations:
+            return None
+        return self.nomination_order[index % len(self.nomination_order)]
 
 
 @dataclass(frozen=True)

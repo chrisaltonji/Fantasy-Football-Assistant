@@ -11,7 +11,7 @@ stage-by-stage picture of *where they stand*.
 > 2026-08-17. Everything listed as not started is an improvement, not a
 > prerequisite.
 
-892 tests · 74 source modules · 36 test modules.
+929 tests · 75 source modules · 37 test modules.
 
 ---
 
@@ -29,15 +29,17 @@ flowchart TB
   subgraph open["Not started"]
     D["Dashboard<br/>297-line spec, zero code"]
     C["Chat / LLM layer<br/>the inference half"]
-    N["Capability 4<br/>nomination strategy"]
   end
+  N["Nomination order — CP4<br/>whole schedule, known in advance"]
   E --> A --> T
   L --> T
   H --> T
+  N --> T
   A -.->|"build_view() is the contract"| D
   H -.->|"inputs now in place"| C
   style done fill:#e8f5e9,stroke:#2e7d32
   style open fill:#fff3e0,stroke:#ef6c00
+  style N fill:#e8f5e9,stroke:#2e7d32
 ```
 
 ---
@@ -67,17 +69,17 @@ flowchart TB
 | 3 | Our bid recommendation | ✅ | `guidance_for`, incl. `safe_legal_bid` |
 | 5 | Overspend alerts | ✅ | `advice/market.py::value_alert` |
 | 7 | Owner dossiers | ✅ | `dossier/` — and **100% filled** |
+| 4 | Nomination strategy | ✅ **new** | `advice/nomination.py` — schedule exact; candidate lists thin by design |
 | 10 | Positional scarcity | ✅ | `advice/scarcity.py` |
 | — | Market inflation | ✅ | `advice/market.py::market_state` |
 
 Capability 2 is the only partial one, and the split is deliberate: **capacity is
 arithmetic and is finished; intent is inference and is not.**
 
-### v1.1 — none started
+### v1.1 — one shipped early
 
 | # | Capability | Note |
 |---|---|---|
-| 4 | Nomination strategy | **Unblocked and cheap.** `draftSettings.pickOrder` gives the whole nomination order *before the draft starts*, and nothing reads it. |
 | 6 | Ambient feed | Needs a surface that is allowed to interrupt. |
 | 8 | Post-pick fit | `starter_gaps` / `open_slots_by_pos` already compute the inputs. |
 | 9 | Danger-zone watchlist | |
@@ -95,7 +97,7 @@ arithmetic and is finished; intent is inference and is not.**
 
 | Surface | Status |
 |---|---|
-| **Terminal REPL** | ✅ Complete. Rehearsed live 2026-08-17; full 180-pick dry run 2026-08-18. |
+| **Terminal REPL** | ✅ Complete. Rehearsed live 2026-08-17; full 180-pick dry runs 2026-08-18, incl. the new `turns` readout. |
 | **Dashboard** | ❌ **Not started.** `docs/dashboard_requirements.md` is a 297-line panel-by-panel spec with no implementation. `build_view()` already emits every key it asks for, including the new `history` block. |
 | **Chat / LLM layer** | ❌ **Not started.** Every input is now in place: dossiers filled, history measured, `build_view()` as the contract. Keep it **beside** the hot path — `advice` is instant and cannot fail, and a network call in that loop would add latency and a failure mode while a clock runs. |
 
@@ -110,7 +112,7 @@ arithmetic and is finished; intent is inference and is not.**
 | A5 | Prior-season capture | ✅ |
 | B1 | Does ESPN populate prices? Is there a real-time channel? | ✅ **Both halves answered.** Prices yes; the draft room is SSE and REST stays empty during a draft — hence the CDP reader. |
 | C1 | Owner dossiers | ✅ **100% covered** — 5 fields derived, 11 managers interviewed |
-| C2 | Draft strategy preset | ❌ Not started (was always v1.1) |
+| C2 | Draft strategy preset | ❌ Not started (was always v1.1). Now also the thing standing between capability 4's two candidate lists and a real "nominate this next" recommendation. |
 | Debt 1–7 | | ✅ All closed |
 
 ---
@@ -123,6 +125,7 @@ arithmetic and is finished; intent is inference and is not.**
 | **Evidence harness** | Every claim permutation-tested; **5 of 9 dropped as noise** |
 | **Manager aliases** | Brian Cona's two ESPN accounts merged; orphan discovery built in |
 | **Pace vs precedent** | Live in the bid readout, bounded to where the record discriminates |
+| **Nomination order** | Capability 4. `pickOrder` read, cycle verified against a real 180-pick auction, `turns` readout, `nomination_plan` in `build_view()` |
 
 ---
 
@@ -143,11 +146,25 @@ arithmetic and is finished; intent is inference and is not.**
 > Start an ESPN practice draft, buy three or four players. Half an hour, and it
 > is the only thing between "tested" and "proven".
 
-**One cheap win:** capability 4. The nomination order is knowable in advance and
-nothing uses it.
+**One thing that needs a command before it works:** the nomination order is read
+by `ffa config init`, and your current `config/league.toml` predates that — it
+loads fine, but carries no order, so `turns` cannot name a seat. One command
+fixes it, and `ffa config check` now says so.
+
+```
+ffa config init --force
+```
 
 **Two large optional builds:** the dashboard and the LLM layer. Both fully
 unblocked. Neither is needed on 2026-08-31.
+
+**One question a rehearsal answers for free.** The draft room marks a seat
+`--selecting`, and `RoomTeam.is_nominating` already parses it, but what it means
+*while bidding runs* — the seat that put this player up, or the seat due to put
+up the next one — has never been observed. It is deliberately not wired to
+`nominated_by` until it is: guessing wrong would make the stale-order banner
+fire on nearly every pick. `tools/draft_watch.py` already flashes it on change,
+so watching one nomination land settles it.
 
 ---
 
@@ -164,3 +181,6 @@ ffa dossier status                          # confirm coverage
 ffa config check                            # last gate before the day
 ffa draft --new --source espn               # draft
 ```
+
+`ffa config init` is what puts the nomination order in place; `ffa config check`
+prints it back as names you recognise, and says so plainly if it is missing.

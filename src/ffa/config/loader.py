@@ -78,6 +78,22 @@ def _require(table: dict[str, Any], section: str, key: str) -> Any:
     return table[key]
 
 
+def _nomination_order(raw: Any) -> tuple[int, ...]:
+    """`[draft].nomination_order` -> team ids.
+
+    A malformed entry is a hard error rather than a silent drop: this list
+    decides who the readout says is on the clock, and quietly ignoring a typo
+    would leave the tool blank with no explanation for why.
+    """
+    try:
+        return tuple(int(i) for i in raw or ())
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(
+            "[draft].nomination_order must be a list of ESPN team ids, e.g. "
+            "nomination_order = [9, 11, 4, 3, 13, 5, 8, 10, 7, 2, 12, 1]"
+        ) from exc
+
+
 def parse_config(data: dict[str, Any]) -> LeagueConfig:
     """Turn parsed TOML into a validated LeagueConfig."""
     league = data.get("league", {})
@@ -158,6 +174,7 @@ def parse_config(data: dict[str, Any]) -> LeagueConfig:
         name=str(league.get("name", "")),
         draft_type=str(draft.get("type", "AUCTION")).upper(),
         budget=int(draft.get("budget", 200)),
+        nomination_order=_nomination_order(draft.get("nomination_order", ())),
         team_count=int(_require(teams, "teams", "count")),
         my_team_id=int(teams.get("my_team_id", 0)),
         team_ids=tuple(int(i) for i in teams.get("ids", ())),
@@ -206,7 +223,11 @@ def config_to_dict(config: LeagueConfig) -> dict[str, Any]:
             "private": config.private,
             "name": config.name,
         },
-        "draft": {"type": config.draft_type, "budget": config.budget},
+        "draft": {
+            "type": config.draft_type,
+            "budget": config.budget,
+            "nomination_order": list(config.nomination_order),
+        },
         "teams": {
             "count": config.team_count,
             "my_team_id": config.my_team_id,

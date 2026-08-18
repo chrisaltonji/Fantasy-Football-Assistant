@@ -33,6 +33,11 @@ CARRIED_FORWARD: tuple[str, ...] = (
 FROM_ESPN: tuple[str, ...] = (
     "league_id", "year", "private", "name",
     "draft_type", "budget",
+    # Taking ESPN's fresh copy is the point here, not a side effect. The order is
+    # a shuffle the commissioner sets and can reset, and a practice draft mints a
+    # new one every time — so a carried-forward order would name the wrong seat
+    # on the clock, which is worse than having none.
+    "nomination_order",
     "team_count", "my_team_id", "team_ids",
     "roster", "flex_positions", "scoring_type",
     "owners", "team_names", "real_names",

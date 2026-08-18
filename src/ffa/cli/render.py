@@ -203,6 +203,115 @@ def render_guidance(guidance) -> str:
     return "\n".join(lines)
 
 
+def render_nomination_plan(plan) -> str:
+    """The nomination readout: who is up, when you are, what to put up.
+
+    Leads with your own next turn, because that is the only line that changes
+    what you do in the next thirty seconds.
+    """
+    if plan is None:
+        return "draft not initialized"
+    if not plan.has_anything_to_say:
+        return (
+            "no nomination order on file.\n"
+            "ESPN publishes it in draftSettings.pickOrder once the commissioner "
+            "has set the draft order. `ffa config init` reads it."
+        )
+
+    lines: list[str] = []
+
+    if plan.disagreement:
+        # First, and unmissable. Everything below it is computed from an order
+        # that just failed a check against the board.
+        lines.append(f"! {plan.disagreement}")
+
+    if plan.order_known:
+        done, total = plan.turns_taken, plan.total_nominations
+        lines.append(f"nomination {min(done + 1, total)} of {total}")
+
+        if plan.current_nominator is not None:
+            # "the order says", never "nominated by". This seat is the schedule's
+            # claim, not an observation — and when the two disagree the banner
+            # above already says so, so a line reading like a fact directly under
+            # it would contradict the warning it is meant to support.
+            lines.append(
+                f"  on the block  the order says {plan.current_nominator.label} put "
+                "him up"
+            )
+
+        clock = plan.on_the_clock
+        if clock is None:
+            lines.append("  up next       nobody — that was the last nomination")
+        elif clock.is_me:
+            lines.append("  up next       YOU (round "
+                         f"{clock.round_number})")
+        else:
+            lines.append(f"  up next       {clock.label} (round {clock.round_number})")
+
+        until = plan.nominations_until_mine
+        if until is None:
+            lines.append("  your turns    none left")
+        elif until == 0:
+            when = (
+                "as soon as this one sells"
+                if plan.current_nominator is not None
+                else "now"
+            )
+            lines.append(
+                f"  your turn     {when} — {plan.my_turns_left} left including this one"
+            )
+        else:
+            plural = "" if until == 1 else "s"
+            lines.append(
+                f"  your turn     in {until} nomination{plural} "
+                f"(round {plan.my_next.round_number}) — {plan.my_turns_left} left"
+            )
+
+        ahead = [t for t in plan.upcoming if not t.is_me][:5]
+        if ahead:
+            lines.append("  then          " + ", ".join(t.label for t in ahead))
+    else:
+        lines.append(
+            "no draft order on file — cannot say whose turn it is. "
+            "`ffa config init` re-reads it from ESPN."
+        )
+
+    if plan.bargains:
+        shown, total = len(plan.bargains), plan.bargains_total
+        more = f" (showing {shown} of {total})" if total > shown else ""
+        lines.append(f"  put up to buy — nobody who needs them can pay{more}:")
+        for candidate in plan.bargains:
+            pos = candidate.position.value if candidate.position else "--"
+            lines.append(
+                f"    {candidate.name:<22} {pos:<4} ${candidate.value:<4} "
+                "no live rival"
+            )
+
+    if plan.out_of_reach:
+        shown, total = len(plan.out_of_reach), plan.out_of_reach_total
+        more = f" (showing {shown} of {total})" if total > shown else ""
+        lines.append(
+            f"  past your ${plan.out_of_reach[0].my_ceiling} ceiling, and the room can "
+            f"pay{more}:"
+        )
+        for candidate in plan.out_of_reach:
+            pos = candidate.position.value if candidate.position else "--"
+            lines.append(
+                f"    {candidate.name:<22} {pos:<4} ${candidate.value:<4} "
+                f"{candidate.live_rivals} live, up to ${candidate.contested_ceiling}"
+            )
+
+    if not plan.bargains and not plan.out_of_reach:
+        lines.append(
+            "  nothing to single out: no uncontested player fills a starting hole, "
+            "and nothing on the board is priced past your ceiling."
+            if plan.board_read
+            else "  no reference data, so nothing to say about what to put up."
+        )
+
+    return "\n".join(lines)
+
+
 def render_scarcity(scarcity) -> str:
     """What's left, tiered against this league's actual starting demand."""
     if not scarcity:

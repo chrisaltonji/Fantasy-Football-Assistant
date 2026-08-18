@@ -646,5 +646,70 @@ There is no CP6. What remains is product work:
 - **The dashboard.** `docs/dashboard_requirements.md` is a 12.7K spec with zero
   implementation.
 
+- **Capability 4 — nomination order. BUILT 2026-08-18.**
+
+  `draftSettings.pickOrder` was sitting in a payload this codebase already
+  fetched, and nothing read it. It is one list of twelve seats and it is the
+  *whole* nomination order: **all 180 `nominatingTeamId`s of a completed auction
+  are that list repeated fifteen times**, no snake and no rotation, and the same
+  holds in every pre-draft skeleton in the fixtures. A test asserts it against
+  the real fixture, so if ESPN ever changes it a test fails rather than a
+  readout lying.
+
+  ```
+  ffa config init          reads pickOrder into [draft].nomination_order
+  ffa config check         prints it back as names, or says it is missing
+  turns                    (in the REPL) whose turn, when yours, what to put up
+  ```
+
+  It reaches `build_view()` as a top-level `nomination_plan` key — top level
+  rather than under `nomination`, because that key is `None` whenever nothing is
+  on the block, which is exactly when whose-turn-is-it is worth reading.
+
+  Four decisions worth knowing before changing any of it:
+
+  - **No fallback to team-id order, ever.** The tempting default is
+    `effective_team_ids`, and it is not a degraded answer — ESPN's order is a
+    shuffle (`orderType: MANUAL`), so id order names a specific manager as on
+    the clock and is confidently wrong about something the user can see on their
+    own screen. No order means no seat named.
+  - **Sales are the anchor, and the 1:1 is measured.** An ESPN nomination cannot
+    go unsold — the nominator opens the bidding — so the completed fixture has
+    180 filled picks with every `bidAmount` at least $1, and the Nth sale is the
+    Nth nomination. It deliberately does not count `PlayerNominated` events: the
+    live reader emits one per player it sees on the block, and a re-render would
+    advance a counter that sales cannot double-count.
+  - **It rides in `LeagueSnapshot`, not read from config at advice time.** Same
+    rule as every other setting: editing `league.toml` mid-draft must not change
+    who the tool says is on the clock. Old journals have no order and read back
+    as unknown, which is the honest answer for a draft that never recorded one.
+  - **The candidate lists are thin on purpose.** *Which* name to put up depends
+    on a strategy — drain, chase, hoard — and C2 does not exist. So the only
+    lists are the two that need no preference: players nobody who needs them can
+    afford, and players priced past our own ceiling that a live rival can pay
+    for. Both are often empty, which is the same discipline `pace_reads` and the
+    inflation ratio already follow.
+
+  **What the dry run found that unit tests could not.** Replaying a full
+  180-pick simulated auction surfaced four things, all now fixed: the simulator
+  was round-robining `sorted(bots)` while its own docstring claimed that was
+  "what `pickOrder` produces" — it is not, and every simulated draft raised a
+  stale-order banner on every pick; `out_of_reach` was testing
+  `contested_ceiling > my_ceiling`, which contains no player at all and returned
+  292 of 292 remaining players; late in a draft our ceiling reaches $0 and every
+  $1 body was technically "past" it, so there is now a `MIN_DRAIN` floor; and
+  the countdown counted a nomination already on the block among the ones still
+  to come, telling you four when three people were ahead of you.
+
+  The banner surviving all that is the point: with the sim fixed it fires only
+  where the sim genuinely departs from the order — its tail, where a nomination
+  can fizzle and ESPN's cannot.
+
+  **Still unobserved:** what the draft room's `--selecting` modifier means while
+  bidding is running. `RoomTeam.is_nominating` parses it, but the live path
+  deliberately leaves `nominated_by` unset rather than guess, because picking
+  wrong would fire the stale-order banner on nearly every pick and teach you to
+  ignore it. `tools/draft_watch.py` already flashes it on change.
+
 **Draft-day gate: MET.** Ran end to end against a live ESPN practice draft on
 2026-08-17 — attach, pre-flight, live ingest, correct attribution, bid guidance.

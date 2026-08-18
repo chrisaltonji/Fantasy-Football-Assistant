@@ -84,6 +84,10 @@ def build_view(
             for team_id in sorted(state.teams)
         ],
         "nomination": _nomination_view(state, book, advisory, dossiers),
+        # Top level, and deliberately not nested under `nomination`: that key is
+        # `None` whenever nothing is on the block, which is exactly the moment
+        # whose-turn-is-it and what-to-put-up are worth reading.
+        "nomination_plan": _nomination_plan_view(advisory),
         "market": _market_view(state, advisory),
         "recent_sales": _recent_sales(state, book, recent),
         "scarcity": _scarcity_view(advisory),
@@ -190,6 +194,73 @@ def _player_view(player: PlayerEntity, book: Any = None) -> dict[str, Any]:
         # Positive means they paid over the sheet. Feeds the "is the room hot"
         # read without the surface having to do arithmetic.
         "delta": (price - value) if (price is not None and value is not None) else None,
+    }
+
+
+def _turn_view(turn) -> dict[str, Any] | None:
+    if turn is None:
+        return None
+    return {
+        "index": turn.index,
+        "pick_number": turn.index + 1,
+        "round": turn.round_number,
+        "team_id": turn.team_id,
+        "label": turn.label,
+        "is_me": turn.is_me,
+    }
+
+
+def _candidate_view(candidate) -> dict[str, Any]:
+    return {
+        "key": candidate.key,
+        "name": candidate.name,
+        "position": candidate.position.value if candidate.position else None,
+        "value": candidate.value,
+        "live_rivals": candidate.live_rivals,
+        "contested_ceiling": candidate.contested_ceiling,
+        "fills_my_starter_gap": candidate.fills_my_starter_gap,
+        "my_ceiling": candidate.my_ceiling,
+    }
+
+
+def _nomination_plan_view(advisory) -> dict[str, Any] | None:
+    """Capability 4. Arithmetic throughout, and honest about what it omits.
+
+    `order_known: false` is a real state, not an error — ESPN has no pickOrder
+    until the commissioner sets the draft order, and every seat named here would
+    be a guess until then. A surface must check it before rendering a turn.
+
+    The truncated lists ship their own totals. A dashboard that renders five
+    bargains and says "5" when there are nineteen is worse than one that renders
+    none, because it reads as a complete answer.
+    """
+    plan = advisory.nomination if advisory is not None else None
+    if plan is None:
+        return None
+
+    return {
+        "order_known": plan.order_known,
+        "turns_taken": plan.turns_taken,
+        "total_nominations": plan.total_nominations,
+        "on_the_clock": _turn_view(plan.on_the_clock),
+        "current_nominator": _turn_view(plan.current_nominator),
+        "upcoming": [_turn_view(t) for t in plan.upcoming],
+        "my_next": _turn_view(plan.my_next),
+        "my_turns_left": plan.my_turns_left,
+        "nominations_until_mine": plan.nominations_until_mine,
+        "is_my_turn": plan.is_my_turn,
+        # Players nobody who needs them can afford — free money on our turn.
+        "bargains": [_candidate_view(c) for c in plan.bargains],
+        "bargains_total": plan.bargains_total,
+        # Players priced past our own ceiling that a live rival can actually pay
+        # for. Putting one up cannot cost us somebody we could have won; whether
+        # it is *wise* is inference, and this does not claim it is.
+        "out_of_reach": [_candidate_view(c) for c in plan.out_of_reach],
+        "out_of_reach_total": plan.out_of_reach_total,
+        # False means the board was never priced, so two empty lists above mean
+        # "not looked at" rather than "nothing there".
+        "board_read": plan.board_read,
+        "disagreement": plan.disagreement,
     }
 
 

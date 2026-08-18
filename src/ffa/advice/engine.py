@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from ffa.advice.bidding import guidance_for
 from ffa.advice.market import market_state
+from ffa.advice.nomination import nomination_plan
 from ffa.advice.scarcity import scarcity_by_position
 from ffa.advice.types import Advisory
 from ffa.domain.models import DraftState
@@ -42,4 +43,11 @@ def advise(
             state, book, target, market, name=name, precedent=precedent, seats=seats
         )
 
-    return Advisory(market=market, scarcity=scarcity, guidance=guidance)
+    return Advisory(
+        market=market,
+        scarcity=scarcity,
+        guidance=guidance,
+        # Independent of `key`: the nomination read is about the whole remaining
+        # board and whose turn it is, not about whoever is on the block.
+        nomination=nomination_plan(state, book, market),
+    )

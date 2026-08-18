@@ -9,7 +9,7 @@ without ESPN, and they are all overridable.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from ffa.domain.enums import Position, RosterSlot
 
@@ -20,6 +20,45 @@ class ConfigError(Exception):
     The message is shown directly to the user, so it should say what is wrong
     *and* what to do about it.
     """
+
+
+def nomination_order_problem(
+    order: "Sequence[int]", team_ids: "Sequence[int]"
+) -> str | None:
+    """Why this nomination order cannot be trusted, or `None` if it can.
+
+    Shared on purpose. `config init` calls it *before* writing, so a strange
+    payload is dropped with a warning rather than persisted; `validate` calls it
+    after reading, so a hand-edited file is still caught. Writing a value that
+    then fails validation is the one outcome to avoid — regenerating is the
+    documented fix for a broken config, and it must not produce a config that
+    refuses to load.
+
+    The test is permutation, not membership: every seat nominates exactly once
+    per round, so a list that repeats one team and omits another would silently
+    give somebody two turns a round and somebody else none.
+    """
+    if not order:
+        return None
+    ids = list(team_ids)
+    if len(order) != len(ids):
+        return (
+            f"nomination order has {len(order)} seats but the league has "
+            f"{len(ids)}"
+        )
+    if sorted(order) != sorted(ids):
+        unknown = sorted(set(order) - set(ids))
+        missing = sorted(set(ids) - set(order))
+        detail = []
+        if unknown:
+            detail.append("names team(s) " + ", ".join(str(i) for i in unknown)
+                          + " that are not in this league")
+        if missing:
+            detail.append("omits team(s) " + ", ".join(str(i) for i in missing))
+        if not detail:
+            detail.append("lists a team more than once")
+        return "nomination order " + "; ".join(detail)
+    return None
 
 
 @dataclass(frozen=True)
@@ -122,6 +161,20 @@ class LeagueConfig:
     # the match, which is why the reader falls back and says so loudly rather
     # than guessing.
     team_names: Mapping[int, str] = field(default_factory=dict)
+
+    # The order in which seats nominate, as `draftSettings.pickOrder` reports
+    # it. Twelve entries, one per seat — **not** 180: the order is a cycle that
+    # repeats verbatim every round, which is a measured fact rather than an
+    # assumption. All 180 `nominatingTeamId`s of a completed auction, and of
+    # every pre-draft skeleton in `tests/fixtures/espn/`, are this list repeated
+    # fifteen times with no snake and no rotation.
+    #
+    # Empty means **unknown**, and every reader must treat it as "say nothing".
+    # There is an obvious fallback — `effective_team_ids` — and it is wrong:
+    # ESPN's order is a shuffle (`orderType: MANUAL`), so id order would put a
+    # confident, incorrect manager on the clock, which is worse than an empty
+    # readout. Nothing here falls back.
+    nomination_order: tuple[int, ...] = ()
 
     # Where your exported auction values live. Unset falls back to the sample
     # fixture, with a loud banner — sample values are invented.
@@ -239,6 +292,13 @@ class LeagueConfig:
             problems.append(
                 "[managers] nicknames must be unique so they can be typed "
                 f"unambiguously; repeated: {', '.join(sorted(duplicates))}"
+            )
+
+        order_problem = nomination_order_problem(self.nomination_order, ids)
+        if order_problem:
+            problems.append(
+                f"[draft].{order_problem}. Delete the line to disable the "
+                "nomination readout, or re-run `ffa config init`."
             )
 
         if not self.is_auction:

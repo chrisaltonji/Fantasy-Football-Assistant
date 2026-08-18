@@ -200,6 +200,129 @@ class BidGuidance:
 
 
 @dataclass(frozen=True)
+class NominationTurn:
+    """One seat's turn to put a name up, counted in nominations not picks.
+
+    An auction resolves every nomination with a sale, so nomination index and
+    pick number advance together and `index` is both.
+    """
+
+    index: int          # 0-based, across the whole draft
+    round_number: int   # 1-based
+    team_id: int
+    label: str
+    is_me: bool = False
+
+
+@dataclass(frozen=True)
+class NominationCandidate:
+    """A player considered as something to *put up*, not something to buy.
+
+    Every field is arithmetic already computed elsewhere for the bid readout;
+    this record exists so the same numbers can be read a player at a time across
+    the whole remaining board rather than one nominated player at a time.
+    """
+
+    key: str
+    name: str
+    position: Position | None
+    value: int                      # inflated where the market says so
+    live_rivals: int                # rivals who can afford him *and* start him
+    contested_ceiling: int          # the highest any live rival could legally go
+    fills_my_starter_gap: bool
+    my_ceiling: int                 # our own safe ceiling, for comparison
+
+
+@dataclass(frozen=True)
+class NominationPlan:
+    """Whose turn it is, when ours comes, and what the board says to put up.
+
+    The schedule half is knowable before the draft starts and is exact. The
+    candidate half is deliberately thin, and the reason is the line this whole
+    module is built on: *which* name to put up depends on a strategy — drain the
+    room, chase your guys, sit on your money — and a strategy preset is a thing
+    this tool does not have yet (C2). So the only lists here are the two that
+    need no preference to justify:
+
+    - `bargains` — players who fill a starting hole for us that **no rival can
+      both afford and start**. Nominating one is not a strategy, it is free
+      money: the auction has nobody to bid it up.
+    - `out_of_reach` — players who cost more than our own ceiling and that a live
+      rival can actually pay for. Nominating one cannot cost us a player we could
+      have had, because we could not have had him. Whether draining a rival is
+      *wise* is still inference, and this does not claim it is.
+
+    Everything else a surface might want — will this position survive until my
+    turn, who is likely to chase whom — is inference over `scarcity`,
+    `nominations_until_mine` and the dossiers, all of which reach the LLM layer
+    in the same payload. It is not computed here because it cannot be.
+    """
+
+    order_known: bool = False
+    turns_taken: int = 0
+    total_nominations: int = 0
+
+    # The seat that must put the next name up.
+    on_the_clock: NominationTurn | None = None
+    upcoming: tuple[NominationTurn, ...] = ()
+
+    # Who the schedule credits with the player currently up for bid. `None` when
+    # nothing is nominated. Kept apart from `on_the_clock` because they are
+    # different seats the moment a nomination is live, and conflating them is
+    # how a readout starts naming the wrong manager.
+    current_nominator: NominationTurn | None = None
+
+    my_next: NominationTurn | None = None
+    my_turns_left: int = 0
+
+    bargains: tuple[NominationCandidate, ...] = ()
+    out_of_reach: tuple[NominationCandidate, ...] = ()
+    bargains_total: int = 0
+    out_of_reach_total: int = 0
+
+    # Whether the remaining board was actually priced and read. False with no
+    # reference file loaded, and the distinction matters: two empty lists then
+    # mean "we did not look", not "there is nothing". Saying "nothing is priced
+    # past your ceiling" without a single price on hand is a claim, not a
+    # summary.
+    board_read: bool = False
+
+    # Set when the board disagrees with the schedule about who nominated the
+    # player on the block. The schedule is a model of ESPN's order; the board is
+    # what happened. When they part company the model is the thing that is
+    # wrong, and it says so instead of continuing to assert a seat.
+    disagreement: str = ""
+
+    @property
+    def nominations_until_mine(self) -> int | None:
+        """How many *other* names go up before ours.
+
+        Counted from the next nomination still to be made, not from the last
+        completed sale. With a player already on the block those differ by one,
+        and the version that counts a nomination already made is the one that
+        tells you four when three people are ahead of you.
+
+        0 therefore means we are next: right now if the board is clear, or the
+        moment the player on the block sells.
+        """
+        if self.my_next is None:
+            return None
+        base = self.turns_taken + (1 if self.current_nominator is not None else 0)
+        return max(0, self.my_next.index - base)
+
+    @property
+    def is_my_turn(self) -> bool:
+        return self.on_the_clock is not None and self.on_the_clock.is_me
+
+    @property
+    def has_anything_to_say(self) -> bool:
+        """False when there is no order and no candidate — render nothing."""
+        return bool(
+            self.order_known or self.bargains or self.out_of_reach
+        )
+
+
+@dataclass(frozen=True)
 class ValueAlert:
     """A finalized sale that crossed the dynamic overspend threshold."""
 
@@ -219,3 +342,4 @@ class Advisory:
     market: MarketState = field(default_factory=MarketState)
     scarcity: Mapping[Position, PositionScarcity] = field(default_factory=dict)
     guidance: BidGuidance | None = None
+    nomination: NominationPlan | None = None

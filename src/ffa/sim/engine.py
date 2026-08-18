@@ -272,8 +272,25 @@ class AuctionSim:
         return keys
 
     def _nomination_order(self) -> Iterator[int]:
-        """Round-robin, which is what ESPN's `pickOrder` produces."""
-        ids = sorted(self._bots)
+        """ESPN's own `pickOrder`, cycled — the same list the live tool reads.
+
+        This used to round-robin `sorted(self._bots)` and call that "what
+        `pickOrder` produces". It is not: ESPN's order is a shuffle, so id order
+        agrees with it only by accident. That was invisible until the nomination
+        readout existed, at which point every simulated draft raised a
+        board-disagrees-with-the-order warning on every pick — which is the sim
+        being wrong, not the readout, and it would have taught you to ignore the
+        one banner that means something on draft day.
+
+        Seats with no bot are dropped rather than stalled, which is what
+        `--against-me` is: your seat genuinely does not nominate, and the
+        schedule disagreeing about that is correct rather than a defect.
+        """
+        configured = tuple(
+            team_id for team_id in self.league.league.nomination_order
+            if team_id in self._bots
+        )
+        ids = list(configured) or sorted(self._bots)
         if not ids:
             return iter(())
 

@@ -31,7 +31,11 @@ byte-identical to "the draft has not started yet".
 Two things REST is still good for:
 
 - **`nominatingTeamId`** on all 180 picks *before anything sells* — the whole
-  nomination order, readable in advance.
+  nomination order, readable in advance. **It is `draftSettings.pickOrder`
+  repeated verbatim once per round**: twelve seats, fifteen times, no snake and
+  no rotation. Verified against a completed auction and every pre-draft skeleton
+  in `tests/fixtures/espn/`; `tests/unit/test_nomination.py` pins it. Read into
+  `[draft].nomination_order` by `ffa config init`.
 - **The completed draft, afterwards.** The 2025 season returned all 180 picks
   with real `bidAmount`s ($1–$75, $2,389 total).
 
@@ -92,6 +96,13 @@ must be read by element query. A text scrape returns nothing.
 | On autodraft | `autopick` class | — |
 | My team | `--own` modifier | — |
 | Nominating now | `--selecting` modifier | — |
+
+**What `--selecting` means mid-nomination is not established.** It could mark
+the seat that put the current player up, or the seat due to put up the next one.
+Those are different teams, so it is deliberately *not* wired to a nomination's
+`nominated_by`: guessing wrong would make the stale-order banner fire on nearly
+every pick. `tools/draft_watch.py` flashes it on change, so one nomination
+landing in a rehearsal settles it.
 
 Names arrive with a leading ordinal (`3. `) which is stripped on parse.
 

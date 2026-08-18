@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from ffa.config.nicknames import derive_nicknames
-from ffa.config.schema import ConfigError, LeagueConfig
+from ffa.config.schema import ConfigError, LeagueConfig, nomination_order_problem
 from ffa.domain.enums import Position, RosterSlot
 
 HOSTS = (
@@ -184,6 +184,44 @@ def teams_from_payload(payload: Mapping[str, Any]) -> TeamDirectory:
     )
 
 
+def nomination_order_from_settings(
+    draft: Mapping[str, Any], team_ids: "tuple[int, ...]"
+) -> tuple[tuple[int, ...], list[str]]:
+    """`draftSettings.pickOrder` -> the nomination cycle, or nothing plus a reason.
+
+    ESPN publishes the whole nomination order *before* a ball is snapped, and
+    for a long time this codebase read past it. It is one list of twelve seats,
+    repeated verbatim each round — verified against all 180 `nominatingTeamId`s
+    of a completed auction and of every pre-draft skeleton in the fixtures.
+
+    Returns empty on anything unexpected, because the alternative is worse than
+    silence: an order that is short, long, or names a team that is not in the
+    league would still *render*, and it would name the wrong manager as being on
+    the clock. `nomination_order_problem` is the same check `validate` applies,
+    so what this writes always loads.
+    """
+    raw = draft.get("pickOrder")
+    if not raw:
+        return (), [
+            "ESPN's draftSettings carried no pickOrder — the nomination-order "
+            "readout will be unavailable. It usually appears once the "
+            "commissioner has set the draft order."
+        ]
+
+    try:
+        order = tuple(int(i) for i in raw)
+    except (TypeError, ValueError):
+        return (), [f"ESPN's pickOrder was unreadable ({raw!r}); ignoring it"]
+
+    problem = nomination_order_problem(order, team_ids)
+    if problem:
+        return (), [
+            f"ESPN's pickOrder {problem} — ignoring it rather than naming the "
+            "wrong manager on the clock"
+        ]
+    return order, []
+
+
 def my_team_id(
     owners: Mapping[int, str], swid: str | None,
     aliases: Mapping[str, str] | None = None,
@@ -265,6 +303,14 @@ def config_from_payloads(
         )
         team_count = len(team_ids)
 
+    # Checked against the ids `LeagueConfig.validate` will use, not against
+    # `team_ids` alone — those differ when ESPN returns no teams, and a config
+    # that passes here but fails on load is the one outcome worth ruling out.
+    nomination_order, order_warnings = nomination_order_from_settings(
+        draft, team_ids or tuple(range(1, team_count + 1))
+    )
+    warnings.extend(order_warnings)
+
     draft_type = str(draft.get("type") or "AUCTION").upper()
     if draft_type != "AUCTION":
         warnings.append(
@@ -279,6 +325,7 @@ def config_from_payloads(
         name=str(settings.get("name") or ""),
         draft_type=draft_type,
         budget=int(draft.get("auctionBudget") or 200),
+        nomination_order=nomination_order,
         team_count=team_count,
         my_team_id=mine,
         team_ids=team_ids,

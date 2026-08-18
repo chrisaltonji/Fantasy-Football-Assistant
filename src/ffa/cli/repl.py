@@ -16,6 +16,8 @@ import threading
 from typing import Callable, TextIO
 
 from ffa.advice.engine import advise
+from ffa.advice.market import market_state
+from ffa.advice.nomination import nomination_plan
 from ffa.cli import render
 from ffa.cli.console import make_console
 from ffa.domain.events import PlayerNominated
@@ -155,6 +157,14 @@ def _emit_new_warnings(emit, state: DraftState, seen: int) -> int:
 def _view(store: DraftStore, command: ViewCommand, book=None,
           precedent=None, seats=None) -> str:
     state = store.state
+    if command.kind == "turns":
+        # Ahead of the reference-data gate on purpose. Whose turn it is needs no
+        # auction values at all — only the candidate lists do, and they simply
+        # come back empty. Refusing the whole readout for want of a sheet would
+        # withhold the half that always works.
+        market = market_state(state, book) if (book is not None and len(book)) else None
+        return render.render_nomination_plan(nomination_plan(state, book, market))
+
     if command.kind in ("advice", "scarcity", "market"):
         if book is None or not len(book):
             return (

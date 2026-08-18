@@ -67,6 +67,13 @@ and your nicknames), so losing it is expected on a new machine and costs one
 command. Re-running with `--force` keeps the settings ESPN knows nothing about:
 your reference path, your polling settings, and your hand-set nicknames.
 
+`ffa config init` also reads `draftSettings.pickOrder` — **the entire nomination
+order, published before anyone drafts.** It is one list of twelve seats that
+repeats verbatim every round, so who nominates 137th is knowable on day one. The
+order is a shuffle the commissioner sets, so a rebuild deliberately takes ESPN's
+fresh copy rather than carrying the old one forward, and an order that does not
+match the league's team ids is dropped with a warning rather than half-trusted.
+
 `ffa config check` fails loudly on anything that would produce silently wrong
 advice later — a budget too small to fill a roster, a snake-draft league, a poll
 interval tight enough to get you rate-limited, an unset `my_team_id`.
@@ -173,6 +180,7 @@ happens on a real terminal; piped input keeps plain line-buffered behaviour.
 | `amend <entity> <field> <value>` | General correction, e.g. `amend team:3 manager dave`. |
 | `undo [#id]` / `redo` | Undo the last event, or a specific one. |
 | `advice [player...]` | Bid readout for the nominated player, or anyone you name. |
+| `turns` | Nomination order: who is up, when you are, what to put up. |
 | `scarcity` / `market` | What's left per position; inflation vs. your sheet. |
 | `budgets [team]` | Remaining money, max bid, and starter gaps per team. |
 | `state [team\|player]` / `log [n]` | Full board / recent events with their ids. |
@@ -287,6 +295,47 @@ lower figure and says why.
 A team with $90 and no open RB slot doesn't appear on an RB — that omission is
 the whole point of the tool.
 
+### Nomination order
+
+ESPN publishes the whole nomination order before anyone drafts, so `turns`
+answers the question the bid readout cannot: what happens *before* a player is
+on the block.
+
+```
+> turns
+nomination 60 of 180
+  on the block  the order says andrewd put him up
+  up next       nickc (round 6)
+  your turn     in 3 nominations (round 6) - 10 left
+  then          nickc, jared, john, b, michael
+  past your $3 ceiling, and the room can pay (showing 5 of 64):
+    CeeDee Lamb            WR   $70   10 live, up to $186
+    De'Von Achane          RB   $68   11 live, up to $186
+```
+
+The schedule half needs no auction values and never guesses. If ESPN published
+no order, it says so and names nobody — team-id order is not a degraded answer
+here, it is a wrong one, and it would put a specific manager on the clock while
+you watch a different one on your own screen.
+
+The two candidate lists are deliberately thin, and both are often empty:
+
+- **Free money** — a player who fills a starting hole for you that *no rival can
+  both afford and start*. There is nobody to bid him up. Rare, because a FLEX
+  slot keeps a rival's RB/WR/TE need open long after their native slot is full.
+- **Past your ceiling** — a player who costs more than you can pay and that a
+  live rival can actually pay for. Putting him up cannot cost you somebody you
+  could have won.
+
+There is no third list ranking what you *should* nominate, because that depends
+on a strategy — drain the room, chase your guys, sit on your money — and the
+strategy preset does not exist yet. Whether draining a rival is wise is
+inference; everything above is arithmetic.
+
+If the board ever credits a nomination to someone the order did not expect, the
+readout leads with a warning and tells you to trust the board. The order is a
+model of ESPN's schedule; the board is what happened.
+
 ### Owner dossiers
 
 Everything above is **capacity**: can this rival afford him, does he have a slot
@@ -395,7 +444,7 @@ src/ffa/
               espn/    draftroom, source, settings, players
               manual/  grammar, resolve, source, errors
   reference/  schema, loader, playerbook
-  advice/     market, scarcity, bidding, types, engine
+  advice/     market, scarcity, bidding, nomination, types, engine
   sim/        bots, engine, faults, source
   view/       model (the JSON contract every surface reads)
   cli/        app, repl, console, render
@@ -424,9 +473,9 @@ Adding a web UI is one new `DraftStore` subscriber plus one new `EventSource`.
 2026-08-17. Never run it live for the first time on the day.
 
 Still ahead, and all of it product rather than plumbing: the dashboard
-(`docs/dashboard_requirements.md` is a full spec with no implementation), the
+(`docs/dashboard_requirements.md` is a full spec with no implementation) and the
 inference layer that reads `build_view()` beside the hot path rather than inside
-it, and the owner dossiers that layer would reason from.
+it.
 
 ---
 

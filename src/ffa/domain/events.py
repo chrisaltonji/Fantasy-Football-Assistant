@@ -95,6 +95,7 @@ class DraftInitialized(BaseEvent):
                 "my_team_id": self.league.my_team_id,
                 "roster": {slot.value: n for slot, n in self.league.roster.items()},
                 "flex_positions": [p.value for p in self.league.flex_positions],
+                "nomination_order": list(self.league.nomination_order),
             },
             "teams": [
                 {
@@ -118,6 +119,10 @@ class DraftInitialized(BaseEvent):
             my_team_id=raw["my_team_id"],
             roster={RosterSlot(k): v for k, v in raw["roster"].items()},
             flex_positions=tuple(Position.parse(p) for p in raw.get("flex_positions", [])),
+            # Absent in every journal written before the nomination readout
+            # existed. It reads back as unknown, which is the one honest answer
+            # for a draft that never recorded an order.
+            nomination_order=tuple(raw.get("nomination_order", ()) or ()),
         )
         return cls(
             draft_id=obj["draft_id"],
