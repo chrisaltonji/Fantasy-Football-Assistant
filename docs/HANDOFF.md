@@ -22,7 +22,7 @@ the running build plan.
 
 ---
 
-## Done: CP1–CP4
+## Done: CP1–CP5
 
 **CP1 — scaffold, config, ESPN probe.** `tools/espn_probe.py` fetches and
 analyses raw ESPN views, and now also runs offline via `--analyse FILE` (the dev
@@ -41,8 +41,12 @@ matching that refuses to guess, scarcity tiering, market inflation, and
 **CP4 — simulator.** `ffa sim` runs a full budget-aware auction into a real
 journal, with fault injection. Details under Next.
 
+**CP5 — live ESPN reader.** `ffa draft --source espn` reads the draft room you
+are drafting in, over CDP. Plus `ffa config init` and `ffa data fetch`.
+
 You can run a complete draft by hand today, with live bid guidance, and crash
-and resume it exactly — and you can rehearse one end to end without ESPN.
+and resume it exactly — you can rehearse one end to end without ESPN, and you
+can run one live against a real ESPN draft.
 
 ---
 
@@ -275,27 +279,91 @@ structural, not a tuning failure: a bot outbid early cannot retroactively
 reallocate, so it fills its roster cheaply and carries cash. Raising the
 aggression clamps changes nothing, which is how we know.
 
-**CP5 — live ESPN reader. WORKING against a real draft, 2026-08-17.**
-`src/ffa/ingest/espn/` attaches to a Chrome you started with
-`--remote-debugging-port` and reads the draft room's DOM. Verified live: 80
-picks parsed with prices, positions, and correct team attribution.
+**CP5 — live ESPN reader. DONE, and rehearsed live on 2026-08-17.**
 
-Not an SSE client, and not a poller — see `docs/ESPN_DATA_ACCESS.md` for the
-full catalogue and the three observations that rule both out. The short version
-is that ESPN allows **one connection per team**, so any client of our own would
-evict the user from their own draft. Reading the page they are already in is
-the only non-disruptive channel.
+Three commands, in the order you use them:
 
-Remaining CP5 work: config bootstrap from raw `mSettings`, wiring
-`DraftRoomSource` into `ffa draft`, and the draft-day runbook.
+```
+python tools/draft_room_probe.py --launch   # one-time: a Chrome with the debug port
+ffa config init                             # rebuild config/league.toml from ESPN
+ffa data fetch                              # 355 real ESPN auction values
+ffa draft --new --source espn               # draft
+```
 
-**Superseded — the earlier SSE plan.** The
-draft room streams from `fantasydraft.espn.com/.../sse/JOIN`; REST returns an
-empty skeleton for the whole draft (see B1 above). Config bootstrap from raw
-`mSettings` is unchanged. The reader needs: `draftSecurity` for a token, the
-JOIN parameter shape, reconnect-with-backoff, and REST as an end-of-draft
-reconciliation pass *if* it turns out to backfill. `EventSource` and
-`SourceHealth` already model a long-lived producer that drops and reconnects.
+`src/ffa/ingest/espn/` attaches to a Chrome started with
+`--remote-debugging-port` and reads the draft room's DOM. Not an SSE client and
+not a poller — `docs/ESPN_DATA_ACCESS.md` has the catalogue and the three
+observations that rule both out. The short version: ESPN allows **one
+connection per team**, so any client of our own would evict you from your own
+draft. Reading the page you are already in is the only non-disruptive channel.
 
-**Draft-day gate, unchanged:** the tool must run end-to-end against real ESPN
-traffic at least once before 2026-08-31. That gate is currently **unmet**.
+`tools/draft_watch.py` serves a local page showing raw scrape next to parsed
+snapshot, for confirming the read with your own eyes.
+
+### What the live rehearsal proved, and what it found
+
+Picks land with correct prices and correct team attribution; `budgets` is
+readable under time pressure; and ESPN's own draft room displayed
+`MANUAL OFFER (MAX $33)` at a moment when `max_legal_bid` independently
+computed **$33** — the roster arithmetic confirmed against ESPN's number rather
+than our own tests.
+
+Bugs it found that every test had passed over, because they only existed live:
+
+- **`advice` was dead.** The reader emitted only completed sales, so the engine
+  never knew who was on the block and the headline capability never fired.
+  Fixed — `.player-selected` now yields a `PlayerNominated`.
+- **Team attribution was wrong.** Picks were credited by board position + 1.
+  The DOM carries no team id and its columns are in *draft* order — team 3 sits
+  in column 1 — so it invented a team 6 and never mentioned team 13. Fixed via
+  `TeamResolver`, joining on team name, with a pre-flight audit at attach time
+  that refuses to start on a mismatch.
+- **Playwright's sync API is not thread-safe.** Connecting on the main thread
+  and polling from the worker failed on every poll. The reader connects lazily
+  on the thread that uses it.
+
+## Known debt, ranked by draft-day risk
+
+**Would bite during a draft**
+
+1. **Async output collides with typing.** A command entered while a pick lands
+   comes out garbled. Hit at pick 14 of the rehearsal.
+2. **Multi-tab draft room.** `_find_page()` returns the *first* matching tab,
+   so with two draft rooms open it silently reads the wrong one — clean attach,
+   `matched 12/12`, frozen board. Hit during the rehearsal.
+3. **No stale-board guard.** `--new` against a finished `180/180` board should
+   refuse; it is unambiguously the wrong tab.
+4. **Manager nicknames are ESPN usernames** (`espn06814226`). You would have to
+   type `sold barkley 62 espn78078705`. Wants a one-off nickname pass.
+
+**Correctness, not urgency**
+
+5. `BidGuidance` does not expose `remaining_is_floor` for **our own** ceiling,
+   only for rivals. The simulator proved this over-commits when our own prices
+   are incomplete. Rare with `--source espn`, but the wrong direction to err.
+
+**Tidy-up**
+
+6. `README.md` still says "Checkpoint 3 of 5" and lists ~10 modules that do not
+   exist. `docs/HANDOFF.md` is the document to trust.
+7. ~10 unused imports, and a dangling `"PlayerRef"` annotation in
+   `ingest/manual/resolve.py` (harmless under `from __future__ import
+   annotations`, but the name is not imported).
+
+## After CP5
+
+There is no CP6. What remains is product work:
+
+- **C1 — owner dossiers.** A ~20–30 min interview across 12 managers. The long
+  pole, and the thing that makes an inference layer worth more than the
+  arithmetic it would be restating.
+- **The LLM layer.** `build_view()` was always designed as its input — the
+  contract between the engine and every surface. Capacity is arithmetic and is
+  built; *intent* is inference and is not. Keep it **beside** the hot path, not
+  inside it: `advice` is currently instant and cannot fail, and a network call
+  in that loop would add latency and a failure mode while a clock runs.
+- **The dashboard.** `docs/dashboard_requirements.md` is a 12.7K spec with zero
+  implementation.
+
+**Draft-day gate: MET.** Ran end to end against a live ESPN practice draft on
+2026-08-17 — attach, pre-flight, live ingest, correct attribution, bid guidance.
