@@ -26,6 +26,12 @@ stays for a human who was in the room.
 Positional bias is filtered rather than dropped: TE allocation survives at +3.0
 while RB, WR and QB do not, so only TE reaches the file.
 
+Provenance goes in `derived_from`, never in `notes`. `notes` and `tells` are
+the two questions no measurement can touch — the things only somebody who has
+drafted in the room knows — and they are the reason to run the interview at
+all. Filling them with generated text would take the most valuable fields in
+the file out of play.
+
 **It is never written straight into the record.** Not because measurement is
 untrustworthy, but because the dossier is a store of *observations*, and there
 is a real difference between "I watched him do this for six years" and "an
@@ -121,7 +127,10 @@ def suggest_dossiers(
         if ignores:
             entry["ignores"] = ignores
 
-        entry["notes"] = _note(profile)
+        # Not `notes`. That field is the human catch-all and is worth more than
+        # everything this module can compute; filling it with a generated string
+        # would take the most valuable question in the set out of play.
+        entry["derived_from"] = _note(profile)
         out[str(team_id)] = entry
 
     return out

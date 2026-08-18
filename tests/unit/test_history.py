@@ -372,9 +372,12 @@ def test_every_suggestion_says_where_it_came_from():
     field was somebody's memory or a script's arithmetic."""
     suggested = suggest_dossiers(_profiles_for_suggest(), OWNERS)
 
-    assert "Derived from ESPN draft history" in suggested["1"]["notes"]
-    assert "review before trusting" in suggested["1"]["notes"]
-    assert "permutation test" in suggested["1"]["notes"]
+    # In `derived_from`, never in `notes` — that field is the human catch-all
+    # and is worth more than anything this can compute.
+    assert "Derived from ESPN draft history" in suggested["1"]["derived_from"]
+    assert "review before trusting" in suggested["1"]["derived_from"]
+    assert "permutation test" in suggested["1"]["derived_from"]
+    assert "notes" not in suggested["1"]
 
 
 def test_only_signals_that_cleared_a_null_are_suggested():

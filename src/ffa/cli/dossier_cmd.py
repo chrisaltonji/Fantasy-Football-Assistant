@@ -9,6 +9,7 @@ The commands, in the order you use them:
     ffa dossier brief                 a prompt you paste into a chat, to talk it through
     ffa dossier form                  a fill-in questionnaire for the couch
     ffa dossier interview --team 3    type the answers in
+    ffa dossier interview --only tells,notes   ask about just those, everyone
     ffa dossier import answers.json   take back what the chat produced
     ffa dossier show --team 3         read one back
     ffa dossier status                who is covered, who is not
@@ -33,6 +34,7 @@ from ffa.dossier.brief import render_brief
 from ffa.dossier.form import render_form, seat_heading
 from ffa.dossier.ingest import apply_payload, extract_payload
 from ffa.dossier.schema import (
+    BY_FIELD,
     QUESTIONS,
     DossierError,
     OwnerDossier,
@@ -313,6 +315,11 @@ def cmd_dossier_interview(args: argparse.Namespace) -> int:
     seats = _require_seats(config)
     book = _book(config, args.path)
 
+    # Argument errors before environment ones: a typo in `--only` is wrong
+    # whether or not there is a terminal, and reporting the terminal first
+    # sends somebody looking for the wrong problem.
+    questions = _selected_questions(args.only)
+
     if not sys.stdin.isatty():
         raise ConfigError(
             "an interview needs a terminal.\nTo fill dossiers in without one, "
@@ -321,6 +328,9 @@ def cmd_dossier_interview(args: argparse.Namespace) -> int:
 
     wanted = _resolve_team(config, args.team)
     team_ids = [wanted] if wanted else sorted(seats)
+
+    if args.gaps:
+        print("Asking only what is still unanswered.\n")
 
     print("Enter skips a question. `-` clears an answer. `?` says why it matters.")
     print("Ctrl-C stops; everything answered so far is saved.\n")
@@ -338,7 +348,11 @@ def cmd_dossier_interview(args: argparse.Namespace) -> int:
             )
             print(f"--- {heading} " + "-" * 24)
 
-            updated, touched = _ask_all(current)
+            asking = [q for q in questions if not (args.gaps and q.is_answered(current))]
+            if not asking:
+                print("  (nothing left to ask)\n")
+                continue
+            updated, touched = _ask_all(current, asking)
             if touched:
                 changed += 1
                 book = book.put(
@@ -357,9 +371,29 @@ def cmd_dossier_interview(args: argparse.Namespace) -> int:
     return 0
 
 
-def _ask_all(dossier: OwnerDossier) -> tuple[OwnerDossier, bool]:
+def _selected_questions(only: str | None):
+    """Which questions this pass asks.
+
+    The point of `--only` is that after importing derived answers, the fields
+    worth a person's time are the two nothing can measure. Walking all thirteen
+    to reach them is 132 keystrokes of Enter across twelve managers, which is
+    how an interview does not get finished.
+    """
+    if not only:
+        return list(QUESTIONS)
+    wanted = [w.strip().lower() for w in str(only).replace(",", " ").split() if w.strip()]
+    unknown = [w for w in wanted if w not in BY_FIELD]
+    if unknown:
+        raise ConfigError(
+            f"no such question(s): {', '.join(unknown)}.\nValid: "
+            + ", ".join(q.field for q in QUESTIONS)
+        )
+    return [q for q in QUESTIONS if q.field in wanted]
+
+
+def _ask_all(dossier: OwnerDossier, questions=None) -> tuple[OwnerDossier, bool]:
     touched = False
-    for question in QUESTIONS:
+    for question in (questions if questions is not None else QUESTIONS):
         while True:
             current = render_answer(question, getattr(dossier, question.field, None))
             hint = f" [{current}]" if current != "-" else ""
@@ -448,6 +482,10 @@ def add_parser(sub) -> None:
     ))
     interview.add_argument("--team", default=None,
                            help="one team id or manager nickname; default is all")
+    interview.add_argument("--only", default=None, metavar="FIELDS",
+                           help="ask only these questions, e.g. tells,notes")
+    interview.add_argument("--gaps", action="store_true",
+                           help="skip anything already answered")
     interview.set_defaults(func=cmd_dossier_interview)
 
     show = common(dossier_sub.add_parser("show", help="read a dossier back"))

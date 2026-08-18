@@ -190,6 +190,11 @@ def _apply_one(
         if question is None:
             # `team_id` and `label` ride along in the on-disk shape; they are
             # display text the config owns, so ignoring them is correct.
+            if str(name) == "derived_from":
+                # Bookkeeping, not testimony. Applied, but it is not an answer
+                # and must not count as one.
+                dossier = replace(dossier, derived_from=str(value))
+                continue
             if str(name) not in ("team_id", "label", "owner_id", "updated_at"):
                 report.rejected.append(
                     f"team {team_id}: {name!r} is not a dossier field — ignored"

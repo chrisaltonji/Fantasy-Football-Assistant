@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 868 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 891 tests pass. Everything below is
 pushed.
 
 ---
@@ -500,7 +500,7 @@ is a draft that looks like it is working.
    config that then refuses to load. `config init` and `config check` both say
    which teams are still untypeable.
 
-868 tests pass, up from 578.
+891 tests pass, up from 578.
 
 **Correctness, not urgency — CLOSED 2026-08-17**
 
@@ -588,8 +588,25 @@ There is no CP6. What remains is product work:
     The dashboard spec asks for "room for a likelihood annotation per bidder
     without implying the engine supplied it" — this is that room.
 
-  What is left is the part only you can do: sitting down and answering it for
-  twelve people. `data/dossiers.json`, `docs/dossier_form.md` and
+  **Five of the thirteen fields are now derived** from the draft history and
+  imported (`real_name`, `seasons_in_league`, `skill`, `spend_shape`, `pace`,
+  plus TE-only positional bias). Every one of them cleared a permutation test;
+  `skill` comes off the league table, which is the single question the record
+  answers better than memory does.
+
+  What is left is the part only you can do, and it is now two questions rather
+  than thirteen: `tells` and `notes`. Nothing measurable touches either, and
+  they are the reason to run the interview at all —
+
+  ```
+  ffa dossier interview --only tells,notes
+  ```
+
+  Provenance for derived answers lives in `derived_from`, deliberately **not**
+  in `notes`: that field is the human catch-all, it is worth more than anything
+  the arithmetic can produce, and filling it with a generated string would take
+  the most valuable question in the set out of play. `derived_from` is not a
+  `Question`, so it is never asked and never counts toward coverage. `data/dossiers.json`, `docs/dossier_form.md` and
   `docs/dossier_brief.md` are all gitignored — they are candid written
   opinions about real people.
 - **The LLM layer.** `build_view()` was always designed as its input — the

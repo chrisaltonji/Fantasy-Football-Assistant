@@ -131,6 +131,15 @@ class OwnerDossier:
     tells: str = ""
     notes: str = ""
 
+    # Where any *derived* answers in this record came from. Deliberately not a
+    # `Question`: it is never asked, never counted toward coverage, and never
+    # overwritten by an interview. It lives here rather than in `notes` because
+    # `notes` is the human catch-all — the one field explicitly for the things
+    # only somebody who was in the room knows — and filling it with a generated
+    # provenance string would take the most valuable field in the file and use
+    # it for bookkeeping.
+    derived_from: str = ""
+
     # ISO date. Staleness is a real signal — a read from three seasons ago is
     # worth less than one from last year, and the layer reading this should be
     # able to tell.

@@ -246,3 +246,102 @@ def test_status_survives_a_hand_broken_file(league, dossiers, capsys):
 
 def test_the_example_config_is_still_valid_toml_after_the_fixture_edits(league):
     tomllib.loads(league.read_text(encoding="utf-8"))
+
+
+# --- asking only what is worth a person's time -------------------------------------
+
+
+def test_only_asks_the_named_questions(league, dossiers, monkeypatch):
+    """After the derived answers are imported, the fields worth a person's time
+    are the two nothing can measure. Walking all thirteen to reach them is 132
+    keystrokes across twelve managers, which is how an interview does not get
+    finished.
+    """
+    run("init", league=league, dossiers=dossiers)
+    asked: list[str] = []
+
+    def answer(prompt=""):
+        asked.append(prompt)
+        return ""
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", answer)
+
+    run("interview", "--only", "tells,notes", league=league, dossiers=dossiers)
+
+    fields = {p.strip().split("[")[0].strip().rstrip(":").strip() for p in asked}
+    assert fields == {"tells", "notes"}
+    # Three managers, two questions each — not thirty-nine prompts.
+    assert len(asked) == 6
+
+
+def test_an_unknown_question_is_refused_with_the_valid_list(league, dossiers, capsys):
+    run("init", league=league, dossiers=dossiers)
+
+    assert run("interview", "--only", "vibes", league=league, dossiers=dossiers) == 2
+
+    err = capsys.readouterr().err
+    assert "vibes" in err and "tells" in err
+
+
+def test_gaps_skips_anybody_already_answered(league, dossiers, monkeypatch, capsys):
+    """A second pass should be about what is missing, not a retype."""
+    run("init", league=league, dossiers=dossiers)
+
+    as_terminal(monkeypatch, ["goes quiet when broke"] + [""] * 40)
+    run("interview", "--only", "tells", "--team", "1", league=league, dossiers=dossiers)
+
+    as_terminal(monkeypatch, ["something else entirely"] + [""] * 40)
+    run("interview", "--only", "tells", "--gaps", "--team", "1",
+        league=league, dossiers=dossiers)
+
+    kept = load_dossiers(dossiers, owners={1: "{OWNER-01}"}).for_team(1)
+    assert kept.tells == "goes quiet when broke"
+    assert "nothing left to ask" in capsys.readouterr().out
+
+
+# --- provenance stays out of the human fields -----------------------------------------
+
+
+def test_derived_provenance_never_occupies_notes():
+    """`notes` and `tells` are the two questions no measurement can touch, and
+    they are the reason to run the interview at all. Filling one with generated
+    text takes the most valuable field in the file out of play.
+    """
+    from ffa.dossier.ingest import apply_payload
+    from ffa.dossier.store import DossierBook
+
+    seats = {1: "{OWNER-01}"}
+    book, report = apply_payload(
+        DossierBook({}, owners=seats),
+        {"1": {"skill": "sharp", "derived_from": "from four seasons"}},
+        seats=seats, labels={}, today="2026-08-18",
+    )
+
+    entry = book.for_team(1)
+    assert entry.derived_from == "from four seasons"
+    assert entry.notes == ""
+    assert report.rejected == []
+
+
+def test_provenance_is_not_counted_as_an_answer():
+    """Otherwise coverage would report a manager as known because a script
+    described itself."""
+    from ffa.dossier.ingest import apply_payload
+    from ffa.dossier.store import DossierBook
+
+    seats = {1: "{OWNER-01}"}
+    book, _ = apply_payload(
+        DossierBook({}, owners=seats),
+        {"1": {"derived_from": "from four seasons"}},
+        seats=seats, labels={}, today="2026-08-18",
+    )
+
+    entry = book.for_team(1)
+    assert entry is None or entry.is_empty
+
+
+def test_provenance_is_not_a_question_anybody_gets_asked():
+    from ffa.dossier.schema import BY_FIELD
+
+    assert "derived_from" not in BY_FIELD
