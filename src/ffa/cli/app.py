@@ -679,8 +679,10 @@ def cmd_export_state(args: argparse.Namespace) -> int:
     for warning in warnings:
         print(f"! {warning}", file=sys.stderr)
 
-    book = load_book(load_config(args.config)) if args.config.is_file() else None
-    view = build_view(replay(events, directory.name), book)
+    config = load_config(args.config) if args.config.is_file() else None
+    book = load_book(config) if config is not None else None
+    dossiers = _load_dossiers(config, args.dossiers)
+    view = build_view(replay(events, directory.name), book, dossiers=dossiers)
     text = json.dumps(view, indent=2)
 
     if args.out:
@@ -693,6 +695,23 @@ def cmd_export_state(args: argparse.Namespace) -> int:
 
 
 # --- helpers ------------------------------------------------------------------
+
+
+def _load_dossiers(config: LeagueConfig | None, path: Path):
+    """What we know about the managers, or nothing at all.
+
+    Never fatal, and deliberately quiet when the file is simply absent: the
+    whole deterministic layer works without a single dossier, and refusing to
+    export a payload over a missing notes file would be absurd.
+    """
+    if config is None:
+        return None
+    from ffa.dossier.store import load_dossiers
+
+    book = load_dossiers(path, owners=dict(config.owners))
+    for warning in book.warnings:
+        print(f"! {warning}", file=sys.stderr)
+    return book if len(book) else None
 
 
 def _init_event(config: LeagueConfig, draft_id: str) -> DraftInitialized:
@@ -830,10 +849,15 @@ def build_parser() -> argparse.ArgumentParser:
                        help="don't point [reference].path at the file just written")
     fetch.set_defaults(func=cmd_data_fetch)
 
+    from ffa.cli.dossier_cmd import add_parser as add_dossier_parser
+
+    add_dossier_parser(sub)
+
     export = sub.add_parser("export-state", help="write the JSON view model for a run")
     export.add_argument("--run-dir", type=Path, default=None)
     export.add_argument("--runs", type=Path, default=RUNS_DIR)
     export.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+    export.add_argument("--dossiers", type=Path, default=Path("data/dossiers.json"))
     export.add_argument("--out", type=Path, default=None)
     export.set_defaults(func=cmd_export_state)
 

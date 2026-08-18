@@ -181,3 +181,99 @@ def test_recent_sales_are_capped(init_event):
     events = [sold(i + 2, f"p{i}", 1, 1) for i in range(15)]
     view = build_view(reducers.replay([init_event, *events]), recent=10)
     assert len(view["recent_sales"]) == 10
+
+
+# --- dossiers: the one part of the payload that was not computed ------------------
+
+
+def _book_with(team_id: int, owner_id: str):
+    from ffa.dossier.schema import Chases, Skill, SpendShape, OwnerDossier
+    from ffa.dossier.store import DossierBook
+
+    dossier = OwnerDossier(
+        owner_id=owner_id.strip("{}").upper(),
+        team_id=team_id,
+        label="dave",
+        real_name="Dave",
+        skill=Skill.SHARP,
+        spend_shape=SpendShape.STARS_AND_SCRUBS,
+        chases=Chases.OFTEN,
+        tells="goes quiet when he is out of money",
+    )
+    return DossierBook({dossier.owner_id: dossier}, owners={team_id: owner_id})
+
+
+def test_a_team_carries_the_dossier_we_have_on_the_person_in_that_seat(init_event):
+    from ffa.view.model import build_view
+
+    state = reducers.replay([init_event])
+    owner_id = state.teams[3].owner_id.value
+
+    view = build_view(state, None, dossiers=_book_with(3, owner_id))
+
+    team = next(t for t in view["teams"] if t["team_id"] == 3)
+    assert team["dossier"]["skill"] == "sharp"
+    assert team["dossier"]["tells"] == "goes quiet when he is out of money"
+
+
+def test_a_team_we_know_nothing_about_gets_null_rather_than_a_default(init_event):
+    """"Never asked" and "asked, unremarkable" are different, and a surface has
+    to be able to tell them apart. A default would present one as the other."""
+    from ffa.view.model import build_view
+
+    state = reducers.replay([init_event])
+    owner_id = state.teams[3].owner_id.value
+
+    view = build_view(state, None, dossiers=_book_with(3, owner_id))
+
+    assert next(t for t in view["teams"] if t["team_id"] == 5)["dossier"] is None
+
+
+def test_no_dossier_file_leaves_the_payload_exactly_as_it_was(init_event):
+    """The deterministic layer works perfectly without a single dossier."""
+    from ffa.view.model import build_view
+
+    view = build_view(reducers.replay([init_event]), None)
+
+    assert all(t["dossier"] is None for t in view["teams"])
+
+
+def test_the_engine_never_ships_a_likelihood_only_observations(init_event):
+    """The load-bearing line in this whole design.
+
+    Capacity is arithmetic and belongs in the payload; intent is inference and
+    belongs to the layer above. An engine that shipped `will_bid: 0.7` would be
+    claiming to know something it cannot, and every surface downstream would
+    treat it as computed truth because everything else here is.
+    """
+    from ffa.view.model import build_view
+
+    state = reducers.replay([init_event])
+    owner_id = state.teams[3].owner_id.value
+
+    view = build_view(state, None, dossiers=_book_with(3, owner_id))
+    dossier = next(t for t in view["teams"] if t["team_id"] == 3)["dossier"]
+
+    forbidden = {"likelihood", "will_bid", "probability", "score", "threat_level"}
+    assert not forbidden & set(dossier)
+    # What it does carry: provenance for the read itself.
+    assert "coverage" in dossier and "updated_at" in dossier
+
+
+def test_the_dossier_is_keyed_off_the_owner_not_the_seat(init_event):
+    """Teams get renamed and ids get reshuffled; the SWID is the anchor.
+
+    A dossier attached by seat would follow the chair rather than the person the
+    first time somebody leaves the league.
+    """
+    from ffa.view.model import build_view
+
+    state = reducers.replay([init_event])
+    book = _book_with(3, state.teams[3].owner_id.value)
+
+    # Re-seat that owner at team 9 and the read moves with them.
+    moved = book.with_seats({9: state.teams[3].owner_id.value})
+    view = build_view(state, None, dossiers=moved)
+
+    assert next(t for t in view["teams"] if t["team_id"] == 3)["dossier"] is None
+    assert next(t for t in view["teams"] if t["team_id"] == 9)["dossier"] is not None

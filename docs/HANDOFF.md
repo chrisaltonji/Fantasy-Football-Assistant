@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 663 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 712 tests pass. Everything below is
 pushed.
 
 ---
@@ -234,7 +234,7 @@ draft day.
 | A1 | ~~FantasyPros auction values~~ **DONE 2026-08-17 — and no longer a user task.** `ffa data fetch` pulls ESPN's own `ownership.auctionValueAverage` for 355 players. Arguably the better source: the league drafts on ESPN, so ESPN's consensus is what this room actually pays. | — |
 | A4 | ~~ESPN cookies~~ **DONE 2026-08-17** — `.env` is populated and working against the live API | — |
 | A5 | ~~Prior-season capture~~ **DONE 2026-08-17.** Still open: a DevTools HAR during a *running* draft, for the live-timing half | B1 second half |
-| C1 | **Owner dossiers** — a ~20–30 min interview, 12 managers | Capability 2's bid forecasting reads them; v1 |
+| C1 | **Owner dossiers** — the intake is **built** (2026-08-17); the ~20–30 min interview across 12 managers is now yours to run: `ffa dossier form`, then `ffa dossier interview` | Capability 2's bid forecasting reads them; v1 |
 | C2 | **Draft strategy preset** — one archetype | v1.1 |
 
 `config/league.toml` holds real league id, member SWIDs, and manager nicknames.
@@ -382,7 +382,7 @@ is a draft that looks like it is working.
    config that then refuses to load. `config init` and `config check` both say
    which teams are still untypeable.
 
-663 tests pass, up from 578.
+712 tests pass, up from 578.
 
 **Correctness, not urgency — CLOSED 2026-08-17**
 
@@ -422,9 +422,39 @@ is a draft that looks like it is working.
 
 There is no CP6. What remains is product work:
 
-- **C1 — owner dossiers.** A ~20–30 min interview across 12 managers. The long
-  pole, and the thing that makes an inference layer worth more than the
-  arithmetic it would be restating.
+- **C1 — owner dossiers. Intake BUILT 2026-08-17; the interview is yours.**
+
+  `src/ffa/dossier/` is a declarative question set — thirteen questions, all
+  optional, each carrying why it is asked — and one table drives the interview,
+  the printable form, validation and the readout, so they cannot drift apart.
+
+  ```
+  ffa dossier init                    one empty entry per seat
+  ffa dossier form                    a fill-in questionnaire, for the couch
+  ffa dossier interview --team dave   type it back in
+  ffa dossier status                  coverage across the league
+  ```
+
+  Three decisions worth knowing before changing any of it:
+
+  - **Keyed on the owner SWID, folded.** ESPN hands the same member id out
+    braced and bare and users copy whichever they saw; folding at construction
+    rather than only at lookup is what stops one person becoming two entries,
+    where a sort silently shadows the hand-typed one. The config — never the
+    file's own `team_id` — decides who sits where, so a read follows the person
+    across a rename, a renumbering, or a season.
+  - **Saved after every manager.** A twenty-minute pass must not be lost to a
+    stray Ctrl-C at manager ten, and a bad answer costs one question rather than
+    the pass.
+  - **They reach `build_view()` as observations, never scores.** No `will_bid`,
+    no `likelihood`. Everything else in that payload is computed from ground
+    truth, so a probability sitting beside it would be read as computed truth.
+    The dashboard spec asks for "room for a likelihood annotation per bidder
+    without implying the engine supplied it" — this is that room.
+
+  What is left is the part only you can do: sitting down and answering it for
+  twelve people. `data/dossiers.json` and `docs/dossier_form.md` are both
+  gitignored — they are candid written opinions about real people.
 - **The LLM layer.** `build_view()` was always designed as its input — the
   contract between the engine and every surface. Capacity is arithmetic and is
   built; *intent* is inference and is not. Keep it **beside** the hot path, not

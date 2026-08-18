@@ -10,6 +10,11 @@ config/league.toml
 data/reference/*
 !data/reference/.gitkeep
 
+# --- Candid written opinions about twelve real people you know. ---
+# Also the generated fill-in form, which is the same content in prose.
+data/dossiers.json
+docs/dossier_form.md
+
 # --- Draft run journals ---
 runs/
 

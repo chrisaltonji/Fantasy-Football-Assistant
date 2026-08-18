@@ -31,7 +31,13 @@ from ffa.util.clock import now_utc, to_iso
 VIEW_SCHEMA_VERSION = 1
 
 
-def build_view(state: DraftState, book: Any = None, *, recent: int = 10) -> dict[str, Any]:
+def build_view(
+    state: DraftState,
+    book: Any = None,
+    *,
+    recent: int = 10,
+    dossiers: Any = None,
+) -> dict[str, Any]:
     if not state.is_initialized:
         return {
             "schema_version": VIEW_SCHEMA_VERSION,
@@ -55,9 +61,15 @@ def build_view(state: DraftState, book: Any = None, *, recent: int = 10) -> dict
             "roster_slots": {slot.value: n for slot, n in league.roster.items()},
             "flex_positions": [p.value for p in league.flex_positions],
         },
-        "me": _team_view(state, league.my_team_id, book) if league.my_team_id in state.teams else None,
-        "teams": [_team_view(state, team_id, book) for team_id in sorted(state.teams)],
-        "nomination": _nomination_view(state, book, advisory),
+        "me": (
+            _team_view(state, league.my_team_id, book, dossiers)
+            if league.my_team_id in state.teams
+            else None
+        ),
+        "teams": [
+            _team_view(state, team_id, book, dossiers) for team_id in sorted(state.teams)
+        ],
+        "nomination": _nomination_view(state, book, advisory, dossiers),
         "market": _market_view(state, advisory),
         "recent_sales": _recent_sales(state, book, recent),
         "scarcity": _scarcity_view(advisory),
@@ -103,10 +115,15 @@ def _scarcity_view(advisory) -> dict[str, Any]:
     }
 
 
-def _team_view(state: DraftState, team_id: int, book: Any = None) -> dict[str, Any]:
+def _team_view(
+    state: DraftState, team_id: int, book: Any = None, dossiers: Any = None
+) -> dict[str, Any]:
     team = state.teams.get(team_id)
     unknowns = proj.unknown_price_count(state, team_id)
     return {
+        # Recorded observations about the *person*, never a computed likelihood.
+        # See `_dossier_view` for why that distinction is load-bearing.
+        "dossier": _dossier_view(dossiers, team_id),
         "team_id": team_id,
         # owner_id is the stable identity; name is volatile display text and
         # must not be used as a key by any surface.
@@ -157,7 +174,9 @@ def _player_view(player: PlayerEntity, book: Any = None) -> dict[str, Any]:
     }
 
 
-def _nomination_view(state: DraftState, book: Any, advisory) -> dict[str, Any] | None:
+def _nomination_view(
+    state: DraftState, book: Any, advisory, dossiers: Any = None
+) -> dict[str, Any] | None:
     nomination = state.current_nomination
     if nomination is None:
         return None
@@ -206,10 +225,54 @@ def _nomination_view(state: DraftState, book: Any, advisory) -> dict[str, Any] |
                     "has_starter_gap": t.has_starter_gap,
                     "open_at_position": t.open_at_position,
                     "is_live": t.is_live,
+                    # Everything above this line is arithmetic. This is not: it
+                    # is what somebody told us about a person, verbatim, so the
+                    # layer that reasons about intent has something to reason
+                    # from. No likelihood is computed here, and none should be
+                    # inferred from its presence.
+                    "dossier": _dossier_view(dossiers, t.team_id),
                 }
                 for t in guidance.threats
             ],
         }
+    return out
+
+
+def _dossier_view(dossiers: Any, team_id: int) -> dict[str, Any] | None:
+    """What we were told about the person in this seat. Observations, not scores.
+
+    This is the one part of the payload that is *not* derived from ground truth,
+    and keeping that legible is the point of shipping it as a separate object
+    rather than folding fields into the team. Everything else in this file is
+    computed and nothing downstream should recompute it; this is the reverse —
+    nothing here was computed, and the layer that reads it is expected to add
+    judgment on top.
+
+    Concretely: there is no `will_bid`, no `likelihood`, no score. The dashboard
+    spec asks for "room for a likelihood annotation per bidder without implying
+    the engine supplied it", and an engine that shipped one would be claiming to
+    know something it cannot.
+
+    `None` when there is no dossier at all, so a surface can distinguish "we
+    have not asked about this manager" from "we asked and they are unremarkable".
+    """
+    if dossiers is None:
+        return None
+    dossier = dossiers.for_team(team_id)
+    if dossier is None or dossier.is_empty:
+        return None
+
+    from ffa.dossier.schema import QUESTIONS, render_answer
+
+    out: dict[str, Any] = {
+        "owner_id": dossier.owner_id,
+        "coverage": round(dossier.coverage, 3),
+        "updated_at": dossier.updated_at or None,
+    }
+    for question in QUESTIONS:
+        value = getattr(dossier, question.field, None)
+        rendered = render_answer(question, value)
+        out[question.field] = None if rendered == "-" else rendered
     return out
 
 

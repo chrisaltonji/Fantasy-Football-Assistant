@@ -285,6 +285,38 @@ lower figure and says why.
 A team with $90 and no open RB slot doesn't appear on an RB — that omission is
 the whole point of the tool.
 
+### Owner dossiers
+
+Everything above is **capacity**: can this rival afford him, does he have a slot
+for him. That is arithmetic, and it is finished. Dossiers are the other half —
+**intent**. Will they actually bid, how high, and on whom. It cannot be
+computed, only observed, and you are the only person who has observed it.
+
+```bash
+ffa dossier init                    # one empty entry per seat, keyed by SWID
+ffa dossier form                    # a fill-in questionnaire for the couch
+ffa dossier interview --team dave   # type the answers in
+ffa dossier status                  # who is covered, who is not
+```
+
+Thirteen questions per manager, all optional, each carrying the reason it is
+being asked — how they spend the $200, when their money goes out, whether they
+chase past value, which positions and which NFL teams they overpay for, and the
+tells only somebody who has drafted with them would know. Answers are saved
+after each manager, so a twenty-minute pass survives a stray Ctrl-C.
+
+Dossiers are keyed on the **owner's SWID**, so they follow the person rather
+than the seat: they survive a team rename, a config rebuild, and a league
+renumbering between seasons. `data/dossiers.json` is plain JSON and meant to be
+opened — fixing a typo should not mean redoing an interview — and it is
+gitignored, because it is candid written opinions about people you know.
+
+They reach every surface through `build_view()` as **recorded observations, not
+scores**. There is no `will_bid` and no `likelihood`: everything else in that
+payload is computed from ground truth, and an engine that shipped a probability
+would be claiming to know something it cannot. Weighing them is the inference
+layer's job.
+
 ### Feeding the dashboard
 
 ```bash
