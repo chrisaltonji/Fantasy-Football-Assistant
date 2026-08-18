@@ -294,16 +294,33 @@ computed, only observed, and you are the only person who has observed it.
 
 ```bash
 ffa dossier init                    # one empty entry per seat, keyed by SWID
-ffa dossier form                    # a fill-in questionnaire for the couch
-ffa dossier interview --team dave   # type the answers in
+ffa dossier brief                   # a prompt you paste into a chat, and talk
+ffa dossier import answers.md       # take back what the chat produced
 ffa dossier status                  # who is covered, who is not
 ```
 
 Thirteen questions per manager, all optional, each carrying the reason it is
 being asked — how they spend the $200, when their money goes out, whether they
 chase past value, which positions and which NFL teams they overpay for, and the
-tells only somebody who has drafted with them would know. Answers are saved
-after each manager, so a twenty-minute pass survives a stray Ctrl-C.
+tells only somebody who has drafted with them would know.
+
+**Doing it as a conversation.** Thirteen questions across twelve managers is 156
+prompts, and the content is recall — arguing with yourself about what somebody
+did in the third round two years ago. That goes better spoken than typed, so
+`ffa dossier brief` renders the whole interview as a prompt: paste it into a
+chat, talk it through (dictation works fine), and `ffa dossier import` takes the
+answers back. The brief tells the far end **not to invent answers**, because an
+empty field is honest and a plausible guess gets read as observation.
+
+Import is not a looser second door into the record — every value goes through
+the same validation the terminal interview uses. A bad value is dropped and
+named rather than rounded into something plausible, and a field that was not
+discussed is left exactly as it was, so partial passes are safe.
+
+There are two other ways in, if you prefer them: `ffa dossier interview` answers
+at the prompt, saving after each manager so a twenty-minute pass survives a
+stray Ctrl-C; and `ffa dossier form` writes a fill-in questionnaire for away
+from the keyboard.
 
 Dossiers are keyed on the **owner's SWID**, so they follow the person rather
 than the seat: they survive a team rename, a config rebuild, and a league

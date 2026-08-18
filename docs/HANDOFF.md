@@ -3,7 +3,7 @@
 State of the build as of **2026-08-17**. Draft day is **2026-08-31, 8pm ET** —
 two weeks out.
 
-Branch: `claude/plan-file-review-g05z77`. 712 tests pass. Everything below is
+Branch: `claude/plan-file-review-g05z77`. 744 tests pass. Everything below is
 pushed.
 
 ---
@@ -382,7 +382,7 @@ is a draft that looks like it is working.
    config that then refuses to load. `config init` and `config check` both say
    which teams are still untypeable.
 
-712 tests pass, up from 578.
+744 tests pass, up from 578.
 
 **Correctness, not urgency — CLOSED 2026-08-17**
 
@@ -430,10 +430,28 @@ There is no CP6. What remains is product work:
 
   ```
   ffa dossier init                    one empty entry per seat
-  ffa dossier form                    a fill-in questionnaire, for the couch
-  ffa dossier interview --team dave   type it back in
+  ffa dossier brief                   a prompt to paste into a chat, and talk
+  ffa dossier import answers.md       take back what the chat produced
+  ffa dossier interview --team dave   or answer at the prompt
+  ffa dossier form                    or fill in a questionnaire
   ffa dossier status                  coverage across the league
   ```
+
+  **`brief` + `import` are the ones to reach for.** 156 prompts is the wrong
+  shape for what is really recall, and recall goes better spoken. The brief
+  carries the questions, the exact keys each choice will accept, the roster, and
+  an output contract; `import` reads a plain `.json` file or a transcript with a
+  fenced block in it. The brief's own worked example is imported verbatim by a
+  test, so the contract it publishes cannot drift from the one the importer
+  accepts.
+
+  `import` is deliberately **not** a looser second door into the record. Every
+  value goes through the same `parse_answer` the terminal interview uses; a bad
+  value is dropped and named rather than coerced, an absent field is left alone
+  (partial passes are the normal case, so treating absence as a clear would make
+  every one of them destructive), and an explicit `"unknown"` / `""` / `null` is
+  treated as unanswered — something at the far end will eventually fill blanks
+  in to be tidy, and storing that would turn a gap into a finding.
 
   Three decisions worth knowing before changing any of it:
 
@@ -453,8 +471,9 @@ There is no CP6. What remains is product work:
     without implying the engine supplied it" — this is that room.
 
   What is left is the part only you can do: sitting down and answering it for
-  twelve people. `data/dossiers.json` and `docs/dossier_form.md` are both
-  gitignored — they are candid written opinions about real people.
+  twelve people. `data/dossiers.json`, `docs/dossier_form.md` and
+  `docs/dossier_brief.md` are all gitignored — they are candid written
+  opinions about real people.
 - **The LLM layer.** `build_view()` was always designed as its input — the
   contract between the engine and every surface. Capacity is arithmetic and is
   built; *intent* is inference and is not. Keep it **beside** the hot path, not

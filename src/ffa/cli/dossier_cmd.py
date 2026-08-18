@@ -6,10 +6,17 @@ an interview loop is neither thin nor about argument parsing.
 The commands, in the order you use them:
 
     ffa dossier init                  seed one entry per seat from your config
+    ffa dossier brief                 a prompt you paste into a chat, to talk it through
     ffa dossier form                  a fill-in questionnaire for the couch
     ffa dossier interview --team 3    type the answers in
+    ffa dossier import answers.json   take back what the chat produced
     ffa dossier show --team 3         read one back
     ffa dossier status                who is covered, who is not
+
+`brief` + `import` exist because the interview is *recall*, and recall goes
+better spoken than typed. Whatever the front end — a chat, voice, a note on a
+phone — the answers come back as JSON and go through exactly the same validation
+the terminal interview uses.
 """
 
 from __future__ import annotations
@@ -21,7 +28,9 @@ from pathlib import Path
 
 from ffa.config.loader import load_config
 from ffa.config.schema import ConfigError, LeagueConfig
+from ffa.dossier.brief import render_brief
 from ffa.dossier.form import render_form
+from ffa.dossier.ingest import apply_payload, extract_payload
 from ffa.dossier.schema import (
     QUESTIONS,
     DossierError,
@@ -143,6 +152,84 @@ def cmd_dossier_form(args: argparse.Namespace) -> int:
     print(f"wrote {args.out} — {len(seats)} manager(s), {len(QUESTIONS)} questions each")
     print("Fill it in, then type it back with:  ffa dossier interview")
     return 0
+
+
+def cmd_dossier_brief(args: argparse.Namespace) -> int:
+    """Write a prompt that turns the interview into a conversation.
+
+    Thirteen questions across twelve managers is 156 prompts, and a terminal is
+    the wrong shape for that. Paste this into a chat, talk it through, and bring
+    the answers back with `ffa dossier import`.
+    """
+    config = load_config(args.config)
+    seats = _require_seats(config)
+    book = _book(config, args.path)
+
+    text = render_brief(
+        book, seats=seats, labels=dict(config.managers), league_name=config.name
+    )
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(text, encoding="utf-8")
+
+    print(f"wrote {args.out}")
+    print(f"  {len(seats)} manager(s), {len(QUESTIONS)} questions each")
+    print("\nPaste the whole file into a chat and talk it through. When it hands "
+          "you a\n```json block, save it and run:  ffa dossier import <file>")
+    return 0
+
+
+def cmd_dossier_import(args: argparse.Namespace) -> int:
+    """Merge answers from a conversation back into the record.
+
+    Everything goes through the same `parse_answer` the terminal interview uses.
+    An import path with its own looser validation would be a second way to get a
+    bad value into the one file here that cannot be regenerated.
+    """
+    config = load_config(args.config)
+    seats = _require_seats(config)
+    book = _book(config, args.path)
+
+    raw = sys.stdin.read() if str(args.source) == "-" else _read(args.source)
+    payload = extract_payload(raw)
+
+    updated, report = apply_payload(
+        book,
+        payload,
+        seats=seats,
+        labels=dict(config.managers),
+        today=now_utc().date().isoformat(),
+    )
+
+    for problem in report.rejected:
+        print(f"! {problem}", file=sys.stderr)
+
+    if not report:
+        print("nothing to apply — no valid answers found.")
+        return 1
+
+    for team_id in report.changed_teams:
+        label = config.managers.get(team_id) or f"team{team_id}"
+        fields = ", ".join(report.applied[team_id])
+        print(f"  team {team_id:<3} {label:<16} {fields}")
+
+    if args.dry_run:
+        print(f"\n--dry-run: {report.field_count} answer(s) across "
+              f"{len(report.changed_teams)} manager(s) would be written. "
+              f"Nothing changed.")
+        return 0
+
+    save_dossiers(updated, args.path, league_id=config.league_id)
+    print(f"\nwrote {args.path} — {report.field_count} answer(s) across "
+          f"{len(report.changed_teams)} manager(s)")
+    print(f"{updated.coverage(seats):.0%} of the league now has some read on them.")
+    return 0
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(f"could not read {path}: {exc}") from None
 
 
 def cmd_dossier_show(args: argparse.Namespace) -> int:
@@ -314,11 +401,27 @@ def add_parser(sub) -> None:
     init.add_argument("--force", action="store_true", help="overwrite an existing file")
     init.set_defaults(func=cmd_dossier_init)
 
+    brief = common(dossier_sub.add_parser(
+        "brief", help="write a prompt you can paste into a chat and talk through"
+    ))
+    brief.add_argument("--out", type=Path, default=Path("docs/dossier_brief.md"))
+    brief.set_defaults(func=cmd_dossier_brief)
+
     form = common(dossier_sub.add_parser(
         "form", help="write a fill-in questionnaire you can do away from a terminal"
     ))
     form.add_argument("--out", type=Path, default=Path("docs/dossier_form.md"))
     form.set_defaults(func=cmd_dossier_form)
+
+    imp = common(dossier_sub.add_parser(
+        "import", help="merge answers from a chat or a JSON file into the record"
+    ))
+    imp.add_argument("source", type=Path,
+                     help="a .json file, or a transcript with a ```json block. "
+                          "`-` reads stdin.")
+    imp.add_argument("--dry-run", action="store_true",
+                     help="say what would change and write nothing")
+    imp.set_defaults(func=cmd_dossier_import)
 
     interview = common(dossier_sub.add_parser(
         "interview", help="answer the questions at the prompt"

@@ -17,6 +17,7 @@ from ffa.cli.repl import run_repl
 from ffa.config.loader import DEFAULT_CONFIG_PATH, load_config, load_credentials
 from ffa.config.schema import ConfigError, LeagueConfig
 from ffa.domain.events import DraftInitialized, TeamSeed
+from ffa.dossier.schema import DossierError
 from ffa.domain.models import LeagueSnapshot
 from ffa.domain.reducers import replay
 from ffa.ingest.manual.errors import CommandError
@@ -869,7 +870,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except (ConfigError, CommandError, JournalError, LockError, ReferenceError) as exc:
+    except (ConfigError, CommandError, DossierError, JournalError, LockError,
+            ReferenceError) as exc:
         # All user-fixable; a traceback would only bury the message.
         print(f"error: {exc}", file=sys.stderr)
         return 2

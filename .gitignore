@@ -11,9 +11,10 @@ data/reference/*
 !data/reference/.gitkeep
 
 # --- Candid written opinions about twelve real people you know. ---
-# Also the generated fill-in form, which is the same content in prose.
+# The form and the chat brief are the same content in prose.
 data/dossiers.json
 docs/dossier_form.md
+docs/dossier_brief.md
 
 # --- Draft run journals ---
 runs/
