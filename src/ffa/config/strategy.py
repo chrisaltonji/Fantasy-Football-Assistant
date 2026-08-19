@@ -107,6 +107,22 @@ class StrategyPreset:
         return sum(self.budget_by_position.values())
 
 
+def bench_floor(league) -> int:
+    """The least a bench reserve can be and still buy a bench.
+
+    Every bench spot costs at least the $1 minimum, so a reserve below this is
+    not a lean plan, it is an unfollowable one — you would reach the last round
+    with slots to fill and nothing left earmarked for them.
+
+    Derivable from the roster alone, which is why it is a floor rather than a
+    preference: it needs no history and no archetype to be true.
+    """
+    from ffa.domain.enums import RosterSlot
+
+    roster = getattr(league, "roster", None) or {}
+    return int(roster.get(RosterSlot.BE, 0))
+
+
 def market_shape(league, book) -> dict[Position, float]:
     """What share of starter money each position commands, per the sheet.
 
@@ -142,13 +158,24 @@ def market_shape(league, book) -> dict[Position, float]:
     return {position: total / grand for position, total in totals.items()}
 
 
-def default_preset(league, book, archetype: str = "balanced") -> StrategyPreset:
+def default_preset(
+    league, book, archetype: str = "balanced", *, bench_reserve: int | None = None
+) -> StrategyPreset:
     """A starting plan built from the market, for you to edit rather than invent.
 
     A blank `[strategy]` table would be honest and useless — nobody hand-writes
     a twelve-position dollar split from nothing at eleven at night. This gives
     real numbers off the same sheet the bid advice already trusts, so editing it
     is a series of small opinions instead of one large one.
+
+    `bench_reserve` overrides the archetype's share, and every dollar it frees
+    goes back into the positional split at market shares. It exists because the
+    archetype's share is the one number here with nothing behind it: the split
+    is derived from the sheet and the concentration is a stated preference, but
+    "10% for the bench" is a guess that a league's own record can flatly
+    contradict. This league's four seasons put the median bench at the $1-per-slot
+    floor, against an archetype default four times that — so the override is not
+    a tuning knob, it is how you replace a guess with a measurement.
     """
     shape = BY_NAME.get(archetype)
     if shape is None:
@@ -166,10 +193,17 @@ def default_preset(league, book, archetype: str = "balanced") -> StrategyPreset:
         return StrategyPreset(
             archetype=archetype,
             max_on_one_player=int(round(budget * shape.max_share)) if budget else 0,
-            bench_reserve=int(round(budget * shape.bench_reserve_share)) if budget else 0,
+            bench_reserve=(
+                bench_reserve if bench_reserve is not None
+                else (int(round(budget * shape.bench_reserve_share)) if budget else 0)
+            ),
         )
 
-    reserve = int(round(budget * shape.bench_reserve_share))
+    reserve = (
+        bench_reserve if bench_reserve is not None
+        else int(round(budget * shape.bench_reserve_share))
+    )
+    reserve = max(reserve, bench_floor(league))
     spendable = max(0, budget - reserve)
 
     planned = {
@@ -269,7 +303,9 @@ def strategy_to_dict(preset: StrategyPreset) -> dict[str, Any]:
     }
 
 
-def strategy_problem(preset: StrategyPreset, budget: int) -> str | None:
+def strategy_problem(
+    preset: StrategyPreset, budget: int, league=None
+) -> str | None:
     """Why this plan cannot be followed, or `None` if it can.
 
     Checked at load rather than mid-draft. A plan that asks for more money than
@@ -287,6 +323,14 @@ def strategy_problem(preset: StrategyPreset, budget: int) -> str | None:
             f"(${preset.planned_total} across positions plus ${preset.bench_reserve} "
             f"held back) but the budget is ${budget}"
         )
+    if league is not None:
+        floor = bench_floor(league)
+        if preset.budget_by_position and preset.bench_reserve < floor:
+            return (
+                f"the plan holds back ${preset.bench_reserve} for the bench, but "
+                f"{floor} bench slot(s) cost at least $1 each — it cannot be filled"
+            )
+
     if preset.max_on_one_player and budget and preset.max_on_one_player > budget:
         return (
             f"max_on_one_player is ${preset.max_on_one_player}, more than the "

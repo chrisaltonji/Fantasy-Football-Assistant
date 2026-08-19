@@ -21,7 +21,7 @@ from pathlib import Path
 
 from ffa.config.loader import DEFAULT_CONFIG_PATH, load_config, write_config
 from ffa.config.schema import ConfigError
-from ffa.config.strategy import ARCHETYPES, BY_NAME, default_preset
+from ffa.config.strategy import ARCHETYPES, BY_NAME, bench_floor, default_preset
 
 
 def _load_book(config):
@@ -47,7 +47,15 @@ def cmd_strategy_init(args: argparse.Namespace) -> int:
             "from. Run `ffa data fetch` first."
         )
 
-    preset = default_preset(config, book, args.archetype)
+    floor = bench_floor(config)
+    if args.bench is not None and args.bench < floor:
+        raise ConfigError(
+            f"--bench {args.bench} is below the ${floor} floor: this league has "
+            f"{floor} bench slot(s) and each costs at least $1. A plan that "
+            "reserves less than that cannot be filled."
+        )
+
+    preset = default_preset(config, book, args.archetype, bench_reserve=args.bench)
     from dataclasses import replace
 
     write_config(replace(config, strategy=preset), args.path)
@@ -56,7 +64,8 @@ def cmd_strategy_init(args: argparse.Namespace) -> int:
     print(f"wrote {args.path}")
     print(f"  archetype    {preset.archetype} — {shape.note}")
     print(f"  one player   at most ${preset.max_on_one_player}")
-    print(f"  bench        ${preset.bench_reserve} held back")
+    at_floor = " (the $1-per-slot floor)" if preset.bench_reserve == floor else ""
+    print(f"  bench        ${preset.bench_reserve} held back{at_floor}")
     print(f"  positions    ${preset.planned_total} across "
           f"{len(preset.budget_by_position)}:")
     for position, dollars in sorted(
@@ -124,6 +133,10 @@ def add_parser(sub) -> None:
         "--archetype", default="balanced", choices=names,
         help="; ".join(f"{a.name}: {a.note}" for a in ARCHETYPES),
     )
+    init.add_argument("--bench", type=int, default=None, metavar="DOLLARS",
+                      help="hold back this much for the bench instead of the "
+                           "archetype's share; the difference goes back into the "
+                           "positional split at market shares")
     init.add_argument("--path", type=Path, default=DEFAULT_CONFIG_PATH)
     init.add_argument("--force", action="store_true", help="replace an existing plan")
     init.set_defaults(func=cmd_strategy_init)

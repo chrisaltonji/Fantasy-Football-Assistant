@@ -311,7 +311,7 @@ class LeagueConfig:
 
         from ffa.config.strategy import strategy_problem
 
-        plan_problem = strategy_problem(self.strategy, self.budget)
+        plan_problem = strategy_problem(self.strategy, self.budget, self)
         if plan_problem:
             problems.append(
                 f"[strategy] {plan_problem}. Re-run `ffa strategy init` to rebuild "

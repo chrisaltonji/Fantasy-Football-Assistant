@@ -22,6 +22,7 @@ from ffa.config.strategy import (
     ARCHETYPES,
     BY_NAME,
     StrategyPreset,
+    bench_floor,
     default_preset,
     market_shape,
     parse_strategy,
@@ -140,6 +141,54 @@ def test_no_market_gives_half_a_plan_rather_than_an_invented_one(snapshot):
 
     assert preset.budget_by_position == {}
     assert preset.max_on_one_player > 0
+
+
+# --- the bench floor, which is derivable rather than preferred ------------------------
+
+
+def test_the_bench_floor_is_one_dollar_per_bench_slot(snapshot):
+    """Needs no history and no archetype to be true, which is what makes it a
+    floor rather than an opinion."""
+    assert bench_floor(snapshot) == 5  # BE: 5 in this roster
+
+
+def test_a_reserve_below_the_floor_cannot_be_filled(snapshot, book):
+    """Not a lean plan — an unfollowable one. You would reach the last round
+    with slots open and nothing earmarked for them."""
+    preset = replace(default_preset(snapshot, book), bench_reserve=2)
+
+    problem = strategy_problem(preset, snapshot.budget, snapshot)
+    assert problem and "cannot be filled" in problem
+
+
+def test_the_default_never_lands_below_the_floor(snapshot, book):
+    preset = default_preset(snapshot, book, bench_reserve=0)
+    assert preset.bench_reserve == bench_floor(snapshot)
+
+
+def test_freeing_the_reserve_puts_the_money_back_into_positions(snapshot, book):
+    """The whole point of the override: the archetype's bench share is the one
+    number here with nothing behind it, and a league's own record can flatly
+    contradict it. Four seasons of this league put the median bench at the
+    floor, against an archetype default four times that."""
+    default = default_preset(snapshot, book, "balanced")
+    lean = default_preset(snapshot, book, "balanced", bench_reserve=bench_floor(snapshot))
+
+    assert lean.bench_reserve < default.bench_reserve
+    assert lean.planned_total > default.planned_total
+    # Nothing is created or lost — it moves.
+    assert (lean.planned_total + lean.bench_reserve
+            == default.planned_total + default.bench_reserve
+            == snapshot.budget)
+    # And it lands where the market says, so the richest position gains most.
+    richest = max(default.budget_by_position, key=lambda p: default.budget_by_position[p])
+    assert lean.budget_by_position[richest] > default.budget_by_position[richest]
+
+
+def test_a_plan_with_no_positions_is_not_held_to_the_floor(snapshot):
+    """Half a plan — concentration only, no split — has nothing to under-fund."""
+    preset = StrategyPreset(archetype="balanced", max_on_one_player=70)
+    assert strategy_problem(preset, snapshot.budget, snapshot) is None
 
 
 # --- config round trip -----------------------------------------------------------------
