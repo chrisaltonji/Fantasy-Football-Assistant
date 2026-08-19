@@ -1,0 +1,20 @@
+# Credentials. Never commit these — they are live session cookies.
+.env
+
+# HAR exports carry live espn_s2 / SWID in their request headers.
+*.har
+
+# Probe output: raw captures may contain other league members' member ids.
+# Run tools/anonymize_capture.py before committing anything from here.
+probe_out/
+captures/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/

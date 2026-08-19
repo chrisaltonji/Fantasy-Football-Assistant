@@ -1,0 +1,302 @@
+{
+  "draftDetail": {
+    "drafted": false,
+    "inProgress": false
+  },
+  "gameId": 1,
+  "id": 123456,
+  "seasonId": 2026,
+  "segmentId": 0,
+  "members": [
+    {
+      "displayName": "user1",
+      "firstName": "Test",
+      "lastName": "Owner1",
+      "id": "{11111111-0000-4000-8000-000000000001}"
+    },
+    {
+      "displayName": "user2",
+      "firstName": "Test",
+      "lastName": "Owner2",
+      "id": "{22222222-0000-4000-8000-000000000002}"
+    },
+    {
+      "displayName": "user3",
+      "firstName": "Test",
+      "lastName": "Owner3",
+      "id": "{33333333-0000-4000-8000-000000000003}"
+    },
+    {
+      "displayName": "user4",
+      "firstName": "Test",
+      "lastName": "Owner4",
+      "id": "{44444444-0000-4000-8000-000000000004}"
+    },
+    {
+      "displayName": "user5",
+      "firstName": "Test",
+      "lastName": "Owner5",
+      "id": "{55555555-0000-4000-8000-000000000005}"
+    },
+    {
+      "displayName": "user7",
+      "firstName": "Test",
+      "lastName": "Owner7",
+      "id": "{77777777-0000-4000-8000-000000000007}"
+    },
+    {
+      "displayName": "user8",
+      "firstName": "Test",
+      "lastName": "Owner8",
+      "id": "{88888888-0000-4000-8000-000000000008}"
+    },
+    {
+      "displayName": "user9",
+      "firstName": "Test",
+      "lastName": "Owner9",
+      "id": "{99999999-0000-4000-8000-000000000009}"
+    },
+    {
+      "displayName": "user10",
+      "firstName": "Test",
+      "lastName": "Owner10",
+      "id": "{AAAAAAAA-0000-4000-8000-00000000000A}"
+    },
+    {
+      "displayName": "user11",
+      "firstName": "Test",
+      "lastName": "Owner11",
+      "id": "{BBBBBBBB-0000-4000-8000-00000000000B}"
+    },
+    {
+      "displayName": "user12",
+      "firstName": "Test",
+      "lastName": "Owner12",
+      "id": "{CCCCCCCC-0000-4000-8000-00000000000C}"
+    },
+    {
+      "displayName": "user13",
+      "firstName": "Test",
+      "lastName": "Owner13",
+      "id": "{DDDDDDDD-0000-4000-8000-00000000000D}"
+    }
+  ],
+  "teams": [
+    {
+      "abbrev": "T01",
+      "divisionId": 1,
+      "id": 1,
+      "isActive": false,
+      "name": "Volatile Team Name 1",
+      "owners": [
+        "{11111111-0000-4000-8000-000000000001}"
+      ],
+      "primaryOwner": "{11111111-0000-4000-8000-000000000001}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 1
+    },
+    {
+      "abbrev": "T02",
+      "divisionId": 1,
+      "id": 2,
+      "isActive": false,
+      "name": "Volatile Team Name 2",
+      "owners": [
+        "{22222222-0000-4000-8000-000000000002}"
+      ],
+      "primaryOwner": "{22222222-0000-4000-8000-000000000002}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 2
+    },
+    {
+      "abbrev": "T03",
+      "divisionId": 1,
+      "id": 3,
+      "isActive": false,
+      "name": "Volatile Team Name 3",
+      "owners": [
+        "{33333333-0000-4000-8000-000000000003}"
+      ],
+      "primaryOwner": "{33333333-0000-4000-8000-000000000003}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 3
+    },
+    {
+      "abbrev": "T04",
+      "divisionId": 1,
+      "id": 4,
+      "isActive": false,
+      "name": "Volatile Team Name 4",
+      "owners": [
+        "{44444444-0000-4000-8000-000000000004}"
+      ],
+      "primaryOwner": "{44444444-0000-4000-8000-000000000004}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 4
+    },
+    {
+      "abbrev": "T05",
+      "divisionId": 1,
+      "id": 5,
+      "isActive": false,
+      "name": "Volatile Team Name 5",
+      "owners": [
+        "{55555555-0000-4000-8000-000000000005}"
+      ],
+      "primaryOwner": "{55555555-0000-4000-8000-000000000005}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 5
+    },
+    {
+      "abbrev": "T07",
+      "divisionId": 1,
+      "id": 7,
+      "isActive": false,
+      "name": "Volatile Team Name 7",
+      "owners": [
+        "{77777777-0000-4000-8000-000000000007}"
+      ],
+      "primaryOwner": "{77777777-0000-4000-8000-000000000007}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 7
+    },
+    {
+      "abbrev": "T08",
+      "divisionId": 1,
+      "id": 8,
+      "isActive": false,
+      "name": "Volatile Team Name 8",
+      "owners": [
+        "{88888888-0000-4000-8000-000000000008}"
+      ],
+      "primaryOwner": "{88888888-0000-4000-8000-000000000008}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 8
+    },
+    {
+      "abbrev": "T09",
+      "divisionId": 1,
+      "id": 9,
+      "isActive": false,
+      "name": "Volatile Team Name 9",
+      "owners": [
+        "{99999999-0000-4000-8000-000000000009}"
+      ],
+      "primaryOwner": "{99999999-0000-4000-8000-000000000009}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 9
+    },
+    {
+      "abbrev": "T10",
+      "divisionId": 1,
+      "id": 10,
+      "isActive": false,
+      "name": "Volatile Team Name 10",
+      "owners": [
+        "{AAAAAAAA-0000-4000-8000-00000000000A}"
+      ],
+      "primaryOwner": "{AAAAAAAA-0000-4000-8000-00000000000A}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 10
+    },
+    {
+      "abbrev": "T11",
+      "divisionId": 1,
+      "id": 11,
+      "isActive": false,
+      "name": "Volatile Team Name 11",
+      "owners": [
+        "{BBBBBBBB-0000-4000-8000-00000000000B}"
+      ],
+      "primaryOwner": "{BBBBBBBB-0000-4000-8000-00000000000B}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 11
+    },
+    {
+      "abbrev": "T12",
+      "divisionId": 1,
+      "id": 12,
+      "isActive": false,
+      "name": "Volatile Team Name 12",
+      "owners": [
+        "{CCCCCCCC-0000-4000-8000-00000000000C}"
+      ],
+      "primaryOwner": "{CCCCCCCC-0000-4000-8000-00000000000C}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 12
+    },
+    {
+      "abbrev": "T13",
+      "divisionId": 1,
+      "id": 13,
+      "isActive": false,
+      "name": "Volatile Team Name 13",
+      "owners": [
+        "{DDDDDDDD-0000-4000-8000-00000000000D}"
+      ],
+      "primaryOwner": "{DDDDDDDD-0000-4000-8000-00000000000D}",
+      "playoffSeed": 0,
+      "points": 0.0,
+      "transactionCounter": {
+        "acquisitionBudgetSpent": 0,
+        "acquisitions": 0
+      },
+      "waiverRank": 13
+    }
+  ]
+}

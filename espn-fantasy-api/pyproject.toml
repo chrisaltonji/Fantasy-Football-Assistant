@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "espn-fantasy-api"
+version = "0.1.0"
+description = "A read-only client for ESPN's undocumented Fantasy Football API, plus a live draft-room reader"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+# The live draft-room reader attaches to a running Chrome over CDP. Optional
+# on purpose: every REST path works without it, and nothing should be blocked
+# on a browser install.
+draftroom = [
+    "playwright>=1.40",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+espn-fantasy = "espn_fantasy.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# "." so tests can import their own helpers out of tests/conftest.py.
+pythonpath = ["src", "."]
