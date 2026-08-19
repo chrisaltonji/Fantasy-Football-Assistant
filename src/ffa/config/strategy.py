@@ -123,6 +123,25 @@ def bench_floor(league) -> int:
     return int(roster.get(RosterSlot.BE, 0))
 
 
+def opening_max_bid(league) -> int:
+    """The most anyone can legally bid on the first player of the draft.
+
+    Every *other* roster slot still has to be bought at the $1 minimum, so that
+    money is not available for this player. This is the same arithmetic
+    `projections.max_legal_bid` does mid-draft, restated for an empty roster —
+    and it is the real ceiling on a one-player cap. Declaring a cap above it is
+    not aggressive, it is inert: you could never reach the number.
+
+    Derived from the roster and the budget, like `bench_floor`, so it needs no
+    archetype and no history to be true.
+    """
+    budget = int(getattr(league, "budget", 0) or 0)
+    slots = int(getattr(league, "draftable_slots", 0) or 0)
+    if budget <= 0 or slots <= 0:
+        return budget
+    return max(1, budget - (slots - 1))
+
+
 def market_shape(league, book) -> dict[Position, float]:
     """What share of starter money each position commands, per the sheet.
 
@@ -159,7 +178,8 @@ def market_shape(league, book) -> dict[Position, float]:
 
 
 def default_preset(
-    league, book, archetype: str = "balanced", *, bench_reserve: int | None = None
+    league, book, archetype: str = "balanced", *,
+    bench_reserve: int | None = None, max_on_one_player: int | None = None,
 ) -> StrategyPreset:
     """A starting plan built from the market, for you to edit rather than invent.
 
@@ -192,7 +212,10 @@ def default_preset(
         # you cannot check.
         return StrategyPreset(
             archetype=archetype,
-            max_on_one_player=int(round(budget * shape.max_share)) if budget else 0,
+            max_on_one_player=(
+                max_on_one_player if max_on_one_player is not None
+                else (int(round(budget * shape.max_share)) if budget else 0)
+            ),
             bench_reserve=(
                 bench_reserve if bench_reserve is not None
                 else (int(round(budget * shape.bench_reserve_share)) if budget else 0)
@@ -221,7 +244,10 @@ def default_preset(
     return StrategyPreset(
         archetype=archetype,
         budget_by_position=planned,
-        max_on_one_player=int(round(budget * shape.max_share)),
+        max_on_one_player=(
+            max_on_one_player if max_on_one_player is not None
+            else int(round(budget * shape.max_share))
+        ),
         bench_reserve=reserve,
     )
 
@@ -336,4 +362,12 @@ def strategy_problem(
             f"max_on_one_player is ${preset.max_on_one_player}, more than the "
             f"whole ${budget} budget"
         )
+    if preset.max_on_one_player and league is not None:
+        ceiling = opening_max_bid(league)
+        if preset.max_on_one_player > ceiling:
+            return (
+                f"max_on_one_player is ${preset.max_on_one_player}, but the most "
+                f"anyone can legally bid on their first player is ${ceiling} — the "
+                "other roster slots still cost $1 each, so the cap can never bind"
+            )
     return None

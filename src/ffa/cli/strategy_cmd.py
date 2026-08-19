@@ -21,7 +21,13 @@ from pathlib import Path
 
 from ffa.config.loader import DEFAULT_CONFIG_PATH, load_config, write_config
 from ffa.config.schema import ConfigError
-from ffa.config.strategy import ARCHETYPES, BY_NAME, bench_floor, default_preset
+from ffa.config.strategy import (
+    ARCHETYPES,
+    BY_NAME,
+    bench_floor,
+    default_preset,
+    opening_max_bid,
+)
 
 
 def _load_book(config):
@@ -55,7 +61,21 @@ def cmd_strategy_init(args: argparse.Namespace) -> int:
             "reserves less than that cannot be filled."
         )
 
-    preset = default_preset(config, book, args.archetype, bench_reserve=args.bench)
+    ceiling = opening_max_bid(config)
+    if args.max_player is not None and args.max_player > ceiling:
+        raise ConfigError(
+            f"--max-player {args.max_player} is above ${ceiling}, the most anyone "
+            f"can legally bid on their first player: the other "
+            f"{config.draftable_slots - 1} roster slots still cost $1 each. A cap "
+            "above that can never bind."
+        )
+    if args.max_player is not None and args.max_player < 1:
+        raise ConfigError("--max-player must be at least $1")
+
+    preset = default_preset(
+        config, book, args.archetype,
+        bench_reserve=args.bench, max_on_one_player=args.max_player,
+    )
     from dataclasses import replace
 
     write_config(replace(config, strategy=preset), args.path)
@@ -63,7 +83,8 @@ def cmd_strategy_init(args: argparse.Namespace) -> int:
     shape = BY_NAME[args.archetype]
     print(f"wrote {args.path}")
     print(f"  archetype    {preset.archetype} — {shape.note}")
-    print(f"  one player   at most ${preset.max_on_one_player}")
+    print(f"  one player   at most ${preset.max_on_one_player}"
+          f"   (legal ceiling ${ceiling})")
     at_floor = " (the $1-per-slot floor)" if preset.bench_reserve == floor else ""
     print(f"  bench        ${preset.bench_reserve} held back{at_floor}")
     print(f"  positions    ${preset.planned_total} across "
@@ -133,6 +154,10 @@ def add_parser(sub) -> None:
         "--archetype", default="balanced", choices=names,
         help="; ".join(f"{a.name}: {a.note}" for a in ARCHETYPES),
     )
+    init.add_argument("--max-player", dest="max_player", type=int, default=None,
+                      metavar="DOLLARS",
+                      help="the most you intend to spend on any one player, "
+                           "instead of the archetype's share")
     init.add_argument("--bench", type=int, default=None, metavar="DOLLARS",
                       help="hold back this much for the bench instead of the "
                            "archetype's share; the difference goes back into the "

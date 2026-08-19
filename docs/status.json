@@ -409,7 +409,7 @@
     },
     {
       "title": "The plan is calibrated to this league, not to an archetype constant",
-      "body": "The generated bench reserve was $20 — 10% of budget, an archetype default with nothing behind it. Four seasons say the median team here spends $5 on its cheapest five picks, which is also the arithmetic floor: 5 bench slots at the $1 minimum. Rebuilt with `--bench 5`, and the freed $15 went back into the split at market shares. Plan now sits within a few dollars of the league median at every position: WR $85 vs $91, RB $82 vs $74, TE $13 vs $7, QB $12 vs $9. `max_on_one_player` stays $70 — binding rather than slack, since the priciest player in four seasons went $80."
+      "body": "The generated bench reserve was $20 — 10% of budget, an archetype default with nothing behind it. Four seasons say the median team here spends $5 on its cheapest five picks, which is also the arithmetic floor: 5 bench slots at the $1 minimum. Rebuilt with --bench 5, and the freed $15 went back into the split at market shares. The plan now sits within a few dollars of the league median at every position: WR $85 vs $91, RB $82 vs $74, TE $13 vs $7, QB $12 vs $9. max_on_one_player set to $75 by hand — the priciest player in four seasons went $80, so it still binds at the very top, which is the point of having one. Both overrides are reproducible flags, not TOML edits: `ffa strategy init --force --bench 5 --max-player 75` rebuilds this plan from scratch."
     }
   ]
 }

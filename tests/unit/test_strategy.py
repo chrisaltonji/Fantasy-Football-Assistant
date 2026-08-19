@@ -25,6 +25,7 @@ from ffa.config.strategy import (
     bench_floor,
     default_preset,
     market_shape,
+    opening_max_bid,
     parse_strategy,
     strategy_problem,
     strategy_to_dict,
@@ -189,6 +190,41 @@ def test_a_plan_with_no_positions_is_not_held_to_the_floor(snapshot):
     """Half a plan — concentration only, no split — has nothing to under-fund."""
     preset = StrategyPreset(archetype="balanced", max_on_one_player=70)
     assert strategy_problem(preset, snapshot.budget, snapshot) is None
+
+
+# --- the cap ceiling, also derived ----------------------------------------------------
+
+
+def test_the_cap_ceiling_is_what_you_could_actually_bid_on_pick_one(snapshot):
+    """Every other roster slot still costs $1, so that money is not available
+    for this player. Same arithmetic as `max_legal_bid`, on an empty roster."""
+    # $200 budget, 14 draftable slots: 13 others at $1 leaves $187.
+    assert opening_max_bid(snapshot) == snapshot.budget - (snapshot.draftable_slots - 1)
+
+
+def test_a_cap_above_the_legal_ceiling_is_inert_and_says_so(snapshot, book):
+    """Not aggressive — inert. You could never reach the number, so a cap set
+    there silently never binds, which is worse than no cap at all."""
+    preset = replace(default_preset(snapshot, book), max_on_one_player=195)
+
+    problem = strategy_problem(preset, snapshot.budget, snapshot)
+    assert problem and "can never bind" in problem
+
+
+def test_a_cap_at_the_ceiling_is_allowed(snapshot, book):
+    preset = replace(
+        default_preset(snapshot, book), max_on_one_player=opening_max_bid(snapshot)
+    )
+    assert strategy_problem(preset, snapshot.budget, snapshot) is None
+
+
+def test_the_cap_can_be_declared_outright(snapshot, book):
+    """The archetype's share is a starting point, not the only way to say it."""
+    preset = default_preset(snapshot, book, "balanced", max_on_one_player=75)
+
+    assert preset.max_on_one_player == 75
+    # And it does not disturb the split, which is derived separately.
+    assert preset.budget_by_position == default_preset(snapshot, book, "balanced").budget_by_position
 
 
 # --- config round trip -----------------------------------------------------------------
