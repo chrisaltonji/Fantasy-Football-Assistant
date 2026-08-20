@@ -1,5 +1,11 @@
 # Draft Dashboard — Requirements for Design
 
+> **Designing the screen?** Start with
+> [`dashboard_design_brief.md`](dashboard_design_brief.md) — the short,
+> high-level handoff: what must be on screen, the rules that are correctness
+> rather than taste, and what is entirely yours. This document is the longer
+> original brief and the reasoning behind those rules.
+
 Input brief for the dashboard design effort. Derived from
 `05_advisory_layer_capabilities.md`; this document turns that capability list
 into concrete panels, an information hierarchy, and the data contract the

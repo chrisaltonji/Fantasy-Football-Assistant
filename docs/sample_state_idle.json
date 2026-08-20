@@ -1,0 +1,2055 @@
+{
+  "schema_version": 1,
+  "draft_id": "123456-sample",
+  "generated_at": "2026-08-19T23:13:00Z",
+  "initialized": true,
+  "reference": {
+    "source": "data\\reference\\espn_values.csv",
+    "players": 352,
+    "scale": 1.0,
+    "is_sample": false
+  },
+  "league": {
+    "name": "Example Auction League",
+    "budget": 200,
+    "team_count": 12,
+    "draftable_slots": 15,
+    "roster_slots": {
+      "BE": 5,
+      "DST": 1,
+      "FLEX": 1,
+      "IR": 1,
+      "K": 1,
+      "QB": 1,
+      "RB": 2,
+      "TE": 1,
+      "WR": 3
+    },
+    "flex_positions": [
+      "RB",
+      "WR",
+      "TE"
+    ]
+  },
+  "me": {
+    "dossier": null,
+    "history": {
+      "seasons": [
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "accounts": 1,
+      "spend_curve": [
+        0.2888,
+        0.6538,
+        0.8125,
+        0.89,
+        0.9287,
+        0.9512,
+        0.9762,
+        0.99,
+        0.9962,
+        0.9975
+      ],
+      "curve_spread": [
+        0.225,
+        0.045,
+        0.065,
+        0.045,
+        0.0475,
+        0.0175,
+        0.015,
+        0.005,
+        0.005,
+        0.005
+      ],
+      "useful_through": 0.3,
+      "spend_shape": "balanced",
+      "pace": "steady",
+      "nomination_premium": 2.42,
+      "te_share": 0.0476,
+      "is_thin": false
+    },
+    "team_id": 3,
+    "owner_id": "{11111111-0000-4000-8000-000000000001}",
+    "manager": "casey",
+    "name": null,
+    "label": "casey",
+    "is_me": true,
+    "spent": 96,
+    "remaining": 104,
+    "remaining_is_floor": false,
+    "unknown_price_count": 0,
+    "max_legal_bid": 97,
+    "is_overspent": false,
+    "roster_count": 7,
+    "open_slots": 8,
+    "open_slots_by_pos": {
+      "QB": 5,
+      "RB": 5,
+      "WR": 5,
+      "TE": 6,
+      "K": 6,
+      "DST": 6
+    },
+    "starter_gaps": {
+      "DST": 1,
+      "K": 1,
+      "TE": 1
+    },
+    "roster": [
+      {
+        "key": "breece-hall",
+        "name": "Breece Hall",
+        "player_id": null,
+        "position": "RB",
+        "price": 18,
+        "price_known": true,
+        "price_provenance": "SIM",
+        "reference_value": 25,
+        "delta": -7
+      },
+      {
+        "key": "bucky-irving",
+        "name": "Bucky Irving",
+        "player_id": null,
+        "position": "RB",
+        "price": 12,
+        "price_known": true,
+        "price_provenance": "SIM",
+        "reference_value": 15,
+        "delta": -3
+      },
+      {
+        "key": "cam-skattebo",
+        "name": "Cam Skattebo",
+        "player_id": null,
+        "position": "RB",
+        "price": 13,
+        "price_known": true,
+        "price_provenance": "SIM",
+        "reference_value": 18,
+        "delta": -5
+      },
+      {
+        "key": "jameson-williams",
+        "name": "Jameson Williams",
+        "player_id": null,
+        "position": "WR",
+        "price": 8,
+        "price_known": true,
+        "price_provenance": "SIM",
+        "reference_value": 10,
+        "delta": -2
+      },
+      {
+        "key": "josh-allen",
+        "name": "Josh Allen",
+        "player_id": null,
+        "position": "QB",
+        "price": 22,
+        "price_known": true,
+        "price_provenance": "SIM",
+        "reference_value": 30,
+        "delta": -8
+      },
+      {
+        "key": "terry-mclaurin",
+        "name": "Terry McLaurin",
+        "player_id": null,
+        "position": "WR",
+        "price": 9,
+        "price_known": true,
+        "price_provenance": "SIM",
+        "reference_value": 12,
+        "delta": -3
+      },
+      {
+        "key": "tetairoa-mcmillan",
+        "name": "Tetairoa McMillan",
+        "player_id": null,
+        "position": "WR",
+        "price": 14,
+        "price_known": true,
+        "price_provenance": "SIM",
+        "reference_value": 19,
+        "delta": -5
+      }
+    ]
+  },
+  "teams": [
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.0612,
+          0.4838,
+          0.7212,
+          0.79,
+          0.8688,
+          0.955,
+          0.9725,
+          0.98,
+          0.9888,
+          1.0
+        ],
+        "curve_spread": [
+          0.1225,
+          0.3025,
+          0.1375,
+          0.1425,
+          0.1075,
+          0.0,
+          0.0225,
+          0.0175,
+          0.0125,
+          0.0
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "value_hunter",
+        "pace": "steady",
+        "nomination_premium": -0.72,
+        "te_share": 0.1313,
+        "is_thin": false
+      },
+      "team_id": 1,
+      "owner_id": "{22222222-0000-4000-8000-000000000002}",
+      "manager": "alex",
+      "name": null,
+      "label": "alex",
+      "is_me": false,
+      "spent": 187,
+      "remaining": 13,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 3,
+      "is_overspent": false,
+      "roster_count": 4,
+      "open_slots": 11,
+      "open_slots_by_pos": {
+        "QB": 5,
+        "RB": 6,
+        "WR": 8,
+        "TE": 7,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "FLEX": 1,
+        "K": 1,
+        "TE": 1,
+        "WR": 2
+      },
+      "roster": [
+        {
+          "key": "bijan-robinson",
+          "name": "Bijan Robinson",
+          "player_id": null,
+          "position": "RB",
+          "price": 65,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 62,
+          "delta": 3
+        },
+        {
+          "key": "garrett-wilson",
+          "name": "Garrett Wilson",
+          "player_id": null,
+          "position": "WR",
+          "price": 36,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 23,
+          "delta": 13
+        },
+        {
+          "key": "jalen-hurts",
+          "name": "Jalen Hurts",
+          "player_id": null,
+          "position": "QB",
+          "price": 12,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 10,
+          "delta": 2
+        },
+        {
+          "key": "jonathan-taylor",
+          "name": "Jonathan Taylor",
+          "player_id": null,
+          "position": "RB",
+          "price": 74,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 51,
+          "delta": 23
+        }
+      ]
+    },
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.6175,
+          0.84,
+          0.8825,
+          0.905,
+          0.91,
+          0.9437,
+          0.9575,
+          0.9762,
+          0.9888,
+          1.0
+        ],
+        "curve_spread": [
+          0.2625,
+          0.0375,
+          0.0375,
+          0.0275,
+          0.03,
+          0.02,
+          0.0075,
+          0.005,
+          0.005,
+          0.0
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "stars_and_scrubs",
+        "pace": "front_loads",
+        "nomination_premium": -5.12,
+        "te_share": 0.0262,
+        "is_thin": false
+      },
+      "team_id": 2,
+      "owner_id": "{33333333-0000-4000-8000-000000000003}",
+      "manager": "blake",
+      "name": null,
+      "label": "blake",
+      "is_me": false,
+      "spent": 191,
+      "remaining": 9,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 1,
+      "is_overspent": false,
+      "roster_count": 6,
+      "open_slots": 9,
+      "open_slots_by_pos": {
+        "QB": 6,
+        "RB": 6,
+        "WR": 5,
+        "TE": 5,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "K": 1,
+        "QB": 1,
+        "RB": 1
+      },
+      "roster": [
+        {
+          "key": "aj-brown",
+          "name": "A.J. Brown",
+          "player_id": null,
+          "position": "WR",
+          "price": 29,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 29,
+          "delta": 0
+        },
+        {
+          "key": "amonra-st-brown",
+          "name": "Amon-Ra St. Brown",
+          "player_id": null,
+          "position": "WR",
+          "price": 53,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 52,
+          "delta": 1
+        },
+        {
+          "key": "chase-brown",
+          "name": "Chase Brown",
+          "player_id": null,
+          "position": "RB",
+          "price": 32,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 33,
+          "delta": -1
+        },
+        {
+          "key": "colston-loveland",
+          "name": "Colston Loveland",
+          "player_id": null,
+          "position": "TE",
+          "price": 13,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 14,
+          "delta": -1
+        },
+        {
+          "key": "emeka-egbuka",
+          "name": "Emeka Egbuka",
+          "player_id": null,
+          "position": "WR",
+          "price": 18,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 18,
+          "delta": 0
+        },
+        {
+          "key": "justin-jefferson",
+          "name": "Justin Jefferson",
+          "player_id": null,
+          "position": "WR",
+          "price": 46,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 46,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.2888,
+          0.6538,
+          0.8125,
+          0.89,
+          0.9287,
+          0.9512,
+          0.9762,
+          0.99,
+          0.9962,
+          0.9975
+        ],
+        "curve_spread": [
+          0.225,
+          0.045,
+          0.065,
+          0.045,
+          0.0475,
+          0.0175,
+          0.015,
+          0.005,
+          0.005,
+          0.005
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "balanced",
+        "pace": "steady",
+        "nomination_premium": 2.42,
+        "te_share": 0.0476,
+        "is_thin": false
+      },
+      "team_id": 3,
+      "owner_id": "{11111111-0000-4000-8000-000000000001}",
+      "manager": "casey",
+      "name": null,
+      "label": "casey",
+      "is_me": true,
+      "spent": 96,
+      "remaining": 104,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 97,
+      "is_overspent": false,
+      "roster_count": 7,
+      "open_slots": 8,
+      "open_slots_by_pos": {
+        "QB": 5,
+        "RB": 5,
+        "WR": 5,
+        "TE": 6,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "K": 1,
+        "TE": 1
+      },
+      "roster": [
+        {
+          "key": "breece-hall",
+          "name": "Breece Hall",
+          "player_id": null,
+          "position": "RB",
+          "price": 18,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 25,
+          "delta": -7
+        },
+        {
+          "key": "bucky-irving",
+          "name": "Bucky Irving",
+          "player_id": null,
+          "position": "RB",
+          "price": 12,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 15,
+          "delta": -3
+        },
+        {
+          "key": "cam-skattebo",
+          "name": "Cam Skattebo",
+          "player_id": null,
+          "position": "RB",
+          "price": 13,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 18,
+          "delta": -5
+        },
+        {
+          "key": "jameson-williams",
+          "name": "Jameson Williams",
+          "player_id": null,
+          "position": "WR",
+          "price": 8,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 10,
+          "delta": -2
+        },
+        {
+          "key": "josh-allen",
+          "name": "Josh Allen",
+          "player_id": null,
+          "position": "QB",
+          "price": 22,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 30,
+          "delta": -8
+        },
+        {
+          "key": "terry-mclaurin",
+          "name": "Terry McLaurin",
+          "player_id": null,
+          "position": "WR",
+          "price": 9,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 12,
+          "delta": -3
+        },
+        {
+          "key": "tetairoa-mcmillan",
+          "name": "Tetairoa McMillan",
+          "player_id": null,
+          "position": "WR",
+          "price": 14,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 19,
+          "delta": -5
+        }
+      ]
+    },
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.1963,
+          0.3712,
+          0.5988,
+          0.7312,
+          0.8938,
+          0.9612,
+          0.975,
+          0.98,
+          0.98,
+          0.98
+        ],
+        "curve_spread": [
+          0.16,
+          0.075,
+          0.1575,
+          0.1525,
+          0.055,
+          0.025,
+          0.0225,
+          0.0275,
+          0.0275,
+          0.0275
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "value_hunter",
+        "pace": "steady",
+        "nomination_premium": 3.14,
+        "te_share": 0.0727,
+        "is_thin": false
+      },
+      "team_id": 4,
+      "owner_id": "{44444444-0000-4000-8000-000000000004}",
+      "manager": "drew",
+      "name": null,
+      "label": "drew",
+      "is_me": false,
+      "spent": 19,
+      "remaining": 181,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 170,
+      "is_overspent": false,
+      "roster_count": 3,
+      "open_slots": 12,
+      "open_slots_by_pos": {
+        "QB": 5,
+        "RB": 7,
+        "WR": 8,
+        "TE": 7,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "FLEX": 1,
+        "K": 1,
+        "RB": 1,
+        "TE": 1,
+        "WR": 2
+      },
+      "roster": [
+        {
+          "key": "jayden-daniels",
+          "name": "Jayden Daniels",
+          "player_id": null,
+          "position": "QB",
+          "price": 6,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 11,
+          "delta": -5
+        },
+        {
+          "key": "luther-burden-iii",
+          "name": "Luther Burden III",
+          "player_id": null,
+          "position": "WR",
+          "price": 5,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 8,
+          "delta": -3
+        },
+        {
+          "key": "quinshon-judkins",
+          "name": "Quinshon Judkins",
+          "player_id": null,
+          "position": "RB",
+          "price": 8,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 16,
+          "delta": -8
+        }
+      ]
+    },
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.3875,
+          0.575,
+          0.7963,
+          0.8988,
+          0.9213,
+          0.955,
+          0.9637,
+          0.9762,
+          0.9888,
+          0.9975
+        ],
+        "curve_spread": [
+          0.385,
+          0.1625,
+          0.07,
+          0.0975,
+          0.0625,
+          0.0175,
+          0.01,
+          0.005,
+          0.0025,
+          0.005
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "balanced",
+        "pace": "front_loads",
+        "nomination_premium": 1.02,
+        "te_share": 0.0113,
+        "is_thin": false
+      },
+      "team_id": 5,
+      "owner_id": "{55555555-0000-4000-8000-000000000005}",
+      "manager": "evan",
+      "name": null,
+      "label": "evan",
+      "is_me": false,
+      "spent": 191,
+      "remaining": 9,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 1,
+      "is_overspent": false,
+      "roster_count": 6,
+      "open_slots": 9,
+      "open_slots_by_pos": {
+        "QB": 6,
+        "RB": 5,
+        "WR": 5,
+        "TE": 6,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "K": 1,
+        "QB": 1,
+        "TE": 1
+      },
+      "roster": [
+        {
+          "key": "chris-olave",
+          "name": "Chris Olave",
+          "player_id": null,
+          "position": "WR",
+          "price": 26,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 24,
+          "delta": 2
+        },
+        {
+          "key": "dandre-swift",
+          "name": "D'Andre Swift",
+          "player_id": null,
+          "position": "RB",
+          "price": 6,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 9,
+          "delta": -3
+        },
+        {
+          "key": "george-pickens",
+          "name": "George Pickens",
+          "player_id": null,
+          "position": "WR",
+          "price": 30,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 26,
+          "delta": 4
+        },
+        {
+          "key": "jamarr-chase",
+          "name": "Ja'Marr Chase",
+          "player_id": null,
+          "position": "WR",
+          "price": 63,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 58,
+          "delta": 5
+        },
+        {
+          "key": "nico-collins",
+          "name": "Nico Collins",
+          "player_id": null,
+          "position": "WR",
+          "price": 30,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 28,
+          "delta": 2
+        },
+        {
+          "key": "omarion-hampton",
+          "name": "Omarion Hampton",
+          "player_id": null,
+          "position": "RB",
+          "price": 36,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 32,
+          "delta": 4
+        }
+      ]
+    },
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.3113,
+          0.56,
+          0.5975,
+          0.7937,
+          0.8325,
+          0.9387,
+          0.9625,
+          0.975,
+          0.985,
+          0.985
+        ],
+        "curve_spread": [
+          0.045,
+          0.0525,
+          0.0225,
+          0.1125,
+          0.08,
+          0.01,
+          0.015,
+          0.0125,
+          0.0175,
+          0.0175
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "balanced",
+        "pace": "steady",
+        "nomination_premium": 1.09,
+        "te_share": 0.0266,
+        "is_thin": false
+      },
+      "team_id": 7,
+      "owner_id": "{66666666-0000-4000-8000-000000000006}",
+      "manager": "frankie",
+      "name": null,
+      "label": "frankie",
+      "is_me": false,
+      "spent": 189,
+      "remaining": 11,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 1,
+      "is_overspent": false,
+      "roster_count": 4,
+      "open_slots": 11,
+      "open_slots_by_pos": {
+        "QB": 6,
+        "RB": 6,
+        "WR": 7,
+        "TE": 7,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "FLEX": 1,
+        "K": 1,
+        "QB": 1,
+        "TE": 1,
+        "WR": 1
+      },
+      "roster": [
+        {
+          "key": "devonta-smith",
+          "name": "DeVonta Smith",
+          "player_id": null,
+          "position": "WR",
+          "price": 30,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 20,
+          "delta": 10
+        },
+        {
+          "key": "javonte-williams",
+          "name": "Javonte Williams",
+          "player_id": null,
+          "position": "RB",
+          "price": 17,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 23,
+          "delta": -6
+        },
+        {
+          "key": "jaxon-smithnjigba",
+          "name": "Jaxon Smith-Njigba",
+          "player_id": null,
+          "position": "WR",
+          "price": 84,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 55,
+          "delta": 29
+        },
+        {
+          "key": "jeremiyah-love",
+          "name": "Jeremiyah Love",
+          "player_id": null,
+          "position": "RB",
+          "price": 58,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 38,
+          "delta": 20
+        }
+      ]
+    },
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.385,
+          0.6213,
+          0.83,
+          0.8525,
+          0.8838,
+          0.9163,
+          0.96,
+          0.9712,
+          0.9862,
+          0.9988
+        ],
+        "curve_spread": [
+          0.1325,
+          0.19,
+          0.0475,
+          0.065,
+          0.08,
+          0.045,
+          0.01,
+          0.0125,
+          0.0125,
+          0.0025
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "balanced",
+        "pace": "waits",
+        "nomination_premium": 4.08,
+        "te_share": 0.0163,
+        "is_thin": false
+      },
+      "team_id": 8,
+      "owner_id": "{77777777-0000-4000-8000-000000000007}",
+      "manager": "gray",
+      "name": null,
+      "label": "gray",
+      "is_me": false,
+      "spent": 192,
+      "remaining": 8,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 1,
+      "is_overspent": false,
+      "roster_count": 7,
+      "open_slots": 8,
+      "open_slots_by_pos": {
+        "QB": 5,
+        "RB": 5,
+        "WR": 5,
+        "TE": 6,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "K": 1,
+        "TE": 1
+      },
+      "roster": [
+        {
+          "key": "ceedee-lamb",
+          "name": "CeeDee Lamb",
+          "player_id": null,
+          "position": "WR",
+          "price": 47,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 47,
+          "delta": 0
+        },
+        {
+          "key": "devon-achane",
+          "name": "De'Von Achane",
+          "player_id": null,
+          "position": "RB",
+          "price": 49,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 46,
+          "delta": 3
+        },
+        {
+          "key": "joe-burrow",
+          "name": "Joe Burrow",
+          "player_id": null,
+          "position": "QB",
+          "price": 7,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 9,
+          "delta": -2
+        },
+        {
+          "key": "josh-jacobs",
+          "name": "Josh Jacobs",
+          "player_id": null,
+          "position": "RB",
+          "price": 25,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 25,
+          "delta": 0
+        },
+        {
+          "key": "malik-nabers",
+          "name": "Malik Nabers",
+          "player_id": null,
+          "position": "WR",
+          "price": 25,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 23,
+          "delta": 2
+        },
+        {
+          "key": "rome-odunze",
+          "name": "Rome Odunze",
+          "player_id": null,
+          "position": "WR",
+          "price": 9,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 9,
+          "delta": 0
+        },
+        {
+          "key": "saquon-barkley",
+          "name": "Saquon Barkley",
+          "player_id": null,
+          "position": "RB",
+          "price": 30,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 38,
+          "delta": -8
+        }
+      ]
+    },
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.53,
+          0.7,
+          0.855,
+          0.8812,
+          0.9175,
+          0.94,
+          0.9512,
+          0.9625,
+          0.9838,
+          1.0
+        ],
+        "curve_spread": [
+          0.3025,
+          0.1475,
+          0.1,
+          0.1075,
+          0.05,
+          0.0275,
+          0.03,
+          0.02,
+          0.0175,
+          0.0
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "stars_and_scrubs",
+        "pace": "waits",
+        "nomination_premium": -3.46,
+        "te_share": 0.035,
+        "is_thin": false
+      },
+      "team_id": 9,
+      "owner_id": "{88888888-0000-4000-8000-000000000008}",
+      "manager": "harper",
+      "name": null,
+      "label": "harper",
+      "is_me": false,
+      "spent": 82,
+      "remaining": 118,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 111,
+      "is_overspent": false,
+      "roster_count": 7,
+      "open_slots": 8,
+      "open_slots_by_pos": {
+        "QB": 5,
+        "RB": 5,
+        "WR": 5,
+        "TE": 6,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "K": 1,
+        "TE": 1
+      },
+      "roster": [
+        {
+          "key": "drake-maye",
+          "name": "Drake Maye",
+          "player_id": null,
+          "position": "QB",
+          "price": 8,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 12,
+          "delta": -4
+        },
+        {
+          "key": "jaylen-waddle",
+          "name": "Jaylen Waddle",
+          "player_id": null,
+          "position": "WR",
+          "price": 9,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 12,
+          "delta": -3
+        },
+        {
+          "key": "kenneth-walker-iii",
+          "name": "Kenneth Walker III",
+          "player_id": null,
+          "position": "RB",
+          "price": 24,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 31,
+          "delta": -7
+        },
+        {
+          "key": "kyren-williams",
+          "name": "Kyren Williams",
+          "player_id": null,
+          "position": "RB",
+          "price": 12,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 20,
+          "delta": -8
+        },
+        {
+          "key": "ladd-mcconkey",
+          "name": "Ladd McConkey",
+          "player_id": null,
+          "position": "WR",
+          "price": 10,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 15,
+          "delta": -5
+        },
+        {
+          "key": "tee-higgins",
+          "name": "Tee Higgins",
+          "player_id": null,
+          "position": "WR",
+          "price": 9,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 13,
+          "delta": -4
+        },
+        {
+          "key": "travis-etienne-jr",
+          "name": "Travis Etienne Jr.",
+          "player_id": null,
+          "position": "RB",
+          "price": 10,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 17,
+          "delta": -7
+        }
+      ]
+    },
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.4913,
+          0.6613,
+          0.8175,
+          0.8838,
+          0.9025,
+          0.9363,
+          0.955,
+          0.9675,
+          0.98,
+          0.9912
+        ],
+        "curve_spread": [
+          0.2075,
+          0.2175,
+          0.1025,
+          0.035,
+          0.0475,
+          0.035,
+          0.05,
+          0.03,
+          0.015,
+          0.015
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "stars_and_scrubs",
+        "pace": "front_loads",
+        "nomination_premium": 3.91,
+        "te_share": 0.0252,
+        "is_thin": false
+      },
+      "team_id": 10,
+      "owner_id": "{99999999-0000-4000-8000-000000000009}",
+      "manager": "indigo",
+      "name": null,
+      "label": "indigo",
+      "is_me": false,
+      "spent": 0,
+      "remaining": 200,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 186,
+      "is_overspent": false,
+      "roster_count": 0,
+      "open_slots": 15,
+      "open_slots_by_pos": {
+        "QB": 6,
+        "RB": 8,
+        "WR": 9,
+        "TE": 7,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "FLEX": 1,
+        "K": 1,
+        "QB": 1,
+        "RB": 2,
+        "TE": 1,
+        "WR": 3
+      },
+      "roster": []
+    },
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.5,
+          0.7275,
+          0.8962,
+          0.9225,
+          0.9463,
+          0.9575,
+          0.9688,
+          0.9788,
+          0.985,
+          0.9938
+        ],
+        "curve_spread": [
+          0.1625,
+          0.165,
+          0.0475,
+          0.0275,
+          0.025,
+          0.015,
+          0.0125,
+          0.0125,
+          0.0075,
+          0.01
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "balanced",
+        "pace": "front_loads",
+        "nomination_premium": 2.88,
+        "te_share": 0.2277,
+        "is_thin": false
+      },
+      "team_id": 11,
+      "owner_id": "{AAAAAAAA-0000-4000-8000-00000000000A}",
+      "manager": "jordan",
+      "name": null,
+      "label": "jordan",
+      "is_me": false,
+      "spent": 189,
+      "remaining": 11,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 1,
+      "is_overspent": false,
+      "roster_count": 4,
+      "open_slots": 11,
+      "open_slots_by_pos": {
+        "QB": 6,
+        "RB": 7,
+        "WR": 7,
+        "TE": 6,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "FLEX": 1,
+        "K": 1,
+        "QB": 1,
+        "RB": 1,
+        "WR": 1
+      },
+      "roster": [
+        {
+          "key": "christian-mccaffrey",
+          "name": "Christian McCaffrey",
+          "player_id": null,
+          "position": "RB",
+          "price": 58,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 52,
+          "delta": 6
+        },
+        {
+          "key": "puka-nacua",
+          "name": "Puka Nacua",
+          "player_id": null,
+          "position": "WR",
+          "price": 74,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 57,
+          "delta": 17
+        },
+        {
+          "key": "trey-mcbride",
+          "name": "Trey McBride",
+          "player_id": null,
+          "position": "TE",
+          "price": 37,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 34,
+          "delta": 3
+        },
+        {
+          "key": "zay-flowers",
+          "name": "Zay Flowers",
+          "player_id": null,
+          "position": "WR",
+          "price": 20,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 19,
+          "delta": 1
+        }
+      ]
+    },
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.165,
+          0.4238,
+          0.6225,
+          0.7737,
+          0.8738,
+          0.91,
+          0.9512,
+          0.9587,
+          0.9688,
+          0.9688
+        ],
+        "curve_spread": [
+          0.155,
+          0.405,
+          0.1775,
+          0.0825,
+          0.0225,
+          0.0375,
+          0.015,
+          0.02,
+          0.03,
+          0.03
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "balanced",
+        "pace": "steady",
+        "nomination_premium": 6.26,
+        "te_share": 0.1084,
+        "is_thin": false
+      },
+      "team_id": 12,
+      "owner_id": "{BBBBBBBB-0000-4000-8000-00000000000B}",
+      "manager": "kai",
+      "name": null,
+      "label": "kai",
+      "is_me": false,
+      "spent": 189,
+      "remaining": 11,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 1,
+      "is_overspent": false,
+      "roster_count": 4,
+      "open_slots": 11,
+      "open_slots_by_pos": {
+        "QB": 6,
+        "RB": 7,
+        "WR": 7,
+        "TE": 6,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "FLEX": 1,
+        "K": 1,
+        "QB": 1,
+        "RB": 1,
+        "WR": 1
+      },
+      "roster": [
+        {
+          "key": "brock-bowers",
+          "name": "Brock Bowers",
+          "player_id": null,
+          "position": "TE",
+          "price": 35,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 30,
+          "delta": 5
+        },
+        {
+          "key": "courtland-sutton",
+          "name": "Courtland Sutton",
+          "player_id": null,
+          "position": "WR",
+          "price": 5,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 5,
+          "delta": 0
+        },
+        {
+          "key": "jahmyr-gibbs",
+          "name": "Jahmyr Gibbs",
+          "player_id": null,
+          "position": "RB",
+          "price": 102,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 64,
+          "delta": 38
+        },
+        {
+          "key": "rashee-rice",
+          "name": "Rashee Rice",
+          "player_id": null,
+          "position": "WR",
+          "price": 47,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 33,
+          "delta": 14
+        }
+      ]
+    },
+    {
+      "dossier": null,
+      "history": {
+        "seasons": [
+          2022,
+          2023,
+          2024,
+          2025
+        ],
+        "accounts": 1,
+        "spend_curve": [
+          0.5138,
+          0.755,
+          0.815,
+          0.86,
+          0.95,
+          0.9587,
+          0.9738,
+          0.9812,
+          0.9862,
+          0.9975
+        ],
+        "curve_spread": [
+          0.2175,
+          0.115,
+          0.095,
+          0.0875,
+          0.0125,
+          0.0125,
+          0.0175,
+          0.0175,
+          0.0125,
+          0.005
+        ],
+        "useful_through": 0.3,
+        "spend_shape": "stars_and_scrubs",
+        "pace": "steady",
+        "nomination_premium": 1.81,
+        "te_share": 0.0977,
+        "is_thin": false
+      },
+      "team_id": 13,
+      "owner_id": "{CCCCCCCC-0000-4000-8000-00000000000C}",
+      "manager": "lane",
+      "name": null,
+      "label": "lane",
+      "is_me": false,
+      "spent": 192,
+      "remaining": 8,
+      "remaining_is_floor": false,
+      "unknown_price_count": 0,
+      "max_legal_bid": 2,
+      "is_overspent": false,
+      "roster_count": 8,
+      "open_slots": 7,
+      "open_slots_by_pos": {
+        "QB": 5,
+        "RB": 5,
+        "WR": 5,
+        "TE": 5,
+        "K": 6,
+        "DST": 6
+      },
+      "starter_gaps": {
+        "DST": 1,
+        "K": 1
+      },
+      "roster": [
+        {
+          "key": "ashton-jeanty",
+          "name": "Ashton Jeanty",
+          "player_id": null,
+          "position": "RB",
+          "price": 38,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 38,
+          "delta": 0
+        },
+        {
+          "key": "davante-adams",
+          "name": "Davante Adams",
+          "player_id": null,
+          "position": "WR",
+          "price": 13,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 16,
+          "delta": -3
+        },
+        {
+          "key": "derrick-henry",
+          "name": "Derrick Henry",
+          "player_id": null,
+          "position": "RB",
+          "price": 34,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 34,
+          "delta": 0
+        },
+        {
+          "key": "dj-moore",
+          "name": "DJ Moore",
+          "player_id": null,
+          "position": "WR",
+          "price": 7,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 9,
+          "delta": -2
+        },
+        {
+          "key": "drake-london",
+          "name": "Drake London",
+          "player_id": null,
+          "position": "WR",
+          "price": 29,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 37,
+          "delta": -8
+        },
+        {
+          "key": "james-cook-iii",
+          "name": "James Cook III",
+          "player_id": null,
+          "position": "RB",
+          "price": 44,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 44,
+          "delta": 0
+        },
+        {
+          "key": "lamar-jackson",
+          "name": "Lamar Jackson",
+          "player_id": null,
+          "position": "QB",
+          "price": 16,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 16,
+          "delta": 0
+        },
+        {
+          "key": "tyler-warren",
+          "name": "Tyler Warren",
+          "player_id": null,
+          "position": "TE",
+          "price": 11,
+          "price_known": true,
+          "price_provenance": "SIM",
+          "reference_value": 13,
+          "delta": -2
+        }
+      ]
+    }
+  ],
+  "nomination": null,
+  "nomination_plan": {
+    "order_known": true,
+    "turns_taken": 60,
+    "total_nominations": 180,
+    "on_the_clock": {
+      "index": 60,
+      "pick_number": 61,
+      "round": 6,
+      "team_id": 9,
+      "label": "harper",
+      "is_me": false
+    },
+    "current_nominator": null,
+    "upcoming": [
+      {
+        "index": 60,
+        "pick_number": 61,
+        "round": 6,
+        "team_id": 9,
+        "label": "harper",
+        "is_me": false
+      },
+      {
+        "index": 61,
+        "pick_number": 62,
+        "round": 6,
+        "team_id": 11,
+        "label": "jordan",
+        "is_me": false
+      },
+      {
+        "index": 62,
+        "pick_number": 63,
+        "round": 6,
+        "team_id": 4,
+        "label": "drew",
+        "is_me": false
+      },
+      {
+        "index": 63,
+        "pick_number": 64,
+        "round": 6,
+        "team_id": 3,
+        "label": "casey",
+        "is_me": true
+      },
+      {
+        "index": 64,
+        "pick_number": 65,
+        "round": 6,
+        "team_id": 13,
+        "label": "lane",
+        "is_me": false
+      },
+      {
+        "index": 65,
+        "pick_number": 66,
+        "round": 6,
+        "team_id": 5,
+        "label": "evan",
+        "is_me": false
+      }
+    ],
+    "my_next": {
+      "index": 63,
+      "pick_number": 64,
+      "round": 6,
+      "team_id": 3,
+      "label": "casey",
+      "is_me": true
+    },
+    "my_turns_left": 10,
+    "nominations_until_mine": 3,
+    "is_my_turn": false,
+    "bargains": [],
+    "bargains_total": 0,
+    "out_of_reach": [],
+    "out_of_reach_total": 0,
+    "board_read": true,
+    "disagreement": ""
+  },
+  "strategy": {
+    "archetype": "balanced",
+    "budget": 200,
+    "planned_total": 195,
+    "bench_reserve": 5,
+    "spent_total": 96,
+    "remaining": 104,
+    "unknown_prices": 0,
+    "still_calls_for": 109,
+    "shortfall": 5,
+    "slack": 0,
+    "max_on_one_player": 75,
+    "biggest_buy": 22,
+    "breached_cap": false,
+    "positions": [
+      {
+        "position": "QB",
+        "planned": 12,
+        "spent": 22,
+        "variance": 10,
+        "open_slots": 5,
+        "still_calls_for": 0,
+        "is_material": true
+      },
+      {
+        "position": "RB",
+        "planned": 82,
+        "spent": 43,
+        "variance": -39,
+        "open_slots": 5,
+        "still_calls_for": 39,
+        "is_material": false
+      },
+      {
+        "position": "WR",
+        "planned": 85,
+        "spent": 31,
+        "variance": -54,
+        "open_slots": 5,
+        "still_calls_for": 54,
+        "is_material": false
+      },
+      {
+        "position": "TE",
+        "planned": 13,
+        "spent": 0,
+        "variance": -13,
+        "open_slots": 6,
+        "still_calls_for": 13,
+        "is_material": false
+      },
+      {
+        "position": "K",
+        "planned": 1,
+        "spent": 0,
+        "variance": -1,
+        "open_slots": 6,
+        "still_calls_for": 1,
+        "is_material": false
+      },
+      {
+        "position": "DST",
+        "planned": 2,
+        "spent": 0,
+        "variance": -2,
+        "open_slots": 6,
+        "still_calls_for": 2,
+        "is_material": false
+      }
+    ]
+  },
+  "market": {
+    "sales": 60,
+    "dollars_spent": 1717,
+    "unknown_prices": 0,
+    "dollars_remaining": 683,
+    "inflation_ratio": 1.051,
+    "reference_spent": 1633,
+    "read": "neutral"
+  },
+  "recent_sales": [
+    {
+      "key": "rashee-rice",
+      "name": "Rashee Rice",
+      "player_id": null,
+      "position": "WR",
+      "price": 47,
+      "price_known": true,
+      "price_provenance": "SIM",
+      "reference_value": 33,
+      "delta": 14,
+      "team_id": 12
+    },
+    {
+      "key": "rome-odunze",
+      "name": "Rome Odunze",
+      "player_id": null,
+      "position": "WR",
+      "price": 9,
+      "price_known": true,
+      "price_provenance": "SIM",
+      "reference_value": 9,
+      "delta": 0,
+      "team_id": 8
+    },
+    {
+      "key": "saquon-barkley",
+      "name": "Saquon Barkley",
+      "player_id": null,
+      "position": "RB",
+      "price": 30,
+      "price_known": true,
+      "price_provenance": "SIM",
+      "reference_value": 38,
+      "delta": -8,
+      "team_id": 8
+    },
+    {
+      "key": "tee-higgins",
+      "name": "Tee Higgins",
+      "player_id": null,
+      "position": "WR",
+      "price": 9,
+      "price_known": true,
+      "price_provenance": "SIM",
+      "reference_value": 13,
+      "delta": -4,
+      "team_id": 9
+    },
+    {
+      "key": "terry-mclaurin",
+      "name": "Terry McLaurin",
+      "player_id": null,
+      "position": "WR",
+      "price": 9,
+      "price_known": true,
+      "price_provenance": "SIM",
+      "reference_value": 12,
+      "delta": -3,
+      "team_id": 3
+    },
+    {
+      "key": "tetairoa-mcmillan",
+      "name": "Tetairoa McMillan",
+      "player_id": null,
+      "position": "WR",
+      "price": 14,
+      "price_known": true,
+      "price_provenance": "SIM",
+      "reference_value": 19,
+      "delta": -5,
+      "team_id": 3
+    },
+    {
+      "key": "travis-etienne-jr",
+      "name": "Travis Etienne Jr.",
+      "player_id": null,
+      "position": "RB",
+      "price": 10,
+      "price_known": true,
+      "price_provenance": "SIM",
+      "reference_value": 17,
+      "delta": -7,
+      "team_id": 9
+    },
+    {
+      "key": "trey-mcbride",
+      "name": "Trey McBride",
+      "player_id": null,
+      "position": "TE",
+      "price": 37,
+      "price_known": true,
+      "price_provenance": "SIM",
+      "reference_value": 34,
+      "delta": 3,
+      "team_id": 11
+    },
+    {
+      "key": "tyler-warren",
+      "name": "Tyler Warren",
+      "player_id": null,
+      "position": "TE",
+      "price": 11,
+      "price_known": true,
+      "price_provenance": "SIM",
+      "reference_value": 13,
+      "delta": -2,
+      "team_id": 13
+    },
+    {
+      "key": "zay-flowers",
+      "name": "Zay Flowers",
+      "player_id": null,
+      "position": "WR",
+      "price": 20,
+      "price_known": true,
+      "price_provenance": "SIM",
+      "reference_value": 19,
+      "delta": 1,
+      "team_id": 11
+    }
+  ],
+  "scarcity": {
+    "QB": {
+      "elite": 0,
+      "startable": 6,
+      "bench": 30,
+      "total_remaining": 36,
+      "starting_demand": 12,
+      "top_value_remaining": 5,
+      "is_drying_up": false
+    },
+    "RB": {
+      "elite": 0,
+      "startable": 6,
+      "bench": 58,
+      "total_remaining": 64,
+      "starting_demand": 28,
+      "top_value_remaining": 8,
+      "is_drying_up": true
+    },
+    "WR": {
+      "elite": 0,
+      "startable": 12,
+      "bench": 74,
+      "total_remaining": 86,
+      "starting_demand": 40,
+      "top_value_remaining": 8,
+      "is_drying_up": false
+    },
+    "TE": {
+      "elite": 2,
+      "startable": 10,
+      "bench": 30,
+      "total_remaining": 42,
+      "starting_demand": 16,
+      "top_value_remaining": 6,
+      "is_drying_up": false
+    },
+    "K": {
+      "elite": 4,
+      "startable": 8,
+      "bench": 20,
+      "total_remaining": 32,
+      "starting_demand": 12,
+      "top_value_remaining": 5,
+      "is_drying_up": false
+    },
+    "DST": {
+      "elite": 4,
+      "startable": 8,
+      "bench": 20,
+      "total_remaining": 32,
+      "starting_demand": 12,
+      "top_value_remaining": 4,
+      "is_drying_up": false
+    }
+  },
+  "warnings": []
+}
