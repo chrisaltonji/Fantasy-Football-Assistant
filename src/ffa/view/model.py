@@ -96,6 +96,9 @@ def build_view(
         # a key that silently meant "nobody passed events" would be read as
         # "nothing has happened".
         "feed": _feed_view(state, book, strategy, events),
+        # Capability 9. Usually empty, and a surface must render that as "no
+        # squeeze" rather than as a panel that failed to load.
+        "watchlist": _watchlist_view(advisory),
         # Capability 12. `null` when no plan is declared — which a surface must
         # render as "no plan", never as a row of zeroes.
         "strategy": _strategy_view(advisory),
@@ -208,6 +211,33 @@ def _player_view(player: PlayerEntity, book: Any = None) -> dict[str, Any]:
         # read without the surface having to do arithmetic.
         "delta": (price - value) if (price is not None and value is not None) else None,
     }
+
+
+def _watchlist_view(advisory) -> list[dict[str, Any]]:
+    """Positions where demand outruns supply among people who can still act.
+
+    `shortfall` is how many contenders go without. `mine` says whether one of
+    them is us, which is the difference between weather and a decision.
+    """
+    if advisory is None:
+        return []
+    return [
+        {
+            "position": s.position.value,
+            "supply": s.supply,
+            "contenders": s.contenders,
+            "shortfall": s.shortfall,
+            "mine": s.mine,
+            "is_acute": s.is_acute,
+            # Stock left that we cannot reach is a different problem from no
+            # stock, and needs a different answer.
+            "priced_out": s.priced_out,
+            "affordable": s.affordable,
+            "my_ceiling": s.my_ceiling,
+            "names": list(s.names),
+        }
+        for s in advisory.watchlist
+    ]
 
 
 def _feed_view(state, book, strategy, events) -> list[dict[str, Any]] | None:

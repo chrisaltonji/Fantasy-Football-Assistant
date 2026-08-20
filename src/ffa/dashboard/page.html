@@ -217,6 +217,13 @@ body{
 .rwline{display:flex;align-items:baseline;gap:8px;font:500 11.5px/1.35 var(--ui)}
 .rwline .r{margin-left:auto;font:400 11px/1 var(--ui);color:var(--label);text-align:right}
 .rw.scarce .rwline{font-weight:600}
+/* Capability 9 sits on the runway tile because it is the same subject: what is
+   left, against who still needs it. A squeeze is the sharper reading of a row
+   that is already there, not a panel of its own. */
+.rw.squeeze .rwline{color:var(--t-mid);font-weight:600}
+.rw.squeeze.acute .rwline{color:var(--t-max)}
+.squeezenote{font:400 10.5px/1.4 var(--ui);color:var(--t-mid);margin-top:3px}
+.rw.acute .squeezenote{color:var(--t-max)}
 .rwtrack{position:relative;height:10px;background:var(--track);border-radius:3px;margin-top:5px}
 .rwtrack .f{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
 .rwtrack .demand{position:absolute;top:-1px;bottom:-1px;width:2px;background:var(--ink)}
@@ -641,6 +648,8 @@ function renderPlan(v){
 function renderRunway(v, plan){
   const host = $("runway-body"); clear(host);
   const s = v.scarcity||{};
+  // Squeezes are keyed by position so a row can carry its own reading.
+  const squeeze = new Map((v.watchlist||[]).map(w=>[w.position,w]));
   const keys = Object.keys(s);
   if(!keys.length){ host.appendChild(el("div","empty","No reference file loaded.")); }
 
@@ -649,7 +658,10 @@ function renderRunway(v, plan){
     const demand = d.starting_demand||1;
     const ratio = demand ? d.startable/demand : 0;
     const scarce = d.is_drying_up || ratio < .5;
-    const row = el("div","rw"+(scarce?" scarce":""));
+    const sq = squeeze.get(pos);
+    let cls = "rw" + (scarce?" scarce":"");
+    if(sq) cls += " squeeze" + (sq.priced_out || sq.shortfall>=3 ? " acute" : "");
+    const row = el("div",cls);
     const line = el("div","rwline");
     line.appendChild(el("span",null,pos));
     const r = el("span","r",`${d.startable} / ${demand} · ${d.elite} elite left`);
@@ -664,6 +676,14 @@ function renderRunway(v, plan){
     track.appendChild(f);
     const dm = el("div","demand"); dm.style.left = "100%"; track.appendChild(dm);
     row.appendChild(track);
+    if(sq){
+      // "Somebody misses out" is the reading; whether that somebody is you is
+      // the part that changes what you do next.
+      row.appendChild(el("div","squeezenote",
+        sq.priced_out
+          ? `${sq.contenders} still need one and none of the ${sq.supply} left is inside your $${sq.my_ceiling}.`
+          : `${sq.supply} left, ${sq.contenders} still need one — ${sq.shortfall} go without${sq.mine?", and you are one of them":""}.`));
+    }
     host.appendChild(row);
   });
 

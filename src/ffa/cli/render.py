@@ -208,6 +208,34 @@ def render_guidance(guidance) -> str:
     return "\n".join(lines)
 
 
+def render_watchlist(found) -> str:
+    """Capability 9. Empty is the normal answer and says so plainly.
+
+    Ours first, because a shortfall at a position we have already filled is
+    somebody else's problem and printing it under a clock is noise.
+    """
+    from ffa.advice.watchlist import describe
+
+    if not found:
+        return ("nothing squeezed: every position has enough left for the "
+                "people who still need one.")
+
+    mine = [s for s in found if s.mine]
+    theirs = [s for s in found if not s.mine]
+
+    lines: list[str] = []
+    if mine:
+        lines.append("about you:")
+        for squeeze in mine:
+            lines.append("  " + describe(squeeze))
+            if squeeze.names:
+                lines.append("    left: " + ", ".join(squeeze.names))
+    if theirs:
+        lines.append("elsewhere in the room:")
+        lines.extend("  " + describe(s) for s in theirs)
+    return "\n".join(lines)
+
+
 def render_plan(read) -> str:
     """Capability 12 — the plan you wrote, against the draft you are having.
 

@@ -13,6 +13,7 @@ from ffa.advice.market import market_state
 from ffa.advice.nomination import nomination_plan
 from ffa.advice.scarcity import scarcity_by_position
 from ffa.advice.strategy import strategy_read
+from ffa.advice.watchlist import squeezes
 from ffa.advice.types import Advisory
 from ffa.domain.models import DraftState
 from ffa.reference.playerbook import PlayerBook
@@ -55,4 +56,6 @@ def advise(
         # The plan is read live rather than from the journal: revising it
         # mid-draft is legitimate, and nothing here feeds a ceiling.
         strategy=strategy_read(state, book, strategy),
+        # Positions where the people who can still act outnumber what is left.
+        watchlist=squeezes(state, book, market),
     )

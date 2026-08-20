@@ -361,3 +361,6 @@ class Advisory:
     nomination: NominationPlan | None = None
     # Capability 12. `None` when no plan is declared, which is a normal state.
     strategy: "StrategyRead | None" = None
+    # Capability 9. Empty most of a draft, and that is the design: a watchlist
+    # with something on it at all times is one nobody reads.
+    watchlist: tuple = ()

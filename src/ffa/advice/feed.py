@@ -67,7 +67,7 @@ class FeedEntry:
 
     index: int
     at: str
-    channel: str          # sale | scarcity | room | plan | yours
+    channel: str          # sale | scarcity | squeeze | room | plan | yours
     priority: str         # high | normal | low
     text: str
 
@@ -98,6 +98,7 @@ class _Watermarks:
     drying: set = field(default_factory=set)
     in_it: int | None = None
     room_hit: set = field(default_factory=set)
+    squeezed: set = field(default_factory=set)
     plan_state: str | None = None
     seen: bool = False
 
@@ -181,6 +182,9 @@ def build_feed(
             continue
 
         priced = book is not None and len(book)
+        # Computed once per event and shared by every rule below. Each of these
+        # is cheap alone and ruinous in a loop over 180 events.
+        market_before = market_state(before, book) if priced else None
 
         # --- a sale that went well past the room's own price ---------------
         if isinstance(event, PlayerSold) and priced:
@@ -188,8 +192,10 @@ def build_feed(
             price = player.price.value if (player and player.price
                                            and player.price.is_known) else None
             if price is not None:
-                market = market_state(before, book)     # the market *before* it
-                alert = value_alert(state, book, event.player.key, price, market)
+                # The market as it stood *before* this sale — pricing a sale
+                # against a ratio it has already moved would flatter it.
+                alert = value_alert(state, book, event.player.key, price,
+                                    market_before)
                 if alert and alert.over and alert.delta >= NOTABLE_OVERPAY:
                     team = state.teams.get(
                         event.team.value if event.team and event.team.is_known else 0)
@@ -231,6 +237,23 @@ def build_feed(
                      position=position.value)
             marks.elite[position] = now.elite
         marks.drying = {p for p, s in scarcity.items() if s.is_drying_up}
+
+        # --- a position where our own demand outruns supply ------------------
+        # Capability 9's transition. Only ours: a shortfall at a position we
+        # have already filled is somebody else's problem, and reporting it would
+        # be the feed narrating the weather.
+        from ffa.advice.watchlist import describe, squeezes as _squeezes
+
+        now_squeezed = set()
+        for squeeze in _squeezes(state, book, market_before, scarcity=scarcity):
+            if not squeeze.mine:
+                continue
+            now_squeezed.add(squeeze.position)
+            if marks.seen and squeeze.position not in marks.squeezed:
+                emit(event, "squeeze",
+                     "high" if squeeze.priced_out else "normal",
+                     describe(squeeze), position=squeeze.position.value)
+        marks.squeezed = now_squeezed
 
         # --- the room thinning out ------------------------------------------
         in_it = _room_still_in_it(state)

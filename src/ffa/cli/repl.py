@@ -173,7 +173,7 @@ def _view(store: DraftStore, command: ViewCommand, book=None,
         market = market_state(state, book) if (book is not None and len(book)) else None
         return render.render_nomination_plan(nomination_plan(state, book, market))
 
-    if command.kind in ("advice", "scarcity", "market"):
+    if command.kind in ("advice", "scarcity", "market", "watch"):
         if book is None or not len(book):
             return (
                 "no reference data loaded.\n"
@@ -184,6 +184,11 @@ def _view(store: DraftStore, command: ViewCommand, book=None,
             return render.render_scarcity(advise(state, book).scarcity)
         if command.kind == "market":
             return render.render_market(advise(state, book).market)
+        if command.kind == "watch":
+            from ffa.advice.watchlist import squeezes
+            from ffa.advice.market import market_state as _mkt
+
+            return render.render_watchlist(squeezes(state, book, _mkt(state, book)))
 
         key = None
         if command.arg:
