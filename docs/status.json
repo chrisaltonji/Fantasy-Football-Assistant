@@ -240,8 +240,9 @@
         },
         {
           "name": "Dashboard",
-          "status": "todo",
-          "note": "297-line spec, zero code"
+          "status": "done",
+          "note": "ffa dashboard — read-only, polls the journal",
+          "new": true
         },
         {
           "name": "Chat / LLM layer",
@@ -323,10 +324,10 @@
   ],
   "next": [
     {
-      "title": "Dashboard",
+      "title": "Capabilities 6, 8 and 9 on the new surface",
       "owner": "build",
-      "urgency": "long pole",
-      "detail": "The largest remaining build, and it gates capabilities 6, 8 and 9. build_view() already emits every key the spec asks for, so it is front-end work against a frozen contract.",
+      "urgency": "unblocked",
+      "detail": "The dashboard was the thing gating all three. Ambient feed (6) needs a surface allowed to interrupt and now has one; post-pick fit (8) and the danger-zone watchlist (9) already have their inputs computed — starter_gaps, open_slots_by_pos and scarcity are all in the payload.",
       "command": ""
     },
     {
@@ -410,6 +411,10 @@
     {
       "title": "The plan is calibrated to this league, not to an archetype constant",
       "body": "The generated bench reserve was $20 — 10% of budget, an archetype default with nothing behind it. Four seasons say the median team here spends $5 on its cheapest five picks, which is also the arithmetic floor: 5 bench slots at the $1 minimum. Rebuilt with --bench 5, and the freed $15 went back into the split at market shares. The plan now sits within a few dollars of the league median at every position: WR $85 vs $91, RB $82 vs $74, TE $13 vs $7, QB $12 vs $9. max_on_one_player set to $75 by hand — the priciest player in four seasons went $80, so it still binds at the very top, which is the point of having one. Both overrides are reproducible flags, not TOML edits: `ffa strategy init --force --bench 5 --max-player 75` rebuilds this plan from scratch."
+    },
+    {
+      "title": "The dashboard is a second process, on purpose",
+      "body": "It never opens a DraftStore and never takes the pid lock: it replays the journal and serves the same build_view() payload every other surface reads. Two consequences worth keeping. The engine keeps exactly one writer, so nothing the dashboard does can corrupt journal ordering. And a rendering bug at pick 90 costs you a browser tab rather than the process recording your draft. Reading a file under active append is safe here for a specific reason: the journal already tolerates a torn trailing line, because that is what a crash leaves behind, and a concurrent reader hits exactly that case."
     }
   ]
 }

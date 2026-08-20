@@ -643,8 +643,41 @@ There is no CP6. What remains is product work:
   built; *intent* is inference and is not. Keep it **beside** the hot path, not
   inside it: `advice` is currently instant and cannot fail, and a network call
   in that loop would add latency and a failure mode while a clock runs.
-- **The dashboard.** `docs/dashboard_requirements.md` is a 12.7K spec with zero
-  implementation.
+- **The dashboard. BUILT 2026-08-19.** `ffa dashboard` serves the board at
+  `http://127.0.0.1:8765/` and re-reads the journal every two seconds.
+
+  **It is a second process, and that is the design rather than a convenience.**
+  It never opens a `DraftStore` and never takes the pid lock — it replays the
+  journal and serves the same `build_view()` payload every other surface reads.
+  Two things follow. The engine keeps exactly one writer, so nothing the
+  dashboard does can reorder or corrupt the journal. And a rendering bug at pick
+  90 costs a browser tab rather than the process recording the draft; if this
+  lived inside the draft loop it would take the recorder down with it.
+
+  Reading a file under active append is safe here for a specific reason, not by
+  luck: `read_events` already tolerates a torn trailing line, because that is
+  exactly what a crash mid-write leaves behind. A concurrent reader hits the
+  same case, so the tolerance written for crash-resume is what makes this sound.
+  There is a test that appends a half-written line and asserts the board still
+  renders.
+
+  **Why a server rather than a file.** A page opened over `file://` cannot fetch
+  a sibling JSON file, so a static dashboard could never refresh itself. One
+  local origin serving both is the smallest thing that works, and it keeps the
+  payload byte-identical to `ffa export-state`. Loopback only by default: this
+  puts every manager's budget on an HTTP port with no auth.
+
+  **Three bugs the first live render caught**, none of which a unit test would
+  have: the market panel read `sales_priced` where the payload emits `sales`, so
+  it showed `0 priced sales` directly beside `1.29× inflated`; recent sales read
+  a `team_label` that does not exist, printing `Trey McBride →` with nothing
+  after the arrow; and the threat list rendered all eleven rivals, pushing the
+  rival grid below the fold at exactly the moment you need both. It now caps at
+  six with `… and 5 more, 5 of them live`, matching what the terminal readout
+  already does.
+
+  Capabilities 6, 8 and 9 were all gated on this surface existing. They are not
+  built, but nothing stands in front of them now.
 
 - **C2 — the draft plan, and capability 12. BUILT 2026-08-18.**
 

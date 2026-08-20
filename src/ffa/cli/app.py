@@ -986,6 +986,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="don't point [reference].path at the file just written")
     fetch.set_defaults(func=cmd_data_fetch)
 
+    from ffa.cli.dashboard_cmd import add_parser as add_dashboard_parser
     from ffa.cli.dossier_cmd import add_parser as add_dossier_parser
     from ffa.cli.history_cmd import add_parser as add_history_parser
     from ffa.cli.strategy_cmd import add_parser as add_strategy_parser
@@ -993,6 +994,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_dossier_parser(sub)
     add_history_parser(sub)
     add_strategy_parser(sub)
+    add_dashboard_parser(sub)
 
     export = sub.add_parser("export-state", help="write the JSON view model for a run")
     export.add_argument("--run-dir", type=Path, default=None)

@@ -33,6 +33,13 @@ ffa = "ffa.cli.app:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The dashboard page is data, not code, and setuptools does not ship it
+# otherwise. An editable install reads it straight from src and works either
+# way, so the failure this prevents only appears on a real install — which is
+# exactly the kind that would show up first on draft day.
+[tool.setuptools.package-data]
+"ffa.dashboard" = ["*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

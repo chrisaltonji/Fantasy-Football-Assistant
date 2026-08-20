@@ -377,6 +377,33 @@ Two things it deliberately does not do:
 which a draft that is $45 under at receiver can be. The table is what tells you
 how it is actually going.
 
+### The dashboard
+
+```bash
+ffa dashboard --open        # second terminal, while `ffa draft` runs in the first
+```
+
+Serves the live board at `http://127.0.0.1:8765/` and re-reads the journal every
+two seconds. **Read-only by construction** — it never opens a `DraftStore` and
+never takes the write lock, so the engine keeps exactly one writer and a
+rendering bug costs you a browser tab rather than the process recording your
+draft. Input stays in the terminal.
+
+What it puts on screen, in the order the brief asks for:
+
+1. **Your money**, pinned and never scrolling away — what you can bid on the
+   player up now, what is left, your hard ceiling, and the slots you still need.
+2. **Who can actually take him.** Rivals ranked by true ceiling, with `is_live`
+   — can afford him *and* has a starting slot — as the whole visual treatment.
+3. **Every rival as one object**: budget and positional need in the same tile,
+   because their intersection is the signal. A team with $90 and no RB slot
+   dims out on an RB instead of sitting there looking dangerous.
+4. Scarcity, market inflation, your plan, the nomination order, recent sales.
+
+It never announces. No toasts, no flashing, no modal steal — it re-renders
+silently and lets you notice in your own time. Loopback only by default: this
+serves every manager's budget over HTTP with no auth.
+
 ### Owner dossiers
 
 Everything above is **capacity**: can this rival afford him, does he have a slot
@@ -505,6 +532,7 @@ src/ffa/
   sim/        bots, engine, faults, source
   view/       model (the JSON contract every surface reads)
   cli/        app, repl, console, render
+  dashboard/  server, page (read-only browser surface)
   config/     schema, loader, nicknames, strategy
 tools/        espn_probe, draft_room_probe, draft_watch, anonymize_capture
 ```
