@@ -96,20 +96,108 @@ def anonymize(text: str) -> tuple[Any, dict[str, str], int]:
     return payload, mapping, counter["n"]
 
 
+# --- the view payload ------------------------------------------------------
+#
+# `build_view()` output carries identity under different keys than a raw ESPN
+# capture, and `docs/sample_state*.json` are committed so a dashboard designer
+# has something real to build against. "Real" has to mean real *shape*: the
+# league name, the league id, the manager nicknames and every `owner_id` are
+# twelve actual people, and the repo is public.
+
+# Deliberately the names the committed samples already used, so a regenerated
+# fixture is a small diff rather than a rewrite.
+SAMPLE_MANAGERS = (
+    "alex", "blake", "casey", "drew", "evan", "frankie",
+    "gray", "harper", "indigo", "jordan", "kai", "lane",
+)
+SAMPLE_LEAGUE = "Example Auction League"
+SAMPLE_LEAGUE_ID = 123456
+
+
+def anonymize_view(payload: Any) -> tuple[Any, int]:
+    """Strip identity from a `build_view()` payload, keeping every number.
+
+    Prices, budgets, ceilings, scarcity and player names all survive untouched
+    — they are the entire reason the sample is worth committing, and NFL player
+    names are public. What goes is who the twelve people are.
+    """
+    text = json.dumps(payload)
+    mapping = build_swid_map(text)
+    for real, fake in mapping.items():
+        text = text.replace(real, fake)
+    payload = json.loads(text)
+
+    # Nicknames are assigned by first appearance in `teams`, so the same person
+    # keeps the same alias everywhere they are referenced.
+    labels: dict[int, str] = {}
+    for index, team in enumerate(payload.get("teams") or []):
+        labels[team.get("team_id")] = SAMPLE_MANAGERS[index % len(SAMPLE_MANAGERS)]
+
+    def relabel(team: Any) -> None:
+        if not isinstance(team, dict):
+            return
+        alias = labels.get(team.get("team_id"))
+        if alias:
+            team["label"] = alias
+            if team.get("manager"):
+                team["manager"] = alias
+        # The team's own name is manager-controlled free text.
+        if team.get("name"):
+            team["name"] = "Volatile Team Name"
+
+    for team in payload.get("teams") or []:
+        relabel(team)
+    relabel(payload.get("me"))
+
+    # Labels also ride along inside the advisory blocks.
+    guidance = (payload.get("nomination") or {}).get("guidance") or {}
+    for block in ("threats", "pace_reads"):
+        for row in guidance.get(block) or []:
+            if isinstance(row, dict) and row.get("team_id") in labels:
+                row["label"] = labels[row["team_id"]]
+    for key in ("on_the_clock", "current_nominator", "my_next"):
+        turn = (payload.get("nomination_plan") or {}).get(key)
+        if isinstance(turn, dict) and turn.get("team_id") in labels:
+            turn["label"] = labels[turn["team_id"]]
+    for turn in (payload.get("nomination_plan") or {}).get("upcoming") or []:
+        if isinstance(turn, dict) and turn.get("team_id") in labels:
+            turn["label"] = labels[turn["team_id"]]
+
+    league = payload.get("league")
+    if isinstance(league, dict):
+        league["name"] = SAMPLE_LEAGUE
+
+    # The draft id embeds the real league id.
+    if payload.get("draft_id"):
+        payload["draft_id"] = f"{SAMPLE_LEAGUE_ID}-sample"
+
+    return payload, len(mapping)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("source", type=Path, help="Raw capture from tools/espn_probe.py")
     parser.add_argument("--out", type=Path, required=True, help="Where to write the fixture")
+    parser.add_argument("--view", action="store_true",
+                        help="source is a build_view() payload (ffa export-state), "
+                             "not a raw ESPN capture")
     args = parser.parse_args()
 
     raw = args.source.read_text(encoding="utf-8")
-    payload, mapping, renamed = anonymize(raw)
+    if args.view:
+        payload, swids = anonymize_view(json.loads(raw))
+        mapping, renamed = {}, 0
+        print(f"{args.source} -> {args.out}")
+        print(f"  {swids} SWID(s) replaced, league/draft id and 12 label(s) aliased")
+    else:
+        payload, mapping, renamed = anonymize(raw)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
-    print(f"{args.source} -> {args.out}")
-    print(f"  {len(mapping)} SWID(s) replaced, {renamed} name field(s) blanked")
+    if not args.view:
+        print(f"{args.source} -> {args.out}")
+        print(f"  {len(mapping)} SWID(s) replaced, {renamed} name field(s) blanked")
 
     # Belt and braces: re-read what we actually wrote and assert it's clean.
     written = args.out.read_text(encoding="utf-8")
