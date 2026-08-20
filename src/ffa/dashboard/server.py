@@ -94,6 +94,11 @@ class StateReader:
                 precedent=self._precedent,
                 seats=self._seats,
                 strategy=getattr(self._config, "strategy", None),
+                # The feed is a fold over the journal, and this is the one
+                # caller that has already read it. Cached with the rest of the
+                # view by journal fingerprint, so a 180-pick fold runs once per
+                # pick rather than once per poll.
+                events=events,
             )
             if warnings:
                 view.setdefault("warnings", []).extend(warnings)

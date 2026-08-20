@@ -737,6 +737,7 @@ def cmd_export_state(args: argparse.Namespace) -> int:
         replay(events, directory.name), book, dossiers=dossiers,
         precedent=precedent, seats=seats(config) if config is not None else None,
         strategy=config.strategy if config is not None else None,
+        events=events,
     )
     text = json.dumps(view, indent=2)
 

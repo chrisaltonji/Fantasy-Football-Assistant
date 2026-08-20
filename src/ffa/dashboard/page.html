@@ -156,6 +156,20 @@ body{
 .pill .d{width:5px;height:5px;border-radius:50%;background:var(--you)}
 .loghead .ro{margin-left:auto;font:400 10px/1 var(--ui);color:var(--faint)}
 .logscroll{flex:1 1 auto;min-height:0;overflow-y:auto}
+.entry{padding-left:11px;border-left:2px solid var(--card-line);margin-bottom:11px}
+.entry .meta{font:500 10px/1.3 var(--mono);color:var(--caption)}
+.entry .body{font:400 12px/1.55 var(--ui);color:var(--ink2);margin-top:2px}
+/* Accent encodes the channel, and age fades the body. Both are the design's
+   rules; neither is decoration — a glance should separate "you bought someone"
+   from "the room got poorer" without reading either. */
+.entry.yours{border-left-color:var(--rec)} .entry.yours .body{color:var(--ink)}
+.entry.plan{border-left-color:var(--risk-line)}
+.entry.scarcity{border-left-color:var(--t-mid)}
+.entry.sale{border-left-color:var(--centre)}
+.entry.room{border-left-color:var(--faint-rule)}
+.entry.age1 .body{color:var(--label)}
+.entry.age2 .body{color:var(--caption)}
+.entry.age3 .body{color:var(--faint)}
 .logfoot{border-top:1px solid var(--faint-rule);padding-top:9px;margin-top:9px;
          font:400 10px/1.45 var(--ui);color:var(--faint)}
 
@@ -291,16 +305,10 @@ body{
   <div id="log">
     <div class="loghead">
       <span class="eyebrow">analysis</span>
-      <span class="pill" id="log-pill"><i class="d"></i>pending</span>
+      <span class="pill" id="log-pill"><i class="d"></i>live</span>
       <span class="ro">read-only</span>
     </div>
-    <div class="logscroll pending">
-      <div class="empty">No analysis yet.</div>
-      <div class="why"><b>Needs the ambient feed (capability 6).</b> The engine
-        emits every number on this board, but nothing yet writes the running
-        commentary — which runs beside the engine and never inside it, so a slow
-        sentence can never delay a bid readout.</div>
-    </div>
+    <div class="logscroll" id="log-body"></div>
     <div class="logfoot">Written beside the engine, not inside it. Nothing here moves a number on this board.</div>
   </div>
 </div>
@@ -385,6 +393,39 @@ function render(v){
   renderMatrix(v, me, g);
   renderPlan(v);
   renderRunway(v, plan);
+  renderFeed(v);
+}
+
+function renderFeed(v){
+  const host = $("log-body"); clear(host);
+  const feed = v.feed;
+  if(feed === null || feed === undefined){
+    host.className = "logscroll pending";
+    host.appendChild(el("div","empty","Feed unavailable."));
+    const w = el("div","why");
+    w.appendChild(el("b",null,"The journal was not supplied."));
+    w.appendChild(document.createTextNode(
+      " The feed is a fold over events, not a function of current state, so a" +
+      " caller that passes only a snapshot cannot produce one."));
+    host.appendChild(w);
+    $("log-pill").lastChild.textContent = "unavailable";
+    return;
+  }
+  host.className = "logscroll";
+  if(!feed.length){
+    host.appendChild(el("div","empty","Nothing worth reporting yet."));
+    return;
+  }
+  // Age fades the body, so the eye lands on what just happened without the
+  // page moving or announcing anything.
+  feed.forEach((e,i)=>{
+    const age = i<2 ? "" : i<5 ? "age1" : i<10 ? "age2" : "age3";
+    const n = el("div",`entry ${e.channel} ${age}`);
+    const when = (e.at||"").slice(11,19) || "";
+    n.appendChild(el("div","meta",`${when}${when?" · ":""}${e.channel}`));
+    n.appendChild(el("div","body",e.text));
+    host.appendChild(n);
+  });
 }
 
 function card(cls,k,val,foot){
@@ -641,7 +682,7 @@ function renderRunway(v, plan){
 let fails = 0;
 function conn(state, text){
   const d = $("s-dot"); d.className = "dot " + state;
-  $("log-pill").lastChild.textContent = text;
+  const pill = $("log-pill"); if(pill) pill.lastChild.textContent = text;
 }
 
 async function poll(){
@@ -649,7 +690,7 @@ async function poll(){
     const v = await (await fetch("state.json",{cache:"no-store"})).json();
     fails = 0;
     render(v);                    // silent re-render; the board never announces
-    conn("", "pending");
+    conn("", "live");
   }catch(e){
     fails += 1;
     // Keep the last good board on screen. A number you can see and distrust

@@ -89,8 +89,9 @@
       "n": 6,
       "name": "Ambient feed",
       "tier": "v1.1",
-      "status": "todo",
-      "where": "needs a surface allowed to interrupt"
+      "status": "done",
+      "where": "advice/feed.py — the analysis log",
+      "new": true
     },
     {
       "n": 7,
@@ -103,8 +104,9 @@
       "n": 8,
       "name": "Post-pick fit",
       "tier": "v1.1",
-      "status": "todo",
-      "where": "inputs exist: starter_gaps, open_slots_by_pos"
+      "status": "done",
+      "where": "advice/feed.py — the `yours` channel",
+      "new": true
     },
     {
       "n": 9,
@@ -194,6 +196,11 @@
           "new": true
         },
         {
+          "name": "feed.py — what changed, and only when it mattered",
+          "status": "done",
+          "new": true
+        },
+        {
           "name": "Inference half — who will actually bid",
           "status": "todo"
         }
@@ -241,7 +248,7 @@
         {
           "name": "Dashboard",
           "status": "done",
-          "note": "ffa dashboard — read-only, polls the journal",
+          "note": "ffa dashboard — the design handoff, live, with the feed",
           "new": true
         },
         {
@@ -324,10 +331,10 @@
   ],
   "next": [
     {
-      "title": "Capabilities 6, 8 and 9 on the new surface",
+      "title": "Capability 9 — the danger-zone watchlist",
       "owner": "build",
-      "urgency": "unblocked",
-      "detail": "The dashboard was the thing gating all three. Ambient feed (6) needs a surface allowed to interrupt and now has one; post-pick fit (8) and the danger-zone watchlist (9) already have their inputs computed — starter_gaps, open_slots_by_pos and scarcity are all in the payload.",
+      "urgency": "cheap",
+      "detail": "The last deterministic capability left. Every input exists: scarcity says what is drying up, starter_gaps says what you still need, and threats_for says who is live on it. The feed already has a channel shape to carry it.",
       "command": ""
     },
     {
@@ -419,6 +426,10 @@
     {
       "title": "The dashboard now follows the design handoff",
       "body": "Rebuilt in src/ffa/dashboard/page.html from the designer's bundle: status bar, on-the-block with the three metric cards, the threat matrix, plan health, runway. The matrix is the piece worth having — positions across, teams down, cell fill is what that team could pay, and a satisfied position goes dark, so a rich team with no gap reads as harmless without any cross-referencing. Three regions are deliberately inert because they need the inference layer that does not exist: rival bid *estimates* and their rationale, the analysis log (capability 6), and the assistant. They render as designed empty states naming what is missing, per the designer's own instruction to degrade to arithmetic rather than delay the page."
+    },
+    {
+      "title": "The feed is a fold, not a log",
+      "body": "Capability 6 appends nothing anywhere. It folds the journal and emits where something crossed, which means undo removes an entry rather than contradicting it, and the feed can never disagree with the board beside it because both come from the same events. Six rules, all arithmetic, all bounded: over a full 168-pick synthetic draft it produces about 30 entries. The `room` rule originally reported every decrement and printed eleven near-identical lines in a row; it now fires on three milestones. A test runs every rule over a whole draft and fails if any of them scales with picks."
     }
   ]
 }

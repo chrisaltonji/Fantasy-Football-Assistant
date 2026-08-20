@@ -51,6 +51,7 @@ def build_view(
     precedent: Any = None,
     seats: Any = None,
     strategy: Any = None,
+    events: Any = None,
 ) -> dict[str, Any]:
     if not state.is_initialized:
         return {
@@ -90,6 +91,11 @@ def build_view(
         # `None` whenever nothing is on the block, which is exactly the moment
         # whose-turn-is-it and what-to-put-up are worth reading.
         "nomination_plan": _nomination_plan_view(advisory),
+        # Capability 6. Present only when the caller hands over the journal:
+        # the feed is a fold over *events*, not a function of current state, and
+        # a key that silently meant "nobody passed events" would be read as
+        # "nothing has happened".
+        "feed": _feed_view(state, book, strategy, events),
         # Capability 12. `null` when no plan is declared — which a surface must
         # render as "no plan", never as a row of zeroes.
         "strategy": _strategy_view(advisory),
@@ -202,6 +208,25 @@ def _player_view(player: PlayerEntity, book: Any = None) -> dict[str, Any]:
         # read without the surface having to do arithmetic.
         "delta": (price - value) if (price is not None and value is not None) else None,
     }
+
+
+def _feed_view(state, book, strategy, events) -> list[dict[str, Any]] | None:
+    """What changed, newest first. `null` when the journal was not supplied.
+
+    Deliberately not derived from `state`: every entry here is a *transition*,
+    and a transition is invisible to a snapshot. Folding the events is the only
+    way to know that the last elite running back went on this pick rather than
+    forty picks ago.
+    """
+    if events is None:
+        return None
+    from ffa.advice.feed import build_feed
+
+    return [
+        entry.as_dict()
+        for entry in build_feed(events, book, strategy=strategy,
+                                draft_id=state.draft_id)
+    ]
 
 
 def _strategy_view(advisory) -> dict[str, Any] | None:
