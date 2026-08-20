@@ -54,3 +54,11 @@ htmlcov/
 # --- Local preview leftovers from browser screenshots ---
 .playwright-mcp/
 /status-*.png
+
+# --- Design bundle: kept on disk exactly as delivered, not published. ---
+# The mockup renders with the real league name, the owner's name and six real
+# manager nicknames. They are display strings rather than credentials, but this
+# repo is public and that is the same category as the sample payloads. Delete
+# these two lines to publish it.
+docs/design_handoff_draft_board/
+docs/Dashboard UI mockups.zip

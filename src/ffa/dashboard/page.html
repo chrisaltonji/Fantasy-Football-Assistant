@@ -4,590 +4,666 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Draft Board</title>
+
+<!-- Design intent is Archivo + JetBrains Mono. Linked rather than embedded, with
+     a real fallback stack behind both: if the fonts are slow the page still
+     paints (font-display:swap), and if they never arrive the layout holds on
+     system faces instead of collapsing. The draft room itself needs the network,
+     so an offline machine is not drafting anyway — but a slow CDN must never
+     delay a bid readout. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
 <style>
-/* Built for one situation: 8pm, next to the ESPN draft room, thirty seconds to
-   decide, being bid against the whole time. That rules most things out.
+/* Recreated from the design handoff. Tokens are the designer's, verbatim.
 
-   The numbers are the design. Two of them — what you can legally spend and what
-   the sheet says he is worth — get the largest type on the page and never
-   scroll away. Everything else is support, set small, and gets out of the way.
+   The one rule that governs everything: this is read while being bid against,
+   so nothing may cost a second glance. Colour carries meaning on its own —
+   a cell's fill is what that team could pay, and a dark cell means they have no
+   gap at that position and therefore cannot want the player, no matter how rich
+   they look.
 
-   Semantic colour is separate from structural colour, and only three states
-   exist: LIVE (a rival who can both afford him and start him — the only kind
-   that can take him from you), SAFE (yours, or nobody's), and INERT (money that
-   cannot reach this player). Inert is the important one, and it is the whole
-   reason this page exists: a team with $90 and no RB slot is not an RB threat,
-   and here that reads instantly instead of after a mental join. */
+   Three regions are deliberately inert: rival *estimates*, the analysis log and
+   the assistant all need the inference layer, which does not exist. They render
+   as designed empty states that say what is missing rather than as blank boxes,
+   because a panel that is merely empty reads as a panel that is broken. */
 :root{
-  --bg:#141110; --panel:#1d1917; --raised:#262120; --line:#332c29;
-  --ink:#f0ebe7; --muted:#a2968f; --faint:#6d635e;
+  --bg:#111318; --raised:#141821; --inset:#0e1015; --card:#161a21;
+  --sat:#12141a; --sat-bright:#171b22; --bubble:#1a1f28; --track:#1c212a;
+  --rec-bg:#1b1512; --risk-bg:#241a10;
 
-  /* Semantic. Never used for structure. */
-  --live:#e8b463; --live-bg:#2b210f; --live-line:#7a5a1e;
-  --safe:#5fd08a; --safe-bg:#12281c;
-  --mine:#8ab4f8; --mine-bg:#16223a;
-  --alarm:#f08b7f; --alarm-bg:#2e1613;
+  --rule:#232833; --card-line:#2b3140; --row-rule:#1e222b; --faint-rule:#1c202a;
+  --centre:#3a4250; --risk-line:#7a5320; --risk-inner:#4a3a20;
 
-  /* Structural only. */
-  --accent:#e79aa3;
+  --ink:#eef1f5; --ink2:#c3cad6; --label:#8b93a3; --caption:#5d6572;
+  --faint:#454c58; --dim:#343b47; --fill:#3f4855; --fill2:#4a5260; --dash:#4e5663;
+
+  --t-max:#ff4d3d; --t-high:#ff5a45; --t-mid:#ff9d4d; --t-low:#ffc46b;
+  --rec:#ff7a66; --rec-foot:#b98673; --you:#58c8d6; --you-hover:#8fd3dd;
+  --good:#a7d96b;
+  --on-red:#3d0f08; --on-orange:#3d1f04; --on-amber:#3d2e04; --on-cyan:#08272c;
+
+  --ui:"Archivo",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{
-  background:var(--bg);color:var(--ink);
-  font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  -webkit-font-smoothing:antialiased;
-  font-variant-numeric:tabular-nums;
+  background:var(--bg);color:var(--ink);font-family:var(--ui);
+  font-size:12px;min-height:100vh;-webkit-font-smoothing:antialiased;
 }
-.num{font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-
-/* --- tier 1: your money. Pinned, because it is the thing you look at most. --- */
-#mine{
-  position:sticky;top:0;z-index:20;background:var(--bg);
-  border-bottom:1px solid var(--line);padding:10px 16px;
-  display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;
+.m{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.eyebrow{
+  font:600 10px/1 var(--ui);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--label);
 }
-.big{
-  background:var(--panel);border:1px solid var(--line);border-radius:10px;
-  padding:8px 14px;min-width:132px;flex:1 1 132px;
+.sublabel{
+  font:600 9.5px/1 var(--ui);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--caption);
 }
-.big.hero{border-color:var(--mine);background:var(--mine-bg)}
-.big .k{
-  display:block;font-size:10px;text-transform:uppercase;letter-spacing:.09em;
-  color:var(--muted);white-space:nowrap;
+.cap{font:400 11px/1.4 var(--ui);color:var(--caption)}
+.band{border-bottom:1px solid var(--rule)}
+
+/* --- band 0: status bar ------------------------------------------------- */
+#status{
+  position:sticky;top:0;z-index:5;background:var(--bg);
+  border-bottom:1px solid var(--rule);
+  display:flex;align-items:center;gap:14px;padding:9px 18px;
+  font:500 11px/1 var(--ui);color:var(--label);flex-wrap:wrap;
 }
-.big .v{display:block;font-size:30px;font-weight:680;line-height:1.08;margin-top:2px}
-.big.hero .v{color:var(--mine);font-size:38px}
-.big .sub{display:block;font-size:11px;color:var(--faint);margin-top:1px}
-.big.warnstate{border-color:var(--live);background:var(--live-bg)}
-.big.warnstate .v{color:var(--live)}
-.big.alarmstate{border-color:var(--alarm);background:var(--alarm-bg)}
-.big.alarmstate .v{color:var(--alarm)}
+#status .who{font-weight:700;color:var(--ink)}
+#status .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+#status .right b{color:var(--ink);font-weight:500}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--you);flex:none}
+.dot.stale{background:var(--t-low)} .dot.dead{background:var(--t-max)}
 
-.chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
-.chip{
-  font-size:10px;font-weight:650;padding:1px 6px;border-radius:4px;
-  background:var(--raised);color:var(--muted);border:1px solid var(--line);
-  white-space:nowrap;letter-spacing:.02em;
+/* --- band 1 -------------------------------------------------------------- */
+#band1{display:grid;grid-template-columns:minmax(0,1fr) 380px}
+#block{
+  padding:20px 24px 18px;border-right:1px solid var(--rule);
+  background:linear-gradient(180deg,var(--raised),var(--bg));
+  display:flex;flex-direction:column;
 }
-.chip.need{background:var(--live-bg);color:var(--live);border-color:var(--live-line)}
+.playerline{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-top:10px}
+#pname{font:700 42px/1.05 var(--ui);letter-spacing:-.025em;margin:0}
+#pname .pos{font:600 16px var(--mono);color:var(--label);margin-left:8px;letter-spacing:0}
+#psub{font:400 12.5px/1.5 var(--ui);color:var(--label);margin-top:8px}
+#psub .dashed{border-bottom:1px dashed var(--dash);cursor:help}
+.cards{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
+.card{border-radius:9px;padding:9px 16px;background:var(--card);border:1px solid var(--card-line);min-width:150px}
+.card .k{display:block;font:600 9.5px/1 var(--ui);letter-spacing:.12em;text-transform:uppercase;color:var(--label)}
+.card .v{display:block;font:500 40px/1 var(--mono);color:var(--ink);margin-top:6px}
+.card .f{display:block;font:400 10.5px/1 var(--mono);color:var(--caption);margin-top:6px}
+.card.rec{background:var(--rec-bg);border:1px dotted var(--rec)}
+.card.rec .k{color:var(--rec)} .card.rec .v{color:var(--rec);font-weight:700}
+.card.rec .f{color:var(--rec-foot)}
 
-main{padding:14px 16px 60px;display:grid;gap:12px;
-     grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}
-section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-section h2{
-  margin:0 0 10px;font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;
-  color:var(--muted);font-weight:700;display:flex;justify-content:space-between;
-  align-items:baseline;gap:10px;
+#risk{padding:16px 20px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.riskhead{display:flex;align-items:baseline;gap:8px}
+.riskhead .sub{font:400 10px/1 var(--ui);color:var(--caption)}
+.riskrows{display:flex;flex-direction:column;gap:9px}
+.riskrow{display:grid;grid-template-columns:1fr auto;gap:3px 10px;align-items:baseline}
+.riskrow+.riskrow{padding-top:9px;border-top:1px solid var(--row-rule)}
+.riskrow .n{font:600 13px/1.2 var(--ui)}
+.riskrow .e{font:600 14px/1 var(--mono);text-align:right}
+.riskrow .why{font:400 11px/1.4 var(--ui);color:var(--label)}
+.riskrow .of{font:400 10.5px/1 var(--mono);color:var(--caption);text-align:right;white-space:nowrap}
+.riskrow.dim .n{font-weight:500;font-size:12.5px;color:var(--ink2)}
+.riskrow.dim .why{color:var(--caption)}
+.note{
+  padding:9px 11px;border:1px dashed var(--card-line);border-radius:7px;
+  font:400 10.5px/1.45 var(--ui);color:var(--caption);
 }
-section h2 .aside{color:var(--faint);letter-spacing:.02em;text-transform:none;font-weight:500;font-size:11px}
-.span2{grid-column:1 / -1}
-.empty{color:var(--faint);font-size:12.5px;padding:2px 0}
+.note b{color:var(--label);font-weight:600}
 
-/* --- tier 2: the player on the block. --- */
-#focus.up{border-color:var(--accent)}
-.player{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:10px}
-.player .name{font-size:23px;font-weight:680;letter-spacing:-.02em}
-.pos{
-  font-size:10.5px;font-weight:750;padding:2px 6px;border-radius:4px;
-  background:var(--raised);color:var(--muted);letter-spacing:.04em;
+/* --- band 2 -------------------------------------------------------------- */
+#band2{display:grid;grid-template-columns:minmax(0,1fr) 360px}
+#matrix{padding:16px 24px 20px;border-right:1px solid var(--rule);min-width:0}
+.mxhead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.mxhead .legend{margin-left:auto;display:flex;align-items:center;gap:6px;font:400 10px var(--mono);color:var(--caption)}
+.rampbar{width:88px;height:9px;border-radius:2px;
+  background:linear-gradient(90deg,#2b3140,#5d6572,#ffc46b,#ff9d4d,#ff4d3d)}
+.mxrow{display:grid;gap:3px;align-items:center;margin-bottom:3px}
+.mxrow .rl{font:500 12px/1 var(--ui);color:var(--label);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mxrow.you .rl{color:var(--you);font-weight:600}
+.mxrow.t1 .rl{color:var(--ink);font-weight:600}
+.mxrow.t2 .rl{color:var(--ink2)}
+.mxrow.t4 .rl{color:var(--caption)}
+.mxhdr .col{font:600 10px/1 var(--ui);letter-spacing:.06em;text-transform:uppercase;color:var(--caption);text-align:center}
+.mxhdr .mx{text-align:right}
+.cell{height:20px;border-radius:2px;display:flex;align-items:center;justify-content:center;
+      font:500 11px/1 var(--mono)}
+.mxrow.lo .cell{height:18px}
+.cell.sat{background:var(--sat);color:var(--dim);font-weight:500}
+.mxrow.t1 .cell.sat,.mxrow.you .cell.sat{background:var(--sat-bright);color:var(--faint)}
+.cell.mine{background:var(--you);color:var(--on-cyan);font-weight:700}
+.cell.onblock{outline:2px solid var(--ink);outline-offset:-1px}
+.mxrow.t2 .cell.onblock{outline:2px solid var(--centre)}
+.mxrow.t4 .cell.onblock{outline:1px solid var(--faint-rule)}
+.mxrow .mx{font:500 11px/1 var(--mono);text-align:right;color:var(--caption)}
+.mxrow.t1 .mx{color:var(--ink);font-weight:700}
+.mxlegend{margin-top:12px;display:flex;gap:18px;flex-wrap:wrap;align-items:center;
+          font:400 11px/1.4 var(--ui);color:var(--caption)}
+.mxlegend span{display:flex;align-items:center;gap:6px}
+.sw{width:22px;height:14px;border-radius:2px;flex:none}
+
+#log{padding:16px 20px 18px;background:var(--inset);display:flex;flex-direction:column;
+     max-height:560px;min-width:0}
+.loghead{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.pill{display:flex;align-items:center;gap:5px;font:600 9.5px/1 var(--ui);
+      letter-spacing:.1em;text-transform:uppercase;color:var(--you)}
+.pill .d{width:5px;height:5px;border-radius:50%;background:var(--you)}
+.loghead .ro{margin-left:auto;font:400 10px/1 var(--ui);color:var(--faint)}
+.logscroll{flex:1 1 auto;min-height:0;overflow-y:auto}
+.logfoot{border-top:1px solid var(--faint-rule);padding-top:9px;margin-top:9px;
+         font:400 10px/1.45 var(--ui);color:var(--faint)}
+
+/* --- band 3 -------------------------------------------------------------- */
+#band3{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.tile{padding:16px 22px 20px;display:flex;flex-direction:column;min-width:0}
+.tile+.tile{border-left:1px solid var(--rule)}
+.tilehead{display:flex;align-items:baseline;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.tilehead .sub{font:400 10px/1 var(--ui);color:var(--caption)}
+
+.pbar{display:grid;grid-template-columns:38px 1fr 92px;gap:9px;align-items:center;margin-bottom:10px}
+.pbar .pl{font:500 11.5px/1 var(--ui)}
+.pbar.over .pl{color:var(--rec)} .pbar.under .pl{color:var(--t-low)}
+.ptrack{position:relative;height:13px;background:var(--track);border-radius:3px}
+.ptrack .mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--centre)}
+.ptrack .f{position:absolute;top:2px;bottom:2px;border-radius:2px}
+.pbar .pr{font:400 10.5px/1 var(--ui);color:var(--label);text-align:right}
+
+.psum{border-top:1px solid var(--rule);padding-top:12px;margin-top:4px;
+      display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.psum .body{font:400 11.5px/1.55 var(--ui);color:var(--ink2);margin-top:5px}
+.psum .body .sec{color:var(--caption);display:block}
+.budget{position:relative;height:22px;border-radius:3px;background:var(--track);margin:14px 0 4px;overflow:hidden}
+.budget .spent{position:absolute;left:0;top:0;bottom:0;background:var(--fill)}
+.budget .unc{position:absolute;top:0;bottom:0;
+  background:repeating-linear-gradient(45deg,#2b3140,#2b3140 4px,#242a34 4px,#242a34 8px)}
+.budget .mark{position:absolute;top:0;bottom:0;width:2px;background:var(--t-max)}
+.budget .lbl{position:absolute;top:0;bottom:0;display:flex;align-items:center;
+             font:600 10px/1 var(--mono);padding:0 8px}
+
+.callout{margin-top:auto;display:flex;align-items:center;gap:12px;
+         border-radius:9px;padding:11px 14px;background:var(--risk-bg);
+         border:1px solid var(--risk-line);flex-wrap:wrap}
+.callout .word{font:700 15px/1 var(--ui);letter-spacing:.04em;color:var(--t-low);white-space:nowrap}
+.callout .rule{width:1px;align-self:stretch;background:var(--risk-inner)}
+.callout .body{font:400 11.5px/1.5 var(--ui);color:var(--ink2);flex:1 1 160px}
+.callout .body b{color:var(--ink);font-weight:400}
+.callout.ok{background:#1a1f28;border-color:var(--card-line)} .callout.ok .word{color:var(--good)}
+.callout.bad{background:var(--on-red);border-color:var(--t-max)} .callout.bad .word{color:var(--t-max)}
+.scale{display:flex;gap:10px;margin-top:9px;font:400 10px/1 var(--ui);color:var(--faint);flex-wrap:wrap}
+.scale .on{color:var(--t-low);font-weight:600}
+.scale .rt{margin-left:auto}
+
+.rw{margin-bottom:10px}
+.rwline{display:flex;align-items:baseline;gap:8px;font:500 11.5px/1.35 var(--ui)}
+.rwline .r{margin-left:auto;font:400 11px/1 var(--ui);color:var(--label);text-align:right}
+.rw.scarce .rwline{font-weight:600}
+.rwtrack{position:relative;height:10px;background:var(--track);border-radius:3px;margin-top:5px}
+.rwtrack .f{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.rwtrack .demand{position:absolute;top:-1px;bottom:-1px;width:2px;background:var(--ink)}
+.rwfoot{border-top:1px solid var(--rule);padding-top:10px;margin-top:6px;
+        font:400 11px/1.5 var(--ui);color:var(--caption)}
+.rwfoot b{color:var(--label);font-weight:500}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.chip{font:500 11px/1 var(--ui);color:var(--label);border:1px solid var(--card-line);
+      border-radius:14px;padding:6px 10px}
+.askinput{display:flex;align-items:center;gap:8px;background:var(--inset);
+          border:1px solid var(--card-line);border-radius:9px;padding:10px 12px}
+.askinput .ph{font:400 12.5px/1 var(--ui);color:var(--faint);flex:1}
+.askinput .ent{font:600 10.5px/1 var(--mono);color:var(--caption)}
+
+/* Inert regions. Muted rather than hidden: the shape of what is coming is
+   information, and a missing panel reads as a broken one. */
+.pending{opacity:.55}
+.pending .why{
+  padding:9px 11px;border:1px dashed var(--card-line);border-radius:7px;
+  font:400 10.5px/1.45 var(--ui);color:var(--caption);margin-top:10px;
 }
-.bidrow{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px}
-.bidbox{border:1px solid var(--line);border-radius:9px;padding:7px 12px;flex:1 1 120px;background:var(--raised)}
-/* Judgement and arithmetic must not look alike: one is what he is worth, the
-   other is what you physically cannot exceed. */
-.bidbox.advice{border-color:var(--safe);background:var(--safe-bg)}
-.bidbox.advice .v{color:var(--safe)}
-.bidbox.ceiling{border-style:dashed}
-.bidbox .k{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
-.bidbox .v{display:block;font-size:24px;font-weight:670;line-height:1.1;margin-top:1px}
-.bidbox .sub{display:block;font-size:10.5px;color:var(--faint)}
+.pending .why b{color:var(--label);font-weight:600}
 
-/* --- the join the whole page exists for --- */
-.threats{display:flex;flex-direction:column;gap:4px}
-.threat{
-  display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;
-  padding:6px 9px;border-radius:7px;border:1px solid var(--line);
-  border-left:3px solid var(--faint);background:var(--raised);
-}
-.threat.live{border-left-color:var(--live);background:var(--live-bg)}
-.threat.inert{opacity:.42}
-.threat .who{font-weight:620;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.threat .cap{font-size:16px;font-weight:680}
-.threat.live .cap{color:var(--live)}
-.threat .meta{font-size:10.5px;color:var(--faint);white-space:nowrap}
-.reasons{margin:10px 0 0;padding:0;list-style:none}
-.reasons li{font-size:12px;color:var(--muted);padding:2px 0 2px 12px;position:relative}
-.reasons li::before{content:"";position:absolute;left:0;top:9px;width:5px;height:1px;background:var(--faint)}
+.empty{font:400 11.5px/1.5 var(--ui);color:var(--caption);padding:4px 0}
 
-/* --- tier 3: rivals, budget and need as one object --- */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(154px,1fr));gap:7px}
-.tile{
-  border:1px solid var(--line);border-left:3px solid var(--faint);border-radius:8px;
-  padding:7px 9px;background:var(--raised);
-}
-.tile.live{border-left-color:var(--live)}
-.tile.inert{opacity:.45}
-.tile.me{border-left-color:var(--mine);background:var(--mine-bg)}
-.tile .who{font-weight:640;font-size:12.5px;display:flex;justify-content:space-between;gap:6px}
-.tile .who .slots{color:var(--faint);font-weight:500;font-size:10.5px}
-.tile .money{display:flex;align-items:baseline;gap:6px;margin:2px 0 1px}
-.tile .money .r{font-size:19px;font-weight:680}
-.tile .money .m{font-size:10.5px;color:var(--muted)}
-.tile.live .money .r{color:var(--live)}
-.tile.over{border-color:var(--alarm)}
-.tile.over .money .r{color:var(--alarm)}
-
-/* --- tier 4 --- */
-.scar{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px}
-.scarcell{border:1px solid var(--line);border-radius:7px;padding:6px 8px;background:var(--raised)}
-.scarcell.dry{border-color:var(--live)}
-.scarcell .p{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.05em}
-.scarcell .counts{display:flex;gap:7px;margin-top:3px;align-items:baseline}
-.scarcell .e{font-size:17px;font-weight:690;color:var(--safe)}
-.scarcell.dry .e{color:var(--live)}
-.scarcell .rest{font-size:10.5px;color:var(--faint)}
-
-.rows{display:flex;flex-direction:column;gap:2px}
-.row{display:grid;grid-template-columns:1fr auto auto;gap:9px;align-items:baseline;
-     padding:3px 0;border-bottom:1px solid var(--line);font-size:12.5px}
-.row:last-child{border-bottom:none}
-.row .r-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row .r-price{font-weight:660}
-.row .r-delta{font-size:10.5px;min-width:38px;text-align:right}
-.over-ref{color:var(--alarm)} .under-ref{color:var(--safe)}
-
-.kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:12.5px;
-    border-bottom:1px solid var(--line)}
-.kv:last-child{border-bottom:none}
-.kv .k{color:var(--muted)}
-.kv .v{font-weight:640}
-
-#warnings{display:flex;flex-direction:column;gap:5px}
-.warn{background:var(--live-bg);border:1px solid var(--live-line);color:var(--live);
-      border-radius:7px;padding:6px 9px;font-size:12px}
-
-footer{
-  position:fixed;bottom:0;left:0;right:0;background:var(--bg);
-  border-top:1px solid var(--line);padding:5px 16px;font-size:10.5px;color:var(--faint);
-  display:flex;justify-content:space-between;gap:12px;z-index:20;
-}
-.dot{display:inline-block;width:6px;height:6px;border-radius:9px;background:var(--safe);margin-right:5px}
-.dot.stale{background:var(--live)} .dot.dead{background:var(--alarm)}
-
-/* Degrades in reverse priority order: your money and the player on the block
-   survive any viewport, per the brief's hierarchy. */
-@media (max-width:900px){
-  main{grid-template-columns:minmax(0,1fr)}
-  .big .v{font-size:26px} .big.hero .v{font-size:32px}
+@media (max-width:1100px){
+  #band1,#band2{grid-template-columns:minmax(0,1fr)}
+  #block,#matrix{border-right:none;border-bottom:1px solid var(--rule)}
+  #pname{font-size:32px}
+  .card .v{font-size:32px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+*{transition-duration:120ms}
 </style>
 </head>
 <body>
 
-<div id="mine"></div>
-<main>
-  <section id="focus" class="span2"><h2>On the block</h2><div id="focus-body"></div></section>
-  <section id="rivals" class="span2"><h2>Rivals <span class="aside" id="rivals-sort"></span></h2><div id="rivals-body"></div></section>
-  <section id="scarcity"><h2>What is left</h2><div id="scarcity-body"></div></section>
-  <section id="market"><h2>Market</h2><div id="market-body"></div></section>
-  <section id="plan"><h2>Plan</h2><div id="plan-body"></div></section>
-  <section id="turns"><h2>Nomination order</h2><div id="turns-body"></div></section>
-  <section id="sales" class="span2"><h2>Recent sales</h2><div id="sales-body"></div></section>
-  <section id="warnbox" class="span2" hidden><h2>Notes</h2><div id="warnings"></div></section>
-</main>
-<footer>
-  <span id="conn"><span class="dot"></span>connecting…</span>
-  <span id="stamp"></span>
-</footer>
+<div id="status" class="band">
+  <span class="who" id="s-you">—</span>
+  <span id="s-league"></span>
+  <span class="m" id="s-nom"></span>
+  <span class="m" id="s-infl"></span>
+  <span class="m" id="s-room"></span>
+  <span class="right">
+    <span id="s-turn"></span>
+    <span class="dot" id="s-dot"></span>
+  </span>
+</div>
+
+<div id="band1" class="band">
+  <div id="block">
+    <div class="eyebrow">on the block</div>
+    <div class="playerline">
+      <div style="min-width:0">
+        <h1 id="pname">—</h1>
+        <div id="psub"></div>
+      </div>
+      <div class="cards" id="p-cards"></div>
+    </div>
+  </div>
+  <div id="risk">
+    <div class="riskhead">
+      <span class="eyebrow">highest risk to me</span>
+      <span class="sub" id="risk-sub">who can actually pay</span>
+    </div>
+    <div class="riskrows" id="risk-rows"></div>
+    <div class="note" id="risk-note"></div>
+  </div>
+</div>
+
+<div id="band2" class="band">
+  <div id="matrix">
+    <div class="mxhead">
+      <span class="eyebrow">threat matrix</span>
+      <span class="cap">starters filled / starters required · colour is what that team could pay</span>
+      <span class="legend"><span>$1</span><span class="rampbar"></span><span id="mx-top">$186</span></span>
+    </div>
+    <div id="mx-body"></div>
+    <div class="mxlegend">
+      <span><i class="sw" style="background:var(--sat)"></i> starters complete — no gap, no threat</span>
+      <span><i class="sw" style="background:var(--t-mid);outline:2px solid var(--ink);outline-offset:-1px"></i> the position on the block</span>
+      <span><i class="sw" style="background:var(--you)"></i> a gap of yours</span>
+    </div>
+  </div>
+  <div id="log">
+    <div class="loghead">
+      <span class="eyebrow">analysis</span>
+      <span class="pill" id="log-pill"><i class="d"></i>pending</span>
+      <span class="ro">read-only</span>
+    </div>
+    <div class="logscroll pending">
+      <div class="empty">No analysis yet.</div>
+      <div class="why"><b>Needs the ambient feed (capability 6).</b> The engine
+        emits every number on this board, but nothing yet writes the running
+        commentary — which runs beside the engine and never inside it, so a slow
+        sentence can never delay a bid readout.</div>
+    </div>
+    <div class="logfoot">Written beside the engine, not inside it. Nothing here moves a number on this board.</div>
+  </div>
+</div>
+
+<div id="band3">
+  <div class="tile" id="plan">
+    <div class="tilehead"><span class="eyebrow">plan health</span><span class="sub" id="plan-sub"></span></div>
+    <div id="plan-body"></div>
+  </div>
+  <div class="tile" id="runway">
+    <div class="tilehead"><span class="eyebrow">runway — startable against starting slots</span></div>
+    <div id="runway-body"></div>
+    <div class="rwfoot" id="runway-foot"></div>
+  </div>
+  <div class="tile pending" id="ask">
+    <div class="tilehead"><span class="eyebrow">ask the assistant</span><span class="sub">anything on this board, or the draft as a whole</span></div>
+    <div class="empty">Not connected.</div>
+    <div class="why"><b>Needs the inference layer.</b> Every input is in place —
+      the dossiers, four seasons of precedent, and this board's own payload — but
+      nothing reads them yet. It will run beside the engine, never inside it: a
+      slow answer here can never delay a bid readout.</div>
+    <div class="chips">
+      <span class="chip">who can still afford Chase?</span>
+      <span class="chip">am I short at WR?</span>
+      <span class="chip">what should I nominate?</span>
+    </div>
+    <div class="askinput"><span class="ph">Ask about the board…</span><span class="ent">⏎</span></div>
+  </div>
+</div>
 
 <script>
 "use strict";
 
-// Money is never rendered as a bare number when it is a floor. An unknown price
-// is charged at the $1 minimum, so the figure understates what a rival has
-// actually spent and overstates what they can still bid — deliberately, since
-// that is the safe direction for advice, but only if you can see that is what
-// you are looking at.
-const money = (n, floor) => (n === null || n === undefined) ? "—" : `$${n}${floor ? "+" : ""}`;
-const el = (t, c, txt) => { const n = document.createElement(t); if (c) n.className = c;
-  if (txt !== undefined) n.textContent = txt; return n; };
-const clear = n => { while (n.firstChild) n.removeChild(n.firstChild); };
+const $ = id => document.getElementById(id);
+const el = (t,c,x) => { const n=document.createElement(t); if(c)n.className=c;
+  if(x!==undefined)n.textContent=x; return n; };
+const clear = n => { while(n.firstChild) n.removeChild(n.firstChild); };
+// A price charged at the $1 floor is a lower bound, not a fact. Showing it bare
+// would present a floor as certainty, and it is deliberately the optimistic
+// direction — safe only while it is visibly a floor.
+const money = (n,floor) => (n===null||n===undefined) ? "—" : `$${n}${floor?"+":""}`;
 
-let lastStamp = null, failures = 0;
+const POSITIONS = ["QB","RB","WR","TE","FLEX","K","DST"];
 
-function chips(gaps) {
-  const wrap = el("div", "chips");
-  const entries = Object.entries(gaps || {}).filter(([, v]) => v > 0);
-  if (!entries.length) { wrap.appendChild(el("span", "chip", "starters full")); return wrap; }
-  for (const [slot, n] of entries) {
-    wrap.appendChild(el("span", "chip need", n > 1 ? `${slot}×${n}` : slot));
-  }
-  return wrap;
-}
-
-function box(cls, label, value, sub) {
-  const b = el("div", cls);
-  b.appendChild(el("span", "k", label));
-  b.appendChild(el("span", "v num", value));
-  if (sub) b.appendChild(el("span", "sub", sub));
-  return b;
-}
-
-function renderMine(v) {
-  const host = document.getElementById("mine");
-  clear(host);
-  const me = v.me;
-  if (!me) { host.appendChild(box("big", "waiting", "—", "no team")); return; }
-
-  const g = v.nomination && v.nomination.guidance;
-  // The hero is whatever you act on right now: the advisable bid when someone
-  // is up, your legal ceiling otherwise.
-  if (g) {
-    host.appendChild(box("big hero", "bid up to", `$${g.max_advisable_bid}`,
-      `range $${g.suggested_low}–$${g.suggested_high}`));
-  } else {
-    host.appendChild(box("big hero", "max legal bid", `$${me.max_legal_bid}`,
-      "every other slot still costs $1"));
-  }
-
-  host.appendChild(box(
-    "big" + (me.is_overspent ? " alarmstate" : ""),
-    "remaining", money(me.remaining, me.remaining_is_floor),
-    me.unknown_price_count ? `${me.unknown_price_count} price(s) unknown` : "all prices known"));
-
-  host.appendChild(box("big", "legal max", `$${me.max_legal_bid}`,
-    g && g.ceiling_is_optimistic ? `~$${g.safe_legal_bid} at sheet value` : "hard ceiling"));
-
-  host.appendChild(box("big", "roster",
-    `${me.roster_count}/${v.league ? v.league.draftable_slots : "?"}`,
-    `${me.open_slots} to fill`));
-
-  const need = el("div", "big");
-  need.appendChild(el("span", "k", "still need"));
-  need.appendChild(chips(me.starter_gaps));
-  host.appendChild(need);
-}
-
-function threatRow(t, plan) {
-  const cls = "threat " + (t.is_live ? "live" : "inert");
-  const row = el("div", cls);
-  row.appendChild(el("div", "who", t.label));
-  row.appendChild(el("div", "cap num", `$${t.max_legal_bid}`));
-  row.appendChild(el("div", "meta",
-    `${money(t.remaining, t.remaining_is_floor)} · ${t.open_at_position} slot(s)`));
-  return row;
-}
-
-function renderFocus(v) {
-  const host = document.getElementById("focus-body");
-  const sect = document.getElementById("focus");
-  clear(host);
-  const nom = v.nomination;
-  sect.classList.toggle("up", !!nom);
-
-  if (!nom) {
-    host.appendChild(el("div", "empty", "Nothing up for bid."));
-    return;
-  }
-
-  const head = el("div", "player");
-  head.appendChild(el("div", "name", nom.name));
-  if (nom.position) head.appendChild(el("span", "pos", nom.position));
-  host.appendChild(head);
-
-  const g = nom.guidance;
-  if (!g) {
-    host.appendChild(el("div", "empty", "No reference data loaded — no bid guidance."));
-    return;
-  }
-
-  const row = el("div", "bidrow");
-  const inflated = (g.inflated_value && g.inflated_value !== nom.reference_value)
-    ? `sheet $${nom.reference_value} → $${g.inflated_value}` : `sheet $${nom.reference_value ?? "—"}`;
-  row.appendChild(box("bidbox advice", "bid up to", `$${g.max_advisable_bid}`, inflated));
-  row.appendChild(box("bidbox ceiling", "you cannot exceed",
-    g.ceiling_is_optimistic ? `$${g.max_legal_bid}+` : `$${g.max_legal_bid}`,
-    g.ceiling_is_optimistic ? `~$${g.safe_legal_bid} once priced` : "hard ceiling"));
-  row.appendChild(box("bidbox", "top rival can go", `$${g.contested_ceiling}`,
-    g.fills_starter_gap ? "fills a starting slot for you" : "bench only for you"));
-  if (g.plan_cap) {
-    row.appendChild(box("bidbox", "your plan cap", `$${g.plan_cap}`,
-      g.exceeds_plan_cap ? "exceeded — your call" : "within plan"));
-  }
-  host.appendChild(row);
-
-  const live = g.threats.filter(t => t.is_live);
-  const sub = document.createElement("div");
-  sub.style.cssText = "font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:2px 0 6px";
-  sub.textContent = live.length
-    ? `${live.length} rival(s) can afford him and start him`
-    : "nobody who needs the position can afford him";
-  host.appendChild(sub);
-
-  const list = el("div", "threats");
-  const SHOWN = 6;
-  for (const t of g.threats.slice(0, SHOWN)) list.appendChild(threatRow(t));
-  if (g.threats.length > SHOWN) {
-    const rest = g.threats.length - SHOWN;
-    const restLive = g.threats.slice(SHOWN).filter(t => t.is_live).length;
-    list.appendChild(el("div", "empty",
-      `… and ${rest} more${restLive ? `, ${restLive} of them live` : ", none live"}`));
-  }
-  host.appendChild(list);
-
-  if (g.reasons && g.reasons.length) {
-    const ul = el("ul", "reasons");
-    for (const r of g.reasons) ul.appendChild(el("li", null, r));
-    host.appendChild(ul);
-  }
-}
-
-function renderRivals(v) {
-  const host = document.getElementById("rivals-body");
-  const note = document.getElementById("rivals-sort");
-  clear(host);
-
-  const g = v.nomination && v.nomination.guidance;
-  const liveBy = new Map();
-  if (g) for (const t of g.threats) liveBy.set(t.team_id, t);
-  note.textContent = g
-    ? `sorted by who can take ${v.nomination.name}`
-    : "sorted by money left";
-
-  // Never index by team id: this league runs 1-5 and 7-13, and there is no
-  // team 6. Sort a copy of the array instead.
-  const rivals = v.teams.filter(t => !t.is_me).slice();
-  rivals.sort((a, b) => {
-    if (g) {
-      const A = liveBy.get(a.team_id), B = liveBy.get(b.team_id);
-      const al = A && A.is_live ? 1 : 0, bl = B && B.is_live ? 1 : 0;
-      if (al !== bl) return bl - al;
-      if (A && B && A.max_legal_bid !== B.max_legal_bid) return B.max_legal_bid - A.max_legal_bid;
+/* Cell colour is what that team could pay, on the ramp the legend shows. It is
+   arithmetic — max_legal_bid — not a guess at what they want. */
+const RAMP = [[0,[43,49,64]],[.28,[93,101,114]],[.6,[255,196,107]],[.82,[255,157,77]],[1,[255,77,61]]];
+function ramp(t){
+  t = Math.max(0, Math.min(1, t));
+  for (let i=1;i<RAMP.length;i++){
+    if (t<=RAMP[i][0]){
+      const [a,ca]=RAMP[i-1],[b,cb]=RAMP[i], k=(t-a)/(b-a||1);
+      return ca.map((v,j)=>Math.round(v+(cb[j]-v)*k));
     }
-    return b.remaining - a.remaining;
+  }
+  return RAMP[RAMP.length-1][1];
+}
+const rgb = c => `rgb(${c[0]},${c[1]},${c[2]})`;
+// Dark tint on bright fills, light on dark — the design's contrast rule.
+const onFill = c => (c[0]*.299+c[1]*.587+c[2]*.114) > 140 ? "#3d1f04" : "#c3cad6";
+
+function render(v){
+  if(!v.initialized){ $("s-you").textContent="waiting for a draft"; return; }
+  const me = v.me || {}, g = (v.nomination||{}).guidance || null;
+  const plan = v.nomination_plan || {}, mkt = v.market || {};
+
+  /* band 0 */
+  $("s-you").textContent = me.label || "you";
+  $("s-league").textContent = (v.league||{}).name || "";
+  $("s-nom").textContent = plan.order_known
+    ? `nom ${Math.min(plan.turns_taken+1, plan.total_nominations)} / ${plan.total_nominations}`
+    : `${(v.recent_sales||[]).length ? "" : ""}${mkt.sales||0} sold`;
+  $("s-infl").textContent = (mkt.inflation_ratio==null)
+    ? "inflation — not enough sales yet" : `${mkt.inflation_ratio.toFixed(2)}× ${mkt.read}`;
+  $("s-room").textContent = `$${mkt.dollars_remaining??0} left in the room`;
+  const until = plan.nominations_until_mine;
+  $("s-turn").innerHTML = (until===null||until===undefined) ? ""
+    : (until===0 ? "you nominate <b>next</b>" : `you nominate in <b>${until}</b>`);
+
+  renderBlock(v, me, g);
+  renderRisk(v, g);
+  renderMatrix(v, me, g);
+  renderPlan(v);
+  renderRunway(v, plan);
+}
+
+function card(cls,k,val,foot){
+  const c = el("div","card "+(cls||""));
+  c.appendChild(el("span","k",k));
+  c.appendChild(el("span","v m",val));
+  c.appendChild(el("span","f m",foot));
+  return c;
+}
+
+function renderBlock(v, me, g){
+  const nom = v.nomination, cards = $("p-cards");
+  clear(cards);
+  const name = $("pname"), sub = $("psub");
+  clear(name); clear(sub);
+
+  if(!nom){
+    name.appendChild(document.createTextNode("Nothing up for bid"));
+    sub.textContent = "The board is quiet. Everything below is current.";
+    cards.appendChild(card("", "max legal bid", `$${me.max_legal_bid??0}`, "arithmetic"));
+    cards.appendChild(card("", "remaining", money(me.remaining, me.remaining_is_floor),
+      `${me.roster_count} / ${(v.league||{}).draftable_slots} filled`));
+    return;
+  }
+
+  name.appendChild(document.createTextNode(nom.name));
+  const pos = el("span","pos",nom.position||""); name.appendChild(pos);
+
+  if(g){
+    const bits = [];
+    bits.push(nom.reference_value!=null && g.inflated_value!=null && g.inflated_value!==nom.reference_value
+      ? `sheet $${nom.reference_value} → $${g.inflated_value} at tonight's market`
+      : `sheet ${nom.reference_value!=null?"$"+nom.reference_value:"not on your sheet"}`);
+    bits.push(g.fills_starter_gap ? "fills a starting slot" : "fills no starting slot");
+    sub.appendChild(document.createTextNode(bits.join(" · ") + (g.plan_cap ? " · " : "")));
+    if(g.plan_cap){
+      const d = el("span","dashed",`plan cap $${g.plan_cap}`);
+      d.title = g.exceeds_plan_cap
+        ? `You declared $${g.plan_cap} as your most on any one player. This is above it — the engine does not enforce it.`
+        : `You declared $${g.plan_cap} as your most on any one player. This is within it.`;
+      sub.appendChild(d);
+    }
+    // "opinion" is on the card on purpose: this is the only number in band 1
+    // that is a judgement rather than arithmetic, and it must not be read as a
+    // limit.
+    cards.appendChild(card("rec","bid up to",`$${g.max_advisable_bid}`,
+      `opinion · $${g.suggested_low}–$${g.suggested_high}`));
+    cards.appendChild(card("","hard ceiling",
+      g.ceiling_is_optimistic ? `$${g.max_legal_bid}+` : `$${g.max_legal_bid}`,
+      g.ceiling_is_optimistic ? `~$${g.safe_legal_bid} once priced` : "arithmetic"));
+    cards.appendChild(card("","remaining", money(me.remaining, me.remaining_is_floor),
+      `${me.roster_count} / ${(v.league||{}).draftable_slots} filled`));
+  } else {
+    sub.textContent = "No reference data loaded — no bid guidance.";
+  }
+}
+
+function renderRisk(v, g){
+  const rows = $("risk-rows"), note = $("risk-note");
+  clear(rows); clear(note);
+
+  if(!g){ rows.appendChild(el("div","empty","Nothing on the block.")); note.textContent=""; return; }
+
+  const live = g.threats.filter(t=>t.is_live);
+  $("risk-sub").textContent = live.length
+    ? "who can actually pay" : "nobody who needs the position can pay";
+
+  const tiers = ["var(--t-max)","var(--t-mid)","var(--t-low)","var(--label)"];
+  const pace = new Map((g.pace_reads||[]).filter(p=>p.is_notable).map(p=>[p.team_id,p]));
+
+  (live.length?live:g.threats).slice(0,4).forEach((t,i)=>{
+    const r = el("div","riskrow"+(i>=3?" dim":""));
+    r.appendChild(el("div","n",t.label));
+    const e = el("div","e m",`$${t.max_legal_bid}`);
+    e.style.color = tiers[Math.min(i,3)];
+    r.appendChild(e);
+
+    // No estimate exists, so the second line says something true instead: what
+    // the record shows about how this person drafts, when it discriminates.
+    const p = pace.get(t.team_id);
+    r.appendChild(el("div","why", p
+      ? `${Math.round(p.actual_share*100)}% of budget out, usually ${Math.round(p.expected_share*100)}% by now · ${p.dollars_vs_script<0?"holding":"ahead"} ~$${Math.abs(p.dollars_vs_script)}`
+      : `${t.open_at_position} starting slot(s) open · ${money(t.remaining,t.remaining_is_floor)} in hand`));
+    r.appendChild(el("div","of m", t.is_live ? "can start him" : "no slot"));
+    rows.appendChild(r);
   });
 
-  const grid = el("div", "grid");
-  const me = v.teams.find(t => t.is_me);
-  if (me) grid.appendChild(tile(me, null, true));
-  for (const t of rivals) grid.appendChild(tile(t, liveBy.get(t.team_id), false));
-  host.appendChild(grid);
+  const b = el("b",null,"These are ceilings, not estimates.");
+  note.appendChild(b);
+  note.appendChild(document.createTextNode(
+    " What a rival could pay is arithmetic and is shown. What they will actually" +
+    " bid is inference — capability 2's intent half, which reads the dossiers and" +
+    " four seasons of precedent. It does not exist yet, so nothing here guesses."));
 }
 
-function tile(t, threat, isMe) {
-  let cls = "tile";
-  if (isMe) cls += " me";
-  else if (threat) cls += threat.is_live ? " live" : " inert";
-  if (t.is_overspent) cls += " over";
-
-  const n = el("div", cls);
-  const who = el("div", "who");
-  who.appendChild(el("span", null, t.label));
-  who.appendChild(el("span", "slots", `${t.roster_count}/${t.roster_count + t.open_slots}`));
-  n.appendChild(who);
-
-  const m = el("div", "money");
-  m.appendChild(el("span", "r num", money(t.remaining, t.remaining_is_floor)));
-  m.appendChild(el("span", "m num", `max $${t.max_legal_bid}`));
-  n.appendChild(m);
-
-  n.appendChild(chips(t.starter_gaps));
-  return n;
-}
-
-function renderScarcity(v) {
-  const host = document.getElementById("scarcity-body");
+function renderMatrix(v, me, g){
+  const host = $("mx-body");
   clear(host);
-  const s = v.scarcity || {};
-  const keys = Object.keys(s);
-  if (!keys.length) { host.appendChild(el("div", "empty", "No reference file loaded.")); return; }
+  const required = (v.league||{}).roster_slots || {};
+  const onBlock = (v.nomination||{}).position || null;
 
-  const grid = el("div", "scar");
-  for (const pos of keys) {
-    const d = s[pos];
-    const cell = el("div", "scarcell" + (d.is_drying_up ? " dry" : ""));
-    cell.appendChild(el("div", "p", pos));
-    const counts = el("div", "counts");
-    counts.appendChild(el("span", "e num", String(d.elite)));
-    counts.appendChild(el("span", "rest num", `${d.startable} startable`));
-    cell.appendChild(counts);
-    cell.appendChild(el("div", "rest", `${d.total_remaining} left`));
-    grid.appendChild(cell);
-  }
-  host.appendChild(grid);
+  const teams = (v.teams||[]).slice().sort((a,b)=>{
+    if(a.is_me!==b.is_me) return a.is_me?-1:1;          // you first
+    return b.max_legal_bid - a.max_legal_bid;            // then by reach
+  });
+  const top = Math.max(1, ...teams.map(t=>t.max_legal_bid));
+  $("mx-top").textContent = `$${top}`;
+
+  const cols = `64px repeat(${POSITIONS.length},minmax(0,1fr)) 54px`;
+
+  const hdr = el("div","mxrow mxhdr");
+  hdr.style.gridTemplateColumns = cols;
+  hdr.appendChild(el("div","rl",""));
+  POSITIONS.forEach(p=>hdr.appendChild(el("div","col",p)));
+  hdr.appendChild(el("div","col mx","max"));
+  host.appendChild(hdr);
+
+  teams.forEach((t,i)=>{
+    const tier = t.is_me ? "you" : i<=2 ? "t1" : i<=5 ? "t2" : i<=8 ? "t3" : "t4";
+    const row = el("div",`mxrow ${tier}${i>5?" lo":""}`);
+    row.style.gridTemplateColumns = cols;
+    row.appendChild(el("div","rl", t.is_me ? "you" : t.label));
+
+    const colour = ramp(top ? t.max_legal_bid/top : 0);
+    POSITIONS.forEach(pos=>{
+      const req = required[pos] || 0;
+      const gap = (t.starter_gaps||{})[pos] || 0;
+      const filled = Math.max(0, req - gap);
+      const c = el("div","cell",`${filled}/${req}`);
+      if(req===0){ c.classList.add("sat"); c.textContent="—"; }
+      else if(gap===0) c.classList.add("sat");         // no gap, no threat
+      else if(t.is_me) c.classList.add("mine");
+      else { c.style.background = rgb(colour); c.style.color = onFill(colour);
+             c.style.fontWeight = "700"; }
+      if(pos===onBlock) c.classList.add("onblock");
+      c.title = `${t.label} · ${pos}: ${filled} of ${req} starters filled · ` +
+                `${money(t.remaining,t.remaining_is_floor)} in hand, max $${t.max_legal_bid}`;
+      row.appendChild(c);
+    });
+    row.appendChild(el("div","mx m",`$${t.max_legal_bid}`));
+    host.appendChild(row);
+  });
 }
 
-function renderMarket(v) {
-  const host = document.getElementById("market-body");
-  clear(host);
-  const m = v.market || {};
-  const kv = (k, val) => { const r = el("div", "kv");
-    r.appendChild(el("span", "k", k)); r.appendChild(el("span", "v num", val)); return r; };
-
-  // Null until five priced sales have landed, deliberately — early noise would
-  // swing every threshold that reads it. Say so rather than show a gauge
-  // pinned at a meaningless value.
-  host.appendChild(kv("inflation",
-    m.inflation_ratio === null || m.inflation_ratio === undefined
-      ? "not enough sales yet"
-      : `${m.inflation_ratio.toFixed(2)}× ${m.read}`));
-  host.appendChild(kv("spent league-wide", `$${m.dollars_spent ?? 0}`));
-  host.appendChild(kv("still in the room", `$${m.dollars_remaining ?? 0}`));
-  host.appendChild(kv("sales", String(m.sales ?? 0)));
-  if (m.unknown_prices) {
-    host.appendChild(kv("prices still unknown", String(m.unknown_prices)));
-  }
-}
-
-function renderPlan(v) {
-  const host = document.getElementById("plan-body");
-  clear(host);
+function renderPlan(v){
+  const host = $("plan-body"); clear(host);
   const p = v.strategy;
-  if (!p) { host.appendChild(el("div", "empty", "No plan declared.")); return; }
+  if(!p){
+    $("plan-sub").textContent = "";
+    host.appendChild(el("div","empty","No plan declared. `ffa strategy init` builds one."));
+    return;
+  }
+  $("plan-sub").textContent = `${p.archetype||"custom"} · declared, not computed`;
 
-  const kv = (k, val, cls) => { const r = el("div", "kv");
-    r.appendChild(el("span", "k", k));
-    r.appendChild(el("span", "v num " + (cls || ""), val)); return r; };
+  const worst = Math.max(20, ...(p.positions||[]).map(r=>Math.abs(r.variance)));
+  (p.positions||[]).slice(0,5).forEach(r=>{
+    const over = r.variance>0;
+    const bar = el("div","pbar "+(r.is_material?(over?"over":"under"):""));
+    bar.style.gridTemplateColumns = "38px 1fr 92px";
+    bar.appendChild(el("div","pl",r.position));
+    const track = el("div","ptrack");
+    track.appendChild(el("div","mid"));
+    const f = el("div","f");
+    const pct = Math.min(50, Math.abs(r.variance)/worst*50);
+    if(over){ f.style.left="50%"; f.style.width=pct+"%"; f.style.background="var(--rec)"; }
+    else { f.style.right="50%"; f.style.width=pct+"%"; f.style.background="var(--fill)"; }
+    track.appendChild(f);
+    bar.appendChild(track);
+    bar.appendChild(el("div","pr",
+      `${over?"+":""}${r.variance} · ${r.open_slots===0?"done":(r.still_calls_for?"still to buy":"in play")}`));
+    host.appendChild(bar);
+  });
 
-  if (p.shortfall > 0) {
-    host.appendChild(kv("SHORT", `$${p.shortfall}`, "over-ref"));
+  // Budget bar: spent, uncommitted, and where the plan wants to be.
+  const spentPct = p.budget ? p.spent_total/p.budget*100 : 0;
+  const wantPct  = p.budget ? Math.min(100,(p.spent_total+p.still_calls_for)/p.budget*100) : 0;
+  const bud = el("div","budget");
+  const s = el("div","spent"); s.style.width = spentPct+"%"; bud.appendChild(s);
+  const u = el("div","unc"); u.style.left = spentPct+"%"; u.style.right="0"; bud.appendChild(u);
+  const mk = el("div","mark"); mk.style.left = wantPct+"%"; bud.appendChild(mk);
+  const l1 = el("div","lbl m",`$${p.spent_total} spent`); l1.style.left="0"; l1.style.color="var(--ink2)";
+  const l2 = el("div","lbl m",`$${p.remaining} in hand`); l2.style.right="0"; l2.style.color="var(--label)";
+  bud.appendChild(l1); bud.appendChild(l2);
+  host.appendChild(bud);
+
+  // Three states, all arithmetic. The threshold is the bench reserve, not a
+  // percentage of budget, and that matters: a plan allocates everything it is
+  // not holding back, so at pick zero `slack` equals the reserve exactly. A
+  // percentage rule reads that healthy starting state as AT RISK — which is
+  // what it did, on the first render against a real board.
+  const floor = p.bench_reserve || 0;
+  const state = p.shortfall>0 ? "bad" : (p.slack < floor ? "" : "ok");
+  const word  = p.shortfall>0 ? "TIME TO MOVE" : (state==="" ? "AT RISK" : "ON TRACK");
+  const body  = p.shortfall>0
+    ? `The plan still wants $${p.still_calls_for} and you hold $${p.remaining}. It is $${p.shortfall} short — something in it has to give.`
+    : (state==="" ? `The plan wants $${p.still_calls_for} of your $${p.remaining}, which eats into the $${floor} you set aside for the bench.`
+                  : `The plan wants $${p.still_calls_for} of your $${p.remaining}. $${p.slack} spare.`);
+  const co = el("div","callout "+state);
+  co.appendChild(el("div","word",word));
+  co.appendChild(el("div","rule"));
+  co.appendChild(el("div","body",body));
+  host.appendChild(co);
+
+  const sc = el("div","scale");
+  ["on track","at risk","time to move"].forEach((w,i)=>{
+    const active = (i===0&&state==="ok")||(i===1&&state==="")||(i===2&&state==="bad");
+    sc.appendChild(el("span",active?"on":"",w));
+  });
+  sc.appendChild(el("span","rt","recomputed every poll"));
+  host.appendChild(sc);
+}
+
+function renderRunway(v, plan){
+  const host = $("runway-body"); clear(host);
+  const s = v.scarcity||{};
+  const keys = Object.keys(s);
+  if(!keys.length){ host.appendChild(el("div","empty","No reference file loaded.")); }
+
+  keys.forEach(pos=>{
+    const d = s[pos];
+    const demand = d.starting_demand||1;
+    const ratio = demand ? d.startable/demand : 0;
+    const scarce = d.is_drying_up || ratio < .5;
+    const row = el("div","rw"+(scarce?" scarce":""));
+    const line = el("div","rwline");
+    line.appendChild(el("span",null,pos));
+    const r = el("span","r",`${d.startable} / ${demand} · ${d.elite} elite left`);
+    if(scarce) r.style.color = "var(--t-mid)";
+    line.appendChild(r);
+    row.appendChild(line);
+    const track = el("div","rwtrack");
+    const f = el("div","f");
+    f.style.width = Math.min(100, ratio*100) + "%";
+    const c = ramp(1 - Math.min(1, ratio));
+    f.style.background = ratio>=1 ? "var(--you)" : rgb(c);
+    track.appendChild(f);
+    const dm = el("div","demand"); dm.style.left = "100%"; track.appendChild(dm);
+    row.appendChild(track);
+    host.appendChild(row);
+  });
+
+  const foot = $("runway-foot"); clear(foot);
+  if(plan.order_known && plan.on_the_clock){
+    foot.appendChild(el("b",null,"on the clock "));
+    foot.appendChild(document.createTextNode(
+      `${plan.on_the_clock.is_me?"you":plan.on_the_clock.label} · round ${plan.on_the_clock.round}`));
+    const rest = (plan.upcoming||[]).slice(1,6).map(t=>t.is_me?"you":t.label).join(" → ");
+    if(rest) foot.appendChild(el("div",null,"then " + rest));
   } else {
-    host.appendChild(kv("spare", `$${p.slack}`, "under-ref"));
-  }
-  host.appendChild(kv("spent", `$${p.spent_total} of $${p.budget}`));
-  host.appendChild(kv("plan still wants", `$${p.still_calls_for}`));
-  if (p.max_on_one_player) {
-    host.appendChild(kv("one-player cap", `$${p.max_on_one_player}`,
-      p.breached_cap ? "over-ref" : ""));
-  }
-  for (const row of (p.positions || []).filter(r => r.is_material)) {
-    host.appendChild(kv(`${row.position} vs plan`,
-      `${row.variance > 0 ? "+" : ""}${row.variance}`,
-      row.variance > 0 ? "over-ref" : "under-ref"));
+    foot.textContent = "No draft order on file.";
   }
 }
 
-function renderTurns(v) {
-  const host = document.getElementById("turns-body");
-  clear(host);
-  const p = v.nomination_plan;
-  if (!p || !p.order_known) {
-    host.appendChild(el("div", "empty", "No draft order on file."));
-    return;
-  }
-  const kv = (k, val, cls) => { const r = el("div", "kv");
-    r.appendChild(el("span", "k", k));
-    r.appendChild(el("span", "v " + (cls || ""), val)); return r; };
+let fails = 0;
+function conn(state, text){
+  const d = $("s-dot"); d.className = "dot " + state;
+  $("log-pill").lastChild.textContent = text;
+}
 
-  host.appendChild(kv("nomination", `${Math.min(p.turns_taken + 1, p.total_nominations)} of ${p.total_nominations}`));
-  if (p.on_the_clock) {
-    host.appendChild(kv("up next", p.on_the_clock.is_me ? "YOU" : p.on_the_clock.label,
-      p.on_the_clock.is_me ? "under-ref" : ""));
-  }
-  if (p.nominations_until_mine !== null && p.nominations_until_mine !== undefined) {
-    host.appendChild(kv("your turn",
-      p.nominations_until_mine === 0 ? "next" : `in ${p.nominations_until_mine}`));
-  }
-  host.appendChild(kv("your turns left", String(p.my_turns_left)));
-  if (p.disagreement) {
-    const w = el("div", "warn", p.disagreement);
-    w.style.marginTop = "8px";
-    host.appendChild(w);
+async function poll(){
+  try{
+    const v = await (await fetch("state.json",{cache:"no-store"})).json();
+    fails = 0;
+    render(v);                    // silent re-render; the board never announces
+    conn("", "pending");
+  }catch(e){
+    fails += 1;
+    // Keep the last good board on screen. A number you can see and distrust
+    // beats an empty panel while a clock is running.
+    conn(fails>3?"dead":"stale", fails>3?"disconnected":"reconnecting");
   }
 }
 
-function renderSales(v) {
-  const host = document.getElementById("sales-body");
-  clear(host);
-  const sales = v.recent_sales || [];
-  if (!sales.length) { host.appendChild(el("div", "empty", "No sales yet.")); return; }
-
-  // Never index by team id — this league runs 1-5 and 7-13, with no team 6.
-  const labels = new Map((v.teams || []).map(t => [t.team_id, t.label]));
-
-  const rows = el("div", "rows");
-  for (const s of sales.slice().reverse()) {
-    const r = el("div", "row");
-    const who = labels.get(s.team_id) || `team${s.team_id}`;
-    r.appendChild(el("div", "r-name", `${s.name} → ${who}`));
-
-    const price = el("div", "r-price num", s.price_known ? `$${s.price}` : "$?");
-    // The payload says where every price came from. Flattening that would undo
-    // the ground-truth-vs-observation split the whole engine is built on, so an
-    // estimated or hand-typed number is marked rather than dressed up.
-    if (!s.price_known) price.classList.add("over-ref");
-    price.title = `price: ${s.price_provenance || "UNKNOWN"}`;
-    r.appendChild(price);
-
-    const d = s.price_known ? s.delta : null;
-    r.appendChild(el("div",
-      "r-delta num " + (d === null || d === undefined ? "" : d > 0 ? "over-ref" : "under-ref"),
-      (d === null || d === undefined) ? "" : `${d > 0 ? "+" : ""}${d}`));
-    rows.appendChild(r);
-  }
-  host.appendChild(rows);
-}
-
-function renderWarnings(v) {
-  const box = document.getElementById("warnbox");
-  const host = document.getElementById("warnings");
-  clear(host);
-  const w = v.warnings || [];
-  box.hidden = !w.length;
-  for (const line of w) host.appendChild(el("div", "warn", line));
-}
-
-function render(v) {
-  if (!v.initialized) {
-    document.getElementById("mine").innerHTML =
-      '<div class="big"><span class="k">waiting</span><span class="v">—</span>' +
-      '<span class="sub">no draft started</span></div>';
-    return;
-  }
-  renderMine(v); renderFocus(v); renderRivals(v);
-  renderScarcity(v); renderMarket(v); renderPlan(v); renderTurns(v);
-  renderSales(v); renderWarnings(v);
-  document.getElementById("stamp").textContent =
-    `${v.draft_id || ""} · ${v.generated_at || ""}`;
-}
-
-function setConn(state, text) {
-  const c = document.getElementById("conn");
-  clear(c);
-  c.appendChild(el("span", "dot " + state));
-  c.appendChild(document.createTextNode(text));
-}
-
-async function poll() {
-  try {
-    const res = await fetch("state.json", { cache: "no-store" });
-    const v = await res.json();
-    failures = 0;
-    // The dashboard never announces — no toast, no flash, no modal steal. It
-    // re-renders silently and lets you notice in your own time.
-    render(v);
-    setConn("", "live");
-    lastStamp = v.generated_at;
-  } catch (err) {
-    failures += 1;
-    // Degrades rather than blanking: the last good board stays on screen,
-    // because a stale number you can see beats an empty panel mid-draft.
-    setConn(failures > 3 ? "dead" : "stale",
-      failures > 3 ? "disconnected — is `ffa dashboard` still running?" : "reconnecting…");
-  }
-}
-
-(async () => {
-  let interval = 2000;
-  try {
-    const meta = await (await fetch("meta.json", { cache: "no-store" })).json();
-    if (meta.poll_interval) interval = meta.poll_interval * 1000;
-  } catch (err) { /* defaults are fine */ }
+(async ()=>{
+  let ms = 2000;
+  try{ const m = await (await fetch("meta.json",{cache:"no-store"})).json();
+       if(m.poll_interval) ms = m.poll_interval*1000; }catch(e){}
   await poll();
-  setInterval(poll, interval);
+  setInterval(poll, ms);
 })();
 </script>
 </body>

@@ -415,6 +415,10 @@
     {
       "title": "The dashboard is a second process, on purpose",
       "body": "It never opens a DraftStore and never takes the pid lock: it replays the journal and serves the same build_view() payload every other surface reads. Two consequences worth keeping. The engine keeps exactly one writer, so nothing the dashboard does can corrupt journal ordering. And a rendering bug at pick 90 costs you a browser tab rather than the process recording your draft. Reading a file under active append is safe here for a specific reason: the journal already tolerates a torn trailing line, because that is what a crash leaves behind, and a concurrent reader hits exactly that case."
+    },
+    {
+      "title": "The dashboard now follows the design handoff",
+      "body": "Rebuilt in src/ffa/dashboard/page.html from the designer's bundle: status bar, on-the-block with the three metric cards, the threat matrix, plan health, runway. The matrix is the piece worth having — positions across, teams down, cell fill is what that team could pay, and a satisfied position goes dark, so a rich team with no gap reads as harmless without any cross-referencing. Three regions are deliberately inert because they need the inference layer that does not exist: rival bid *estimates* and their rationale, the analysis log (capability 6), and the assistant. They render as designed empty states naming what is missing, per the designer's own instruction to degrade to arithmetic rather than delay the page."
     }
   ]
 }
