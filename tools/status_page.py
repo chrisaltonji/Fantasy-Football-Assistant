@@ -228,6 +228,50 @@ def render(data: dict, *, fragment: bool = False) -> str:
         id_="capabilities",
     )
 
+    # --- the tracked build ----------------------------------------------
+    # A capability table says "LLM layer: not started" for weeks at a time. This
+    # is the same work at the granularity it is actually done in, so progress is
+    # visible while it is happening rather than only when it lands.
+    build = data.get("build") or {}
+    build_html = ""
+    if build:
+        steps = build.get("steps") or []
+        items = [i for s in steps for i in (s.get("items") or [])]
+        done_n = sum(1 for i in items if i.get("status") == "done")
+        pct = round(100 * done_n / len(items)) if items else 0
+
+        rows = ""
+        for step in steps:
+            its = step.get("items") or []
+            sdone = sum(1 for i in its if i.get("status") == "done")
+            state = ("done" if its and sdone == len(its)
+                     else "partial" if sdone else "todo")
+            lis = "".join(
+                f'<li class="{e(i.get("status"))}"><span class="dot"></span>'
+                f'<span class="itemname">{e(i["name"])}</span>'
+                f'{pill(i.get("status", "todo"))}</li>'
+                for i in its
+            )
+            detail = (f'<p class="blurb">{e(step["detail"])}</p>'
+                      if step.get("detail") else "")
+            rows += (
+                f'<article class="card">'
+                f'<div class="card-head"><h3>{step.get("n")}. {e(step["name"])}</h3>'
+                f'<span class="ratio">{sdone}/{len(its)}</span></div>'
+                f'{detail}{pill(state)}<ul class="items">{lis}</ul></article>'
+            )
+
+        build_html = section(
+            build.get("name", "Build"),
+            f'<p class="sub">{e(build.get("blurb", ""))}</p>'
+            f'<div class="progress-wrap"><div class="progress-head">'
+            f'<span>modules</span><span><strong>{done_n}</strong> of {len(items)}'
+            f'</span></div><div class="bar"><div class="fill" '
+            f'style="width:{pct}%"></div></div></div>'
+            f'<div class="cards">{rows}</div>',
+            id_="build",
+        )
+
     # --- layers ---------------------------------------------------------
     cards = ""
     for layer in data.get("layers", []):
@@ -349,6 +393,7 @@ def render(data: dict, *, fragment: bool = False) -> str:
     nav = "".join(
         f'<a href="#{i}">{label}</a>'
         for i, label in (
+            ("build", "Build"),
             ("checkpoints", "Checkpoints"),
             ("capabilities", "Capabilities"),
             ("layers", "Layers"),
@@ -369,7 +414,7 @@ def render(data: dict, *, fragment: bool = False) -> str:
         nav=nav,
         head=head,
         body="".join([
-            checkpoints, capabilities, layers, blocking, nxt,
+            build_html, checkpoints, capabilities, layers, blocking, nxt,
             rehearsals, questions, history,
         ]),
         generated=generated,

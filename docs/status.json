@@ -434,5 +434,178 @@
       "title": "Capability 9 counts demand the way a roster actually works",
       "body": "A position is dangerous when the teams who can still act on it outnumber what is left. Two counting decisions carry it. Demand is counted against the position's own starting slot, never the flex: has_starter_gap folds the flex in, which is right for 'could they start this player' and would otherwise add twelve phantom contenders to RB, WR and TE at once and make every position look squeezed from pick one. And a contender must be able to pay — needing one and being able to buy one are different things. The list is empty for most of a draft by construction, which is the point."
     }
-  ]
+  ],
+  "build": {
+    "name": "The inference layer",
+    "blurb": "Capability 2's intent half — five agents on the existing event seam, no orchestration framework. Plan: ~/.claude/plans/push-and-then-lets-synthetic-chipmunk.md",
+    "steps": [
+      {
+        "n": 1,
+        "name": "Foundation — offline, no SDK",
+        "status": "done",
+        "detail": "Every module here is pure and testable with no key and no network.",
+        "items": [
+          {
+            "name": "errors.py — the one exception this package lets out",
+            "status": "done"
+          },
+          {
+            "name": "context.py — ReadLog, the shared memory five agents read each other through",
+            "status": "done"
+          },
+          {
+            "name": "guard.py — 'a read, not a verdict', enforced rather than requested",
+            "status": "done"
+          },
+          {
+            "name": "reconcile.py — read against outcome, computed not asked",
+            "status": "done"
+          },
+          {
+            "name": "budget.py — per-draft cap, priced per call",
+            "status": "done"
+          },
+          {
+            "name": "schemas.py — structured output; field names decline to invite a verdict",
+            "status": "done"
+          },
+          {
+            "name": "projection.py — per-agent payloads, 6,900 tokens down to 1,763",
+            "status": "done"
+          },
+          {
+            "name": "prefix.py — the cached half, byte-stable, with the glossary",
+            "status": "done"
+          },
+          {
+            "name": "prompts.py — block assembly, cache breakpoint, 1h TTL",
+            "status": "done"
+          },
+          {
+            "name": "test_assist_boundary.py — advice/ can never import assist/",
+            "status": "done"
+          }
+        ]
+      },
+      {
+        "n": 2,
+        "name": "The client",
+        "status": "todo",
+        "detail": "First step that needs an API key and the first that spends. Run the live smoke test immediately — earliest point a schema the API rejects would surface.",
+        "items": [
+          {
+            "name": "AnthropicCredentials + loader (redacting __repr__)",
+            "status": "todo"
+          },
+          {
+            "name": "client.py — the only module importing the SDK, lazily",
+            "status": "todo"
+          },
+          {
+            "name": "failure translation — every typed exception to one message",
+            "status": "todo"
+          },
+          {
+            "name": "pyproject extra: assist = [anthropic]",
+            "status": "todo"
+          },
+          {
+            "name": "live smoke test, @pytest.mark.live, excluded by default",
+            "status": "todo"
+          }
+        ]
+      },
+      {
+        "n": 3,
+        "name": "The Room",
+        "status": "todo",
+        "detail": "Rival estimates and pick assistance. Fires on nomination; the deterministic readout never waits on it.",
+        "items": [
+          {
+            "name": "runner.py — daemon threads, ASSIST tag, supersede, mute",
+            "status": "todo"
+          },
+          {
+            "name": "agents/room.py",
+            "status": "todo"
+          },
+          {
+            "name": "--assist flag, off by default",
+            "status": "todo"
+          },
+          {
+            "name": "terminal readout",
+            "status": "todo"
+          },
+          {
+            "name": "ffa sim --assist — the real invoice, not an estimate",
+            "status": "todo"
+          }
+        ]
+      },
+      {
+        "n": 4,
+        "name": "Surfaces",
+        "status": "todo",
+        "detail": "One top-level `assist` key; absent entirely when off, so today's payload stays byte-identical.",
+        "items": [
+          {
+            "name": "assist key in build_view()",
+            "status": "todo"
+          },
+          {
+            "name": "dashboard reads the sidecar (still makes no API calls)",
+            "status": "todo"
+          },
+          {
+            "name": "highest-risk panel un-pends",
+            "status": "todo"
+          }
+        ]
+      },
+      {
+        "n": 5,
+        "name": "The remaining agents",
+        "status": "todo",
+        "items": [
+          {
+            "name": "agents/strategist.py — post-pick, gated on a transition",
+            "status": "todo"
+          },
+          {
+            "name": "agents/narrator.py — reads the Room's earlier estimate",
+            "status": "todo"
+          },
+          {
+            "name": "agents/analyst.py + terminal `ask`",
+            "status": "todo"
+          },
+          {
+            "name": "agents/grader.py + `ffa grade` (capability 11)",
+            "status": "todo"
+          }
+        ]
+      },
+      {
+        "n": 6,
+        "name": "Rehearsal and freeze",
+        "status": "todo",
+        "detail": "Practice room with and without the flag. Anything shaky, draft without it — that is what the flag is for.",
+        "items": [
+          {
+            "name": "live rehearsal, both paths",
+            "status": "todo"
+          },
+          {
+            "name": "cache hit rate confirmed non-zero",
+            "status": "todo"
+          },
+          {
+            "name": "freeze",
+            "status": "todo"
+          }
+        ]
+      }
+    ]
+  }
 }
