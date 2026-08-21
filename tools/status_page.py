@@ -240,26 +240,39 @@ def render(data: dict, *, fragment: bool = False) -> str:
         done_n = sum(1 for i in items if i.get("status") == "done")
         pct = round(100 * done_n / len(items)) if items else 0
 
+        # One row per module, grouped by step. A table rather than cards
+        # because this is a progress ledger read top to bottom — the question
+        # is "what is left", and a grid of cards makes that a counting
+        # exercise. Group headers carry the step's own ratio so a half-done
+        # step is visible without reading its rows.
         rows = ""
         for step in steps:
             its = step.get("items") or []
             sdone = sum(1 for i in its if i.get("status") == "done")
             state = ("done" if its and sdone == len(its)
                      else "partial" if sdone else "todo")
-            lis = "".join(
-                f'<li class="{e(i.get("status"))}"><span class="dot"></span>'
-                f'<span class="itemname">{e(i["name"])}</span>'
-                f'{pill(i.get("status", "todo"))}</li>'
-                for i in its
-            )
-            detail = (f'<p class="blurb">{e(step["detail"])}</p>'
+            detail = (f'<span class="stepdetail">{e(step["detail"])}</span>'
                       if step.get("detail") else "")
             rows += (
-                f'<article class="card">'
-                f'<div class="card-head"><h3>{step.get("n")}. {e(step["name"])}</h3>'
-                f'<span class="ratio">{sdone}/{len(its)}</span></div>'
-                f'{detail}{pill(state)}<ul class="items">{lis}</ul></article>'
+                f'<tr class="grouphead {state}">'
+                f'<th class="mono num">{e(step.get("n"))}</th>'
+                f'<th class="stepname">{e(step["name"])}{detail}</th>'
+                f'<th class="ratio">{sdone}/{len(its)}</th>'
+                f'<th>{pill(state)}</th></tr>'
             )
+            for item in its:
+                status = item.get("status", "todo")
+                # The module name and its one-line reason travel together —
+                # split on the first em dash so the name stays scannable in a
+                # column and the reason does not compete with it.
+                name, _, why = item["name"].partition(" — ")
+                rows += (
+                    f'<tr class="{e(status)}">'
+                    f'<td class="dotcell"><span class="dot"></span></td>'
+                    f'<td class="itemname">{e(name)}</td>'
+                    f'<td class="why">{e(why)}</td>'
+                    f'<td>{pill(status)}</td></tr>'
+                )
 
         build_html = section(
             build.get("name", "Build"),
@@ -268,7 +281,9 @@ def render(data: dict, *, fragment: bool = False) -> str:
             f'<span>modules</span><span><strong>{done_n}</strong> of {len(items)}'
             f'</span></div><div class="bar"><div class="fill" '
             f'style="width:{pct}%"></div></div></div>'
-            f'<div class="cards">{rows}</div>',
+            f'<table class="build"><thead><tr><th>#</th><th>Module / item</th>'
+            f'<th>What it is</th><th>Status</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table>',
             id_="build",
         )
 
@@ -506,6 +521,22 @@ nav a:hover{color:var(--accent)}
 section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:var(--shadow)}
 
 table{width:100%;border-collapse:collapse;font-size:14px}
+.build td,.build th{vertical-align:top}
+.build tr.grouphead th{background:var(--panel);border-top:2px solid var(--line);
+  padding-top:16px;font-size:14px;color:var(--ink);text-align:left}
+.build tr.grouphead .num{color:var(--muted);font-weight:600}
+.build tr.grouphead th.ratio{color:var(--muted);font-weight:600;text-align:right}
+.build tr.grouphead.done .stepname{color:var(--ok)}
+.build .stepname{font-weight:650}
+.build .stepdetail{display:block;font-weight:400;font-size:12.5px;color:var(--muted);
+  margin-top:4px;max-width:62ch;line-height:1.5}
+.build .dotcell{width:22px;padding-left:14px}
+.build .dotcell .dot{margin-top:6px}
+.build .itemname{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:13px;white-space:nowrap}
+.build tr.todo .itemname{color:var(--muted)}
+.build .why{color:var(--muted);font-size:13px;max-width:52ch;line-height:1.5}
+@media(max-width:720px){.build .why{display:none}}
 th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;padding:0 10px 8px 0;border-bottom:1px solid var(--line)}
 td{padding:9px 10px 9px 0;border-bottom:1px solid var(--line);vertical-align:top}
 tr:last-child td{border-bottom:none}
