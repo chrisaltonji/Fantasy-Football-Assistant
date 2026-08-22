@@ -14,7 +14,12 @@ from typing import Any
 
 import tomli_w
 
-from ffa.config.schema import ConfigError, EspnCredentials, LeagueConfig
+from ffa.config.schema import (
+    AnthropicCredentials,
+    ConfigError,
+    EspnCredentials,
+    LeagueConfig,
+)
 from ffa.domain.enums import Position, RosterSlot
 
 DEFAULT_CONFIG_PATH = Path("config/league.toml")
@@ -70,6 +75,33 @@ def load_credentials(
             )
         return None
     return EspnCredentials(espn_s2=s2, swid=swid)
+
+
+def load_assist_credentials(
+    env_path: Path = DEFAULT_ENV_PATH, *, required: bool = False
+) -> AnthropicCredentials | None:
+    """Return the Anthropic key, or None if it isn't configured.
+
+    Absent is the normal case and never an error on its own — the draft runs
+    identically without an assistant. `required=True` is for `--assist`, where
+    the user has asked for the thing the key pays for, and silence would leave
+    them wondering why no reads ever appeared.
+    """
+    key = (
+        os.environ.get("ANTHROPIC_API_KEY")
+        or load_dotenv(env_path).get("ANTHROPIC_API_KEY")
+        or ""
+    ).strip()
+    if not key:
+        if required:
+            raise ConfigError(
+                "--assist needs ANTHROPIC_API_KEY, but it is not set.\n"
+                "Put it in .env (already gitignored) as ANTHROPIC_API_KEY=sk-ant-...\n"
+                "Or drop --assist: every number on screen is arithmetic and is "
+                "exact without it."
+            )
+        return None
+    return AnthropicCredentials(api_key=key)
 
 
 def _require(table: dict[str, Any], section: str, key: str) -> Any:

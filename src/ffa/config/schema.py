@@ -91,6 +91,24 @@ class EspnCredentials:
 
 
 @dataclass(frozen=True)
+class AnthropicCredentials:
+    """The API key for the inference layer. Never required.
+
+    Lives here beside `EspnCredentials` because config owns every secret this
+    tool reads — one `.env`, one loader, one place to look when something is
+    missing. The layer that spends it is `assist/`, but nothing in `config/`
+    imports that package and this dataclass is the reason it does not have to.
+    """
+
+    api_key: str
+
+    def __repr__(self) -> str:  # pragma: no cover - defensive
+        # A key in a traceback is a key in a screenshot. This one is worth more
+        # than an ESPN cookie: a cookie expires and scopes to one league.
+        return "AnthropicCredentials(api_key='<redacted>')"
+
+
+@dataclass(frozen=True)
 class LeagueConfig:
     """The shape of the league. Drives every budget and roster calculation."""
 

@@ -491,27 +491,27 @@
         "n": 2,
         "name": "The client",
         "status": "todo",
-        "detail": "First step that needs an API key and the first that spends. Run the live smoke test immediately — earliest point a schema the API rejects would surface.",
+        "detail": "Needs an API key and is the first step that spends. The live smoke test is written and marked; it runs on `pytest -m live` once ANTHROPIC_API_KEY is in .env.",
         "items": [
           {
             "name": "AnthropicCredentials + loader (redacting __repr__)",
-            "status": "todo"
+            "status": "done"
           },
           {
             "name": "client.py — the only module importing the SDK, lazily",
-            "status": "todo"
+            "status": "done"
           },
           {
             "name": "failure translation — every typed exception to one message",
-            "status": "todo"
+            "status": "done"
           },
           {
             "name": "pyproject extra: assist = [anthropic]",
-            "status": "todo"
+            "status": "done"
           },
           {
-            "name": "live smoke test, @pytest.mark.live, excluded by default",
-            "status": "todo"
+            "name": "live smoke test — written, awaiting a key (`pytest -m live`)",
+            "status": "partial"
           }
         ]
       },

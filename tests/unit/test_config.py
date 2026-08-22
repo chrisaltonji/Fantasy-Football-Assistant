@@ -8,12 +8,17 @@ import pytest
 from ffa.config.loader import (
     config_to_dict,
     load_config,
+    load_assist_credentials,
     load_credentials,
     load_dotenv,
     parse_config,
     write_config,
 )
-from ffa.config.schema import ConfigError, EspnCredentials
+from ffa.config.schema import (
+    AnthropicCredentials,
+    ConfigError,
+    EspnCredentials,
+)
 from ffa.domain.enums import Position, RosterSlot
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "config" / "league.example.toml"
@@ -148,3 +153,40 @@ def test_credentials_never_appear_in_repr():
     creds = EspnCredentials(espn_s2="supersecret", swid="{SWIDSECRET}")
     assert "supersecret" not in repr(creds)
     assert "SWIDSECRET" not in repr(creds)
+
+
+# --- the assist key -----------------------------------------------------------
+
+
+def test_the_assist_key_comes_from_env_or_dotenv(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    env = tmp_path / ".env"
+    env.write_text("ANTHROPIC_API_KEY=sk-ant-from-file" + chr(10), encoding="utf-8")
+    assert load_assist_credentials(env).api_key == "sk-ant-from-file"
+
+    # A real environment variable wins, so CI and one-off overrides work
+    # without editing a file.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-from-env")
+    assert load_assist_credentials(env).api_key == "sk-ant-from-env"
+
+
+def test_no_assist_key_is_not_an_error_by_itself(tmp_path, monkeypatch):
+    """Absent is the normal case — the draft runs identically without one."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert load_assist_credentials(tmp_path / "missing.env") is None
+
+
+def test_asking_for_assist_without_a_key_explains_both_ways_out(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(ConfigError) as caught:
+        load_assist_credentials(tmp_path / "missing.env", required=True)
+
+    message = str(caught.value)
+    assert ".env" in message          # how to fix it
+    assert "--assist" in message      # and how to proceed without it
+
+
+def test_the_assist_key_never_appears_in_a_repr():
+    """This repo is public and a key in a traceback is a key in a screenshot."""
+    creds = AnthropicCredentials(api_key="sk-ant-supersecret")
+    assert "supersecret" not in repr(creds)
