@@ -21,7 +21,7 @@ import types
 
 import pytest
 
-from ffa.assist.client import ClaudeClient, Reply
+from ffa.assist.client import MODEL, PROFILES, ClaudeClient, Reply
 from ffa.assist.errors import AssistError
 
 
@@ -142,6 +142,53 @@ def test_the_room_gets_the_tightest_clock(sdk):
 
     assert sdk.calls[0]["timeout"] == 12.0
     assert sdk.calls[1]["timeout"] > sdk.calls[0]["timeout"]
+
+
+# --- the per-agent profile --------------------------------------------------
+
+
+def test_each_agent_is_dialled_without_being_told(sdk):
+    """Model, effort and timeout all default from the agent name. Before this
+    they were a constant, a dict and a default argument, so a caller could get
+    one right and another wrong with nothing to notice it."""
+    call(sdk, agent="room")
+    call(sdk, agent="grader")
+    room, grader = sdk.calls
+
+    assert room["output_config"]["effort"] == "low"
+    assert room["timeout"] == 12.0
+    assert grader["output_config"]["effort"] == "high"
+    assert grader["timeout"] == 300.0
+
+
+def test_every_agent_shares_one_model_so_they_share_one_cache(sdk):
+    """Caching is keyed on the model. A second model cannot read the prefix the
+    others are paying to keep warm, and moving the three small agents to Sonnet
+    saves about $0.29 a draft against a $25 cap — which is not worth a second
+    cache entry or a second set of behaviour to rehearse."""
+    assert {p.model for p in PROFILES.values()} == {MODEL}
+
+
+def test_an_unknown_agent_still_gets_a_sane_call(sdk):
+    """A typo in an agent name must not mean no timeout at all."""
+    call(sdk, agent="nobody")
+    assert sdk.calls[0]["timeout"] > 0
+    assert sdk.calls[0]["output_config"]["effort"]
+
+
+def test_one_model_override_moves_every_agent(sdk):
+    """What a rehearsal on a cheaper model wants: one flag, not five edits."""
+    c = ClaudeClient("sk-ant-test", model="claude-haiku-4-5")
+    reply = c.complete("room", [], "x")
+
+    assert sdk.calls[0]["model"] == "claude-haiku-4-5"
+    # And the reply names what actually ran, because budget prices from it.
+    assert reply.model == "claude-haiku-4-5"
+
+
+def test_an_explicit_effort_still_wins(sdk):
+    call(sdk, agent="room", effort="high")
+    assert sdk.calls[0]["output_config"]["effort"] == "high"
 
 
 def test_one_retry_not_two(sdk):

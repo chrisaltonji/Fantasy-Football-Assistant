@@ -8,7 +8,8 @@ package on a machine that has never installed `anthropic`, and there is a test
 asserting the module is absent from `sys.modules` afterwards.
 
 **The seam is a callable, not this class.** `runner.py` takes anything matching
-`complete(agent, system, user, *, schema, effort, timeout) -> Reply`, so tests
+`complete(agent, system, user, *, schema, effort, timeout) -> Reply` — with the
+last two defaulting per agent — so tests
 inject a fake and never discover whether a key exists. That is the same shape as
 `EventSource` and `RawConsole(keys=...)`, and it is the reason the assistant can
 be exercised end to end offline.
@@ -20,11 +21,11 @@ Failures divide in two: the ones worth retrying (overloaded, timeout, a 500) and
 the ones where retrying 180 times is pure waste (a bad key, a schema the API
 rejects). The second kind sets `fatal_to_assist`, and the runner mutes.
 
-**Model parameters.** `claude-opus-5` with `thinking={"type": "adaptive"}`.
-Notably *not* `budget_tokens` — that is the pre-4.6 shape and it is rejected with
-a 400 on Opus 5. Effort travels per agent through `output_config`, because the
-Room under a bidding clock and the Grader after the draft want opposite ends of
-it.
+**Model parameters.** `thinking={"type": "adaptive"}` — notably *not*
+`budget_tokens`, which is the pre-4.6 shape and is rejected with a 400 on Opus 5.
+Which model, how much effort and how long each agent gets are one table,
+`PROFILES`; the comment above it is where the "why not a cheaper model for the
+small agents" question is answered with numbers.
 """
 
 from __future__ import annotations
@@ -42,16 +43,62 @@ MODEL = "claude-opus-5"
 # decides to write an essay is cut off rather than billed for one.
 MAX_TOKENS = 2000
 
-# Per-agent ceilings. The Room's is the one that matters: it fires while a player
-# is on the block, and a read that lands after the gavel is evidence rather than
-# advice. The others are not racing anything.
-TIMEOUTS = {
-    "room": 12.0,
-    "strategist": 30.0,
-    "narrator": 20.0,
-    "analyst": 60.0,
-    "grader": 300.0,
+
+@dataclass(frozen=True)
+class AgentProfile:
+    """How one agent is dialled: which model, how hard it thinks, how long it gets.
+
+    One table rather than three mechanisms. These three settings were previously
+    a constant, a dict and a default argument, which meant the caller could get
+    the Room's timeout right and its effort wrong without anything noticing.
+    `complete()` resolves all three from the agent name, so a caller passes an
+    override only when it has a reason to.
+    """
+
+    model: str
+    effort: str
+    timeout: float
+
+
+# **Every agent runs the same model, and that is a measured decision.**
+#
+# The obvious economy is to put the small agents on a cheaper model — the
+# Narrator writes two sentences 33 times, which looks like an extravagant use of
+# Opus. Priced against this league's real numbers it is not: moving the
+# Strategist, Narrator and Grader to Sonnet saves about $0.29 across an entire
+# draft, against a $25 cap.
+#
+# It saves so little because of the cache. **Caching is keyed on the model**, so
+# a second model cannot share the prefix the other four are reading — it pays its
+# own ~2,500-token write, more than once across a three-hour auction as the TTL
+# lapses. Most of what a small agent would save on rates, it gives back on cache
+# writes it now has to pay alone.
+#
+# The Room is the only agent where the model moves real money (~$1.62 to Sonnet),
+# and it is the one to weaken last: it synthesises recorded testimony against
+# tonight's arithmetic, under a bidding clock, and it is the read that reaches
+# the screen while a decision is still open. So: one model, one cache entry, one
+# set of behaviour to rehearse. The field exists per agent because the plumbing
+# is free and the day Opus is overloaded mid-draft, moving one agent is a
+# one-line change rather than a redesign.
+#
+# Effort and timeout are where the agents genuinely differ. The Room gets `low`
+# and 12 seconds because a read that lands after the gavel is evidence rather
+# than advice; the Grader gets `high` and five minutes because the draft is over
+# and nothing is waiting on it.
+PROFILES: dict[str, AgentProfile] = {
+    "room": AgentProfile(MODEL, "low", 12.0),
+    "strategist": AgentProfile(MODEL, "medium", 30.0),
+    "narrator": AgentProfile(MODEL, "low", 20.0),
+    "analyst": AgentProfile(MODEL, "high", 60.0),
+    "grader": AgentProfile(MODEL, "high", 300.0),
 }
+
+DEFAULT_PROFILE = AgentProfile(MODEL, "medium", 30.0)
+
+
+def profile_for(agent: str) -> AgentProfile:
+    return PROFILES.get(agent, DEFAULT_PROFILE)
 
 
 @dataclass(frozen=True)
@@ -111,9 +158,12 @@ class ClaudeClient:
     which is built once under the GIL and is idempotent if it races.
     """
 
-    def __init__(self, api_key: str, *, model: str = MODEL,
+    def __init__(self, api_key: str, *, model: str | None = None,
                  max_retries: int = 1) -> None:
         self._api_key = api_key
+        # None means "each agent uses its own profile". A value here overrides
+        # every profile at once, which is what a rehearsal on a cheaper model
+        # wants — one flag, not five edits.
         self.model = model
         # One retry, not the SDK's default of two. A nomination lasts seconds;
         # a third attempt would land well after the player sold, and the Room's
@@ -122,7 +172,7 @@ class ClaudeClient:
         self._client: Any = None
 
     def __repr__(self) -> str:  # pragma: no cover - defensive
-        return f"ClaudeClient(model={self.model!r}, api_key='<redacted>')"
+        return f"ClaudeClient(model={self.model or 'per-agent'!r}, api_key='<redacted>')"
 
     def _ensure(self) -> Any:
         """Build the SDK client on first use, importing here and not above."""
@@ -143,20 +193,29 @@ class ClaudeClient:
 
     def complete(self, agent: str, system: list[dict[str, Any]], user: str, *,
                  schema: dict[str, Any] | None = None,
-                 effort: str = "medium",
+                 effort: str | None = None,
                  timeout: float | None = None) -> Reply:
-        """One call. Returns a `Reply`, or raises `AssistError`. Never anything else."""
+        """One call. Returns a `Reply`, or raises `AssistError`. Never anything else.
+
+        Model, effort and timeout all default from the agent's profile. Callers
+        pass an override only deliberately — the Room asking for `high` effort
+        should be a visible choice at the call site, not something that happens
+        because an argument was left off.
+        """
         client = self._ensure()
         import anthropic  # already imported by _ensure; bound here for the excepts
 
+        profile = profile_for(agent)
+        model = self.model or profile.model
+
         request: dict[str, Any] = {
-            "model": self.model,
+            "model": model,
             "max_tokens": MAX_TOKENS,
             "system": system,
             "messages": [{"role": "user", "content": user}],
             "thinking": {"type": "adaptive"},
-            "output_config": {"effort": effort},
-            "timeout": timeout if timeout is not None else TIMEOUTS.get(agent, 30.0),
+            "output_config": {"effort": effort or profile.effort},
+            "timeout": timeout if timeout is not None else profile.timeout,
         }
         if schema:
             request["output_config"]["format"] = {
@@ -207,9 +266,10 @@ class ClaudeClient:
         except anthropic.APIConnectionError as exc:
             raise AssistError("could not reach the API") from exc
 
-        return self._parse(agent, message, schema)
+        return self._parse(agent, message, schema, model)
 
-    def _parse(self, agent: str, message: Any, schema: dict | None) -> Reply:
+    def _parse(self, agent: str, message: Any, schema: dict | None,
+               model: str) -> Reply:
         """Reply object to `Reply`. Refusals and truncation are named, not guessed."""
         stop = getattr(message, "stop_reason", "") or ""
         usage = _usage_dict(getattr(message, "usage", None))
@@ -225,7 +285,7 @@ class ClaudeClient:
 
         if not schema:
             return Reply(payload={"text": text}, usage=usage,
-                         model=self.model, stop_reason=stop)
+                         model=model, stop_reason=stop)
 
         try:
             payload = json.loads(text)
@@ -241,4 +301,4 @@ class ClaudeClient:
         if not isinstance(payload, dict):
             raise AssistError(f"the {agent} reply was not an object")
 
-        return Reply(payload=payload, usage=usage, model=self.model, stop_reason=stop)
+        return Reply(payload=payload, usage=usage, model=model, stop_reason=stop)
