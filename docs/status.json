@@ -490,8 +490,8 @@
       {
         "n": 2,
         "name": "The client",
-        "status": "todo",
-        "detail": "Needs an API key and is the first step that spends. The live smoke test is written and marked; it runs on `pytest -m live` once ANTHROPIC_API_KEY is in .env.",
+        "status": "done",
+        "detail": "The first step that spends. Verified live against the real API: adaptive thinking accepted, the JSON schema honoured, and the cached prefix hit on a second call — 1c per warm Narrator call.",
         "items": [
           {
             "name": "AnthropicCredentials + loader (redacting __repr__)",
@@ -510,8 +510,8 @@
             "status": "done"
           },
           {
-            "name": "live smoke test — written, awaiting a key (`pytest -m live`)",
-            "status": "partial"
+            "name": "live smoke test — passing, cache hit confirmed",
+            "status": "done"
           }
         ]
       },

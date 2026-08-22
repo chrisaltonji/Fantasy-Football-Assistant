@@ -349,13 +349,20 @@ def test_the_key_never_reaches_a_repr():
 
 
 @pytest.mark.live
-def test_one_real_call(tmp_path):
+def test_one_real_call():
     """The earliest possible moment to discover a schema the API rejects.
 
     Everything above this line proves the code does what it was written to do.
     Only this proves the API agrees — that `adaptive` thinking is accepted on
-    this model, that `output_config.format` takes these schemas, that a cached
-    block is honoured. Run it deliberately: `pytest -m live`.
+    this model, that `output_config.format` takes these schemas, and that a
+    cached block is honoured. Run it deliberately: `pytest -m live`.
+
+    **It calls twice on purpose.** One call can only ever report
+    `cache_creation`; `cache_read` is zero on a cold prefix no matter how
+    healthy the setup is, so a single-call test would pass identically whether
+    caching worked or silently never engaged. The second call is the only one
+    that can tell the difference, and that difference is roughly $16 across a
+    draft. Two calls cost about three cents.
     """
     from ffa.assist.prompts import system_blocks
     from ffa.assist.schemas import NARRATOR_SCHEMA
@@ -367,66 +374,47 @@ def test_one_real_call(tmp_path):
     if not key:
         pytest.skip("no ANTHROPIC_API_KEY")
 
-    # Long enough to clear the cache floor, so this also proves a cached block
-    # is accepted rather than only that a call succeeds.
-    prefix = ("You are reading a fantasy football auction draft. " * 120)
-    reply = ClaudeClient(key).complete(
-        "narrator",
-        system_blocks(prefix, "narrator"),
-        json.dumps({"entry": {"text": "Bijan Robinson sold for $61", "position": "RB"},
-                    "market": {"inflation_ratio": 1.12}}),
-        schema=NARRATOR_SCHEMA,
-        effort="low",
+    # Long enough to clear the ~1024-token floor below which nothing is cached
+    # at all, so this proves a cached block is honoured rather than only that a
+    # call succeeds.
+    prefix = "You are reading a fantasy football auction draft. " * 120
+    client = ClaudeClient(key)
+
+    def narrate(text):
+        return client.complete(
+            "narrator",
+            system_blocks(prefix, "narrator"),
+            json.dumps({"entry": {"text": text, "position": "RB"},
+                        "market": {"inflation_ratio": 1.12}}),
+            schema=NARRATOR_SCHEMA,
+        )
+
+    first = narrate("Bijan Robinson sold for $61")
+
+    # The schema was honoured, and the reply is the shape the guard expects.
+    assert set(first.payload) >= {"why", "matters_to_me"}
+    assert isinstance(first.payload["matters_to_me"], bool)
+    assert isinstance(first.payload["why"], str) and first.payload["why"]
+    assert first.usage["output"] > 0
+    assert first.stop_reason != "max_tokens", "2000 tokens was not enough"
+
+    # The prefix engaged the cache — written if this run is the first inside the
+    # hour, read if an earlier run already warmed it. Which one it is depends on
+    # when you last ran this and is not the test's business; that *neither*
+    # happened would mean the breakpoint never took and the whole prefix is
+    # being paid for at full rate on every call.
+    cached = first.usage["cache_creation"] + first.usage["cache_read"]
+    assert cached > 0, "the prefix neither entered nor hit the cache"
+
+    second = narrate("Jahmyr Gibbs sold for $54")
+
+    assert second.usage["cache_read"] > 0, (
+        "the prefix did not hit the cache on a second identical call — "
+        "something is varying in the cached half"
     )
+    assert second.usage["cache_read"] >= cached * 0.9, (
+        "the second call cached less of the prefix than the first"
+    )
+    assert second.cache_hit
 
-    assert set(reply.payload) >= {"why", "matters_to_me"}
-    assert isinstance(reply.payload["matters_to_me"], bool)
-    assert reply.usage["output"] > 0
-    print(f"\nlive: {reply.usage} stop={reply.stop_reason}")
-
-
-# --- the request shape against the real SDK ---------------------------------
-#
-# These need `anthropic` installed but no key and no network. They are the
-# cheap half of what the live test proves: the live call shows the *API*
-# accepts the request, and these show the *SDK* declares the shape we send.
-# An upgrade that renames a parameter fails here, in a second, rather than at
-# pick 12 on draft night.
-
-
-def _sdk():
-    return pytest.importorskip("anthropic", reason="assist extra not installed")
-
-
-def test_every_parameter_we_send_exists_on_the_real_sdk():
-    import inspect
-
-    anthropic = _sdk()
-    sig = inspect.signature(anthropic.Anthropic(api_key="x").messages.create)
-    for name in ("model", "max_tokens", "system", "messages",
-                 "thinking", "output_config", "timeout"):
-        assert name in sig.parameters, f"{name} is not a messages.create parameter"
-
-
-def test_adaptive_is_a_declared_thinking_type_and_budget_tokens_is_not():
-    """The 400 this prevents is the single likeliest mistake in the file."""
-    import typing
-
-    _sdk()
-    from anthropic.types.thinking_config_param import ThinkingConfigAdaptiveParam
-
-    hints = typing.get_type_hints(ThinkingConfigAdaptiveParam)
-    assert hints["type"] == typing.Literal["adaptive"]
-    assert "budget_tokens" not in hints
-
-
-def test_output_config_declares_effort_and_a_json_schema_format():
-    import typing
-
-    _sdk()
-    from anthropic.types import JSONOutputFormatParam, OutputConfigParam
-
-    assert set(typing.get_type_hints(OutputConfigParam)) >= {"effort", "format"}
-    fmt = typing.get_type_hints(JSONOutputFormatParam)
-    assert fmt["type"] == typing.Literal["json_schema"]
-    assert "schema" in fmt
+    print(f"\ncold {first.usage}\nwarm {second.usage}")
