@@ -134,14 +134,18 @@ def test_effort_is_per_agent_and_reaches_the_request(sdk):
     assert sdk.calls[0]["output_config"]["effort"] == "high"
 
 
-def test_the_room_gets_the_tightest_clock(sdk):
-    """It fires with a player on the block. A read that lands after the gavel is
-    evidence, not advice — so the ceiling is short on purpose."""
+def test_the_clocks_match_what_each_agent_is_racing(sdk):
+    """The Room fires with a player on the block; the Grader runs when the draft
+    is over. 25s is measured, not chosen: a Room call takes 11-14s, and the
+    first ceiling of 12s sat on the median and killed about half the reads on
+    the first live run. Sitting on the median is the worst place for a timeout —
+    a read that arrives too late is already handled, by supersede."""
     call(sdk, agent="room")
     call(sdk, agent="grader")
 
-    assert sdk.calls[0]["timeout"] == 12.0
-    assert sdk.calls[1]["timeout"] > sdk.calls[0]["timeout"]
+    assert sdk.calls[0]["timeout"] == 25.0
+    assert sdk.calls[0]["timeout"] > 14.0, "under the measured worst case"
+    assert sdk.calls[1]["timeout"] >= 300.0
 
 
 # --- the per-agent profile --------------------------------------------------
@@ -156,7 +160,7 @@ def test_each_agent_is_dialled_without_being_told(sdk):
     room, grader = sdk.calls
 
     assert room["output_config"]["effort"] == "low"
-    assert room["timeout"] == 12.0
+    assert room["timeout"] == 25.0
     assert grader["output_config"]["effort"] == "high"
     assert grader["timeout"] == 300.0
 
@@ -191,11 +195,12 @@ def test_an_explicit_effort_still_wins(sdk):
     assert sdk.calls[0]["output_config"]["effort"] == "high"
 
 
-def test_one_retry_not_two(sdk):
-    """A nomination lasts seconds. A third attempt lands after the sale."""
+def test_no_retries(sdk):
+    """A retry after a timed-out Room call costs another 13 seconds and lands
+    on a player who has already sold. Found on the first live sim run."""
     c = ClaudeClient("sk-ant-test")
     c.complete("room", [], "x")
-    assert c._client.max_retries == 1
+    assert c._client.max_retries == 0
 
 
 # --- parsing ----------------------------------------------------------------

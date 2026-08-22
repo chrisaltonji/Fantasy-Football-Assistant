@@ -82,12 +82,20 @@ class AgentProfile:
 # is free and the day Opus is overloaded mid-draft, moving one agent is a
 # one-line change rather than a redesign.
 #
-# Effort and timeout are where the agents genuinely differ. The Room gets `low`
-# and 12 seconds because a read that lands after the gavel is evidence rather
-# than advice; the Grader gets `high` and five minutes because the draft is over
-# and nothing is waiting on it.
+# Effort and timeout are where the agents genuinely differ, and the numbers are
+# measured rather than guessed. A Room call at `low` effort takes **11-14s**
+# against the real prefix; at `medium` it takes 18-24s and returns twice the
+# output. The first Room ceiling here was 12s, which killed about half the reads
+# on the first live run — right on the median is the worst place to put a
+# timeout.
+#
+# So the Room gets 25s and `supersede` does the job the short timeout was trying
+# to do: a read that arrives after the player sold is marked `late` and never
+# printed, which is the correct outcome and does not also discard the reads that
+# would have been in time. The Grader gets five minutes because the draft is
+# over and nothing is waiting on it.
 PROFILES: dict[str, AgentProfile] = {
-    "room": AgentProfile(MODEL, "low", 12.0),
+    "room": AgentProfile(MODEL, "low", 25.0),
     "strategist": AgentProfile(MODEL, "medium", 30.0),
     "narrator": AgentProfile(MODEL, "low", 20.0),
     "analyst": AgentProfile(MODEL, "high", 60.0),
@@ -159,15 +167,18 @@ class ClaudeClient:
     """
 
     def __init__(self, api_key: str, *, model: str | None = None,
-                 max_retries: int = 1) -> None:
+                 max_retries: int = 0) -> None:
         self._api_key = api_key
         # None means "each agent uses its own profile". A value here overrides
         # every profile at once, which is what a rehearsal on a cheaper model
         # wants — one flag, not five edits.
         self.model = model
-        # One retry, not the SDK's default of two. A nomination lasts seconds;
-        # a third attempt would land well after the player sold, and the Room's
-        # own timeout is the honest ceiling.
+        # No retries, against the SDK's default of two. A retry after a
+        # timed-out Room call costs another 13 seconds and lands on a player
+        # who has already sold — and on the first live run it was what turned a
+        # 12s ceiling into 25s of dead wall-clock per failure. Failures surface
+        # immediately instead; three in a row mutes, which is the behaviour that
+        # was designed for this.
         self._max_retries = max_retries
         self._client: Any = None
 

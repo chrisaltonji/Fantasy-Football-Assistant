@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import queue
 import threading
-from typing import Callable, TextIO
+from typing import Any, Callable, TextIO
 
 from ffa.advice.engine import advise
 from ffa.advice.market import market_state
@@ -46,6 +46,13 @@ PROMPT = "> "
 LINE = "line"
 EVENT = "event"
 EOF = "eof"
+# Posted by assist workers. Imported rather than redefined so there is one
+# spelling of it — a second constant that drifted would silently route every
+# read into the "you typed something" branch.
+try:                                    # pragma: no cover - import shape only
+    from ffa.assist.runner import ASSIST
+except Exception:                       # noqa: BLE001 - assist is optional
+    ASSIST = "assist"
 
 
 class _TaggingQueue(queue.Queue):
@@ -105,6 +112,7 @@ def run_repl(
     precedent=None,
     seats=None,
     strategy=None,
+    assist_factory: Callable[[Any], Any] | None = None,
 ) -> int:
     """Drive a draft until quit, EOF, or Ctrl-C. Returns an exit code.
 
@@ -116,10 +124,14 @@ def run_repl(
     the source post to. Picks land on their own and you type only to correct
     them.
     """
-    if source is not None:
+    # `--assist` needs the queue loop even with no source: the manual fallback
+    # — the one you are on when the browser attach dies at pick 40 — is exactly
+    # when you would least like to lose the assistant too.
+    if source is not None or assist_factory is not None:
         return _run_live(store, stdin=stdin, stdout=stdout, now_fn=now_fn,
                          prompt=prompt, book=book, source=source,
-                         precedent=precedent, seats=seats, strategy=strategy)
+                         precedent=precedent, seats=seats, strategy=strategy,
+                         assist_factory=assist_factory)
     emit = _writer(stdout)
 
     if store.load_warnings:
@@ -269,10 +281,11 @@ def _run_live(
     now_fn: Callable[[], object],
     prompt: str,
     book,
-    source: EventSource,
+    source: EventSource | None,
     precedent=None,
     seats=None,
     strategy=None,
+    assist_factory: Callable[[Any], Any] | None = None,
 ) -> int:
     """The same draft loop, fed by two producers instead of one."""
     # Everything that reaches the screen goes through the console, including the
@@ -287,13 +300,26 @@ def _run_live(
         emit(render.render_warnings(store.load_warnings))
     emit(_banner(store.state))
     emit(_reference_banner(book))
-    emit(f"live source: {source.name} — picks arrive on their own. "
-         "Type to correct them, `quit` to stop.")
+    if source is not None:
+        emit(f"live source: {source.name} — picks arrive on their own. "
+             "Type to correct them, `quit` to stop.")
+
+    # Built here because the runner posts onto this inbox. Any failure is fatal
+    # to the assistant and to nothing else — the draft below runs identically.
+    assist = None
+    if assist_factory is not None:
+        try:
+            assist = assist_factory(inbox)
+            emit(assist.banner())
+        except Exception as exc:  # noqa: BLE001 - never block a draft
+            emit(f"! assistant unavailable: {exc}")
+            assist = None
 
     threading.Thread(target=_pump_stdin, args=(console, inbox), daemon=True).start()
-    threading.Thread(
-        target=_run_source, args=(source, inbox, emit), daemon=True
-    ).start()
+    if source is not None:
+        threading.Thread(
+            target=_run_source, args=(source, inbox, emit), daemon=True
+        ).start()
 
     seen_warnings = len(store.state.warnings)
     try:
@@ -312,6 +338,12 @@ def _run_live(
                 _drain(inbox, store, emit)
                 return 0
 
+            if tag == ASSIST:
+                # A read coming back. Recording and printing both happen here,
+                # on the one thread that owns the ledger — see runner.py.
+                _settle_assist(emit, assist, payload)
+                continue
+
             if tag == EVENT:
                 try:
                     store.dispatch(payload)
@@ -320,8 +352,12 @@ def _run_live(
                     continue
                 emit(f"#{store.events[-1].id} {render.describe(payload)}")
                 seen_warnings = _emit_new_warnings(emit, store.state, seen_warnings)
+                # The deterministic readout first, always. Only once it is on
+                # screen does anything get asked of a model.
                 _maybe_guidance(emit, store, book, [payload], precedent, seats,
                                 strategy)
+                _maybe_assist(assist, store, book, [payload], precedent, seats,
+                              strategy)
                 continue
 
             outcome = _handle_line(
@@ -333,7 +369,10 @@ def _run_live(
                 return outcome.exit_code
             seen_warnings = outcome.seen_warnings
     finally:
-        source.stop()
+        if assist is not None:
+            emit(assist.summary())
+        if source is not None:
+            source.stop()
         # Hand the terminal back the way we found it, whatever happened. On
         # POSIX this is what stops a crash leaving the shell with echo off.
         console.close()
@@ -451,6 +490,66 @@ def _handle_line(
                         strategy)
 
     return _LineOutcome(None, seen_warnings)
+
+
+def _settle_assist(emit, assist, outcome) -> None:
+    """One finished read: record it, print it if it is still current.
+
+    Muting prints once and only once. A line every time the API is down would
+    be its own denial of service against the readout that actually matters.
+    """
+    if assist is None:                  # pragma: no cover - defensive
+        return
+    was_muted = assist.runner.muted
+    text = assist.runner.settle(outcome, log=assist.log)
+    if text:
+        emit(text)
+    if assist.runner.muted and not was_muted:
+        emit(f"! {assist.runner.muted_reason}")
+
+
+def _maybe_assist(assist, store: DraftStore, book, events,
+                  precedent=None, seats=None, strategy=None) -> None:
+    """Ask the Room, once a player is on the block.
+
+    Called *after* `_maybe_guidance`, which is the whole discipline: the
+    ceilings and threats are already on screen and this can only ever add to
+    them. It returns immediately — the call happens on a worker.
+
+    Every failure here is swallowed on purpose. Building a payload is pure
+    dict work and should not fail, but if it ever does, an assistant that
+    cannot start is a missing paragraph and never a draft that stops.
+    """
+    if assist is None or assist.runner.muted:
+        return
+    if store.state.current_nomination is None:
+        return
+    if not any(isinstance(e, PlayerNominated) for e in events):
+        return
+
+    try:
+        from ffa.assist.agents import room
+
+        # A new player is up, so anything still in flight is now about the
+        # previous one. Bumped before submitting, never after.
+        assist.runner.advance()
+
+        view = assist.build_view()
+        spec = room.build(
+            view,
+            prior_reads=[r.payload for r in assist.log.for_player(
+                (view.get("nomination") or {}).get("key", ""))],
+            labels=assist.labels,
+        )
+        event_id = store.events[-1].id if store.events else 0
+        assist.runner.submit(
+            spec["agent"], spec["payload"],
+            moment=room.moment_key(spec["player_key"], event_id),
+            event_id=event_id, player_key=spec["player_key"],
+            schema=spec["schema"], check=spec["check"], show=spec["show"],
+        )
+    except Exception:  # noqa: BLE001 - never let inference stop a draft
+        pass
 
 
 def _maybe_guidance(emit, store: DraftStore, book, events,

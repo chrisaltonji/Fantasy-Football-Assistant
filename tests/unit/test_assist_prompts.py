@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from ffa.assist import projection, prompts
-from ffa.assist.prefix import build_prefix, likely_cacheable
+from ffa.assist.prefix import CONTRACT, GLOSSARY, build_prefix, likely_cacheable
 from ffa.assist.schemas import ROOM_SCHEMA, schema_for
 
 DOCS = Path(__file__).resolve().parents[2] / "docs"
@@ -45,16 +45,38 @@ def test_the_room_sees_a_fraction_of_the_board(view):
     assert approx_tokens(projection.room_payload(view)) < 2_500
 
 
-def test_the_dossiers_are_not_shipped_twice(view):
-    """view/model.py puts a full dossier inside every threat, and the same
-    testimony is already in the cached prefix. Sending both pays for it twice per
-    nomination and shows the model one thing in two shapes."""
+def test_the_same_eleven_managers_are_not_described_twice(view):
+    """`guidance.threats` and `teams` are the same rivals sharing five fields
+    apiece — together 77% of this payload, measured. One thing in two shapes is
+    also how a reply starts citing one and contradicting the other."""
     payload = projection.room_payload(view)
-    threats = payload["nomination"]["guidance"]["threats"]
 
-    assert threats, "the sample should have threats to check"
-    assert all("dossier" not in t for t in threats)
+    assert "threats" not in payload["nomination"]["guidance"]
+    assert payload["rivals"], "the rivals themselves must survive"
+
+
+def test_the_threat_verdict_survives_on_the_rival_line(view):
+    """Dropping the array must not drop `is_live`, which the glossary calls the
+    single most important flag on the board."""
+    payload = projection.room_payload(view)
+    live = [r for r in payload["rivals"] if "is_live" in r]
+
+    assert live, "no rival carries the per-player threat verdict"
+    assert "open_at_position" in live[0]
+
+
+def test_the_dossiers_are_not_shipped_twice(view):
+    """The same testimony is already in the cached prefix, word for word.
+    Sending both pays for it twice per nomination."""
+    payload = projection.room_payload(view)
     assert "dossier" not in json.dumps(payload)
+
+
+def test_a_field_the_model_is_told_to_ignore_is_not_sent(view):
+    """The glossary says open_slots_by_pos includes the bench and is not
+    evidence of need. Six keys per rival, per nomination, to be disregarded."""
+    payload = projection.room_payload(view)
+    assert "open_slots_by_pos" not in json.dumps(payload)
 
 
 def test_rivals_carry_need_and_money_but_no_roster(view):
@@ -157,16 +179,37 @@ def test_a_seat_with_no_dossier_is_told_to_say_so():
     assert "nothing recorded" in build_prefix(league=FakeLeague())
 
 
-def test_a_prefix_too_short_to_cache_is_detectable():
-    """Below roughly 1024 tokens the API caches nothing and says nothing about
-    it. The fixed half is only ~700, so a league with no dossiers and no history
-    fails to cache while looking entirely healthy — worth catching at startup
-    rather than on an invoice."""
-    bare = build_prefix(league=FakeLeague())          # three seats, no dossiers
-    assert not likely_cacheable(bare)
+def test_the_fixed_half_alone_is_too_short_to_cache():
+    """Measured with `count_tokens`: the contract and glossary come to 995
+    against a 1,024 floor. A league with no managers, no dossiers and no history
+    therefore caches nothing at all while looking completely healthy — the one
+    failure in this layer that never surfaces on its own."""
+    from ffa.assist.prefix import CONTRACT, GLOSSARY
 
-    padded = build_prefix(league=FakeLeague()) + ("filler. " * 2000)
-    assert likely_cacheable(padded)
+    assert not likely_cacheable(CONTRACT + GLOSSARY)
+
+
+def test_a_real_prefix_clears_the_floor():
+    """Three seats with no dossiers measures 1,125 — over the line, but only
+    just. It is the dossiers that make caching worth having."""
+    assert likely_cacheable(build_prefix(league=FakeLeague()))
+
+
+def test_the_token_estimate_is_calibrated_against_the_real_tokenizer():
+    """`chars // 4` is a rule of thumb for prose and reads this prefix as 2,467
+    tokens when `count_tokens` says 3,782 — wrong by half, and it is the number
+    that decides whether the cache warning fires. These are recorded
+    measurements, so the test stays offline."""
+    from ffa.assist.prefix import estimate_tokens
+
+    for text, real in (
+        (build_prefix(league=FakeLeague()), 1125),
+        (CONTRACT + GLOSSARY, 995),
+    ):
+        estimate = estimate_tokens(text)
+        assert 0.8 * real <= estimate <= 1.2 * real, (
+            f"estimated {estimate} against a measured {real}"
+        )
 
 
 # --- the breakpoint ---------------------------------------------------------
@@ -227,3 +270,49 @@ def test_every_structured_agent_has_a_schema_and_the_analyst_does_not():
         assert schema and schema["additionalProperties"] is False
         assert schema["required"]
     assert schema_for("analyst") is None
+
+
+# --- keywords the API will not accept ---------------------------------------
+#
+# Found the hard way, on the first live sim run: a schema carrying `maxItems`
+# comes back as a 400, and because a rejected schema is classified fatal the
+# assistant mutes on its first nomination. Offline there is nothing to notice —
+# the schema is valid JSON Schema and every unit test passes.
+#
+# Probed against the real API, one keyword per call:
+#     rejected  maxItems, minimum, maximum
+#     accepted  minItems, maxLength, enum, description, nested objects
+
+REJECTED_KEYWORDS = ("maxItems", "minimum", "maximum")
+
+
+def walk(node):
+    """Every dict in a schema, at any depth."""
+    if isinstance(node, dict):
+        yield node
+        for value in node.values():
+            yield from walk(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from walk(item)
+
+
+@pytest.mark.parametrize("agent", ["room", "strategist", "narrator", "grader"])
+def test_no_schema_carries_a_keyword_the_api_rejects(agent):
+    for node in walk(schema_for(agent)):
+        for keyword in REJECTED_KEYWORDS:
+            assert keyword not in node, (
+                f"{agent}'s schema uses {keyword!r}, which the API rejects with "
+                "a 400 — and a rejected schema mutes the assistant on its first "
+                "nomination"
+            )
+
+
+def test_the_bounds_that_were_dropped_are_stated_in_words_instead():
+    """A cap the model cannot see is not a cap. Removing `maxItems` without
+    saying "at most six" anywhere would quietly buy a list of twelve."""
+    rivals = ROOM_SCHEMA["properties"]["rivals"]
+    watch = ROOM_SCHEMA["properties"]["watch_for"]
+
+    assert "six" in rivals["description"]
+    assert "three" in watch["description"]

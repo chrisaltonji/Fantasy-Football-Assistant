@@ -518,28 +518,28 @@
       {
         "n": 3,
         "name": "The Room",
-        "status": "todo",
-        "detail": "Rival estimates and pick assistance. Fires on nomination; the deterministic readout never waits on it.",
+        "status": "done",
+        "detail": "Verified against the real API over a full simulated draft: reads land in 12-14s, cache hits 100%, 4.0c per call = ~$7.20 for 180 nominations.",
         "items": [
           {
             "name": "runner.py — daemon threads, ASSIST tag, supersede, mute",
-            "status": "todo"
+            "status": "done"
           },
           {
             "name": "agents/room.py",
-            "status": "todo"
+            "status": "done"
           },
           {
             "name": "--assist flag, off by default",
-            "status": "todo"
+            "status": "done"
           },
           {
             "name": "terminal readout",
-            "status": "todo"
+            "status": "done"
           },
           {
             "name": "ffa sim --assist — the real invoice, not an estimate",
-            "status": "todo"
+            "status": "done"
           }
         ]
       },

@@ -17,7 +17,7 @@ from ffa.cli.repl import run_repl
 from ffa.config.identity import seats
 from ffa.config.loader import DEFAULT_CONFIG_PATH, load_config, load_credentials
 from ffa.config.schema import ConfigError, LeagueConfig
-from ffa.domain.events import DraftInitialized, TeamSeed
+from ffa.domain.events import DraftInitialized, PlayerNominated, TeamSeed
 from ffa.dossier.schema import DossierError
 from ffa.domain.models import LeagueSnapshot
 from ffa.domain.reducers import replay
@@ -394,6 +394,43 @@ def cmd_data_validate(args: argparse.Namespace) -> int:
     return 0 if report.rows else 1
 
 
+def _assist_factory(args, config, store, book, precedent, seats_map, directory):
+    """Build the callable `run_repl` uses to start an assistant, or None.
+
+    Returns a factory rather than a session because the runner posts onto the
+    loop's inbox, which does not exist until the loop starts.
+
+    The key is required here: `--assist` is an explicit request for the thing
+    it pays for, and starting silently without one would look like an assistant
+    that simply never had anything to say.
+    """
+    if not getattr(args, "assist", False):
+        return None
+
+    from ffa.assist.client import ClaudeClient
+    from ffa.assist.session import build_session
+    from ffa.config.loader import load_assist_credentials
+    from ffa.view.model import build_view
+
+    creds = load_assist_credentials(required=True)
+    client = ClaudeClient(creds.api_key)
+
+    def factory(inbox):
+        return build_session(
+            complete=client.complete, inbox=inbox, league=config,
+            build_view=lambda: build_view(
+                store.state, book, precedent=precedent, seats=seats_map,
+                strategy=config.strategy,
+            ),
+            run_dir=directory,
+            dossiers=_load_dossiers(config, args.dossiers),
+            precedent=precedent, seats=seats_map,
+            reference=book, cap_dollars=args.assist_budget,
+        )
+
+    return factory
+
+
 def cmd_draft(args: argparse.Namespace) -> int:
     config = load_config(args.config)
 
@@ -429,10 +466,13 @@ def cmd_draft(args: argparse.Namespace) -> int:
     seats_map = seats(config)
 
     try:
+        book = load_book(config)
         return run_repl(
             store, stdin=sys.stdin, stdout=sys.stdout,
-            book=load_book(config), source=source,
+            book=book, source=source,
             precedent=precedent, seats=seats_map,
+            assist_factory=_assist_factory(
+                args, config, store, book, precedent, seats_map, directory),
             # Read from config, not the journal: a plan is an intention, and
             # revising it mid-draft is a legitimate thing to do.
             strategy=config.strategy,
@@ -607,17 +647,97 @@ def cmd_sim(args: argparse.Namespace) -> int:
     print(f"  seat     {'you bid manually' if args.against_me else 'bots fill every seat'}")
 
     store = DraftStore.create(directory, init)
+    assist = _sim_assist(args, config, store, directory) if args.assist else None
     try:
         for event in source.events():
             store.dispatch(event)
+            if assist is not None:
+                _sim_assist_step(assist, store, event)
         state = store.state
     finally:
         store.close()
+
+    if assist is not None:
+        print()
+        print(assist.summary())
 
     print(f"\n{source.status().detail}")
     print(f"journal  {directory / 'events.jsonl'}")
     _print_sim_summary(state, sim)
     return 0
+
+
+def _sim_assist(args, config, store, directory):
+    """An assistant for a simulated draft. Same code path, no ESPN.
+
+    This is the acceptance test the plan asks for: real nominations against the
+    real API, and an actual invoice rather than an estimate of one. Cap it with
+    `--assist-budget` — at 50c it mutes after roughly fifteen reads, which is
+    enough to see whether they are any good before paying for 180.
+    """
+    import queue as _queue
+
+    from ffa.assist.client import ClaudeClient
+    from ffa.assist.session import build_session
+    from ffa.config.loader import load_assist_credentials
+    from ffa.view.model import build_view
+
+    creds = load_assist_credentials(required=True)
+    client = ClaudeClient(creds.api_key)
+    book = load_book(config)
+    precedent = _load_precedent(
+        config,
+        getattr(args, "precedent", None) or Path("data/manager_precedent.json"),
+    )
+    seats_map = seats(config)
+
+    session = build_session(
+        complete=client.complete, inbox=_queue.Queue(), league=config,
+        build_view=lambda: build_view(
+            store.state, book, precedent=precedent, seats=seats_map,
+            strategy=config.strategy,
+        ),
+        run_dir=directory, dossiers=_load_dossiers(config, args.dossiers),
+        precedent=precedent, seats=seats_map, reference=book,
+        cap_dollars=args.assist_budget,
+    )
+    print(session.banner())
+    return session
+
+
+def _sim_assist_step(assist, store, event) -> None:
+    """Fire the Room on a nomination, and wait for it.
+
+    **Waiting is deliberate, and only right here.** A live draft must never
+    block on a read — that is the entire point of `runner.py`, and the unit
+    tests cover it. But a simulator dispatches every event in under a second,
+    so without waiting each read would be superseded before it landed and the
+    run would prove nothing except that supersede works. Waiting turns this
+    into what it is for: real reads, in order, with a real bill at the end.
+    """
+    from ffa.assist.runner import ASSIST
+    from ffa.cli.repl import _maybe_assist
+
+    if not isinstance(event, PlayerNominated) or assist.runner.muted:
+        return
+
+    _maybe_assist(assist, store, None, [event])
+    try:
+        tag, outcome = assist.runner._inbox.get(timeout=45)
+    except Exception:  # noqa: BLE001 - a silent read, not a crash
+        return
+    if tag != ASSIST:
+        return
+
+    text = assist.runner.settle(outcome, log=assist.log)
+    name = getattr(event, "name", "") or outcome.record.player_key
+    if text:
+        print("\n" + "  " + name + "\n" + text)
+    elif outcome.record.status != "ok":
+        print("\n" + "  " + name + ": " + outcome.record.status
+              + " - " + outcome.record.detail)
+    if assist.runner.muted:
+        print("\n" + "! " + assist.runner.muted_reason)
 
 
 def _print_sim_summary(state, sim) -> int:
@@ -948,6 +1068,13 @@ def build_parser() -> argparse.ArgumentParser:
     draft.add_argument("--ignore-unmatched-teams", action="store_true",
                        help="start even if draft-room team names do not match "
                             "the config (picks for them may be misattributed)")
+    draft.add_argument("--dossiers", type=Path,
+        default=Path("data/dossiers.json"),
+        help="manager notes; most of what makes the cached prefix worth having")
+    draft.add_argument("--assist", action="store_true",
+        help="add model reads alongside the arithmetic (needs ANTHROPIC_API_KEY)")
+    draft.add_argument("--assist-budget", type=float, default=25.0,
+        metavar="DOLLARS", help="hard cap for one draft (default 25)")
     draft.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     draft.add_argument("--runs", type=Path, default=RUNS_DIR)
     draft.add_argument("--precedent", type=Path,
@@ -966,6 +1093,13 @@ def build_parser() -> argparse.ArgumentParser:
     sim.add_argument("--against-me", action="store_true",
                      help="leave your seat empty instead of filling it with a bot")
     sim.add_argument("--force", action="store_true", help="overwrite an existing run")
+    sim.add_argument("--dossiers", type=Path,
+        default=Path("data/dossiers.json"),
+        help="manager notes; most of what makes the cached prefix worth having")
+    sim.add_argument("--assist", action="store_true",
+        help="add model reads alongside the arithmetic (needs ANTHROPIC_API_KEY)")
+    sim.add_argument("--assist-budget", type=float, default=25.0,
+        metavar="DOLLARS", help="hard cap for one draft (default 25)")
     sim.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     sim.add_argument("--runs", type=Path, default=RUNS_DIR)
     sim.set_defaults(func=cmd_sim)

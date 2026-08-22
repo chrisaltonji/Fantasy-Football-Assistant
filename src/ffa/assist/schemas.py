@@ -15,6 +15,18 @@ anyway.
 `additionalProperties: false` and explicit `required` throughout — with
 `strict: true` on the tool the API guarantees the shape, and every caller can
 stop writing defensive `.get()` chains.
+
+**Not every JSON Schema keyword is accepted here, and the rejection is a 400.**
+Probed against the real API rather than assumed: `maxItems`, `minimum` and
+`maximum` are refused outright; `minItems`, `maxLength`, `enum`, `description`
+and nested objects are fine. So the bounds that used to be `maxItems` are stated
+in the `description`, which is where the model reads them anyway, and the bounds
+that actually matter — a rival estimate above a hard ceiling — were never the
+schema's job in the first place. `guard.clamp_rivals` enforces those against
+arithmetic, which is the only thing that can.
+
+`test_assist_prompts.py` walks every schema and fails on a rejected keyword,
+because the alternative is finding out at pick one.
 """
 
 from __future__ import annotations
@@ -35,11 +47,11 @@ ROOM_SCHEMA: dict[str, Any] = {
         },
         "rivals": {
             "type": "array",
-            "maxItems": 6,
             "description": (
-                "Where each live rival plausibly stops bidding. Only rivals who "
-                "can both afford him and start him. Omit anyone you have nothing "
-                "to say about — a shorter list is better than a padded one."
+                "Where each live rival plausibly stops bidding. At most six. "
+                "Only rivals who can both afford him and start him. Omit anyone "
+                "you have nothing to say about — a shorter list is better than a "
+                "padded one."
             ),
             "items": {
                 "type": "object",
@@ -47,8 +59,11 @@ ROOM_SCHEMA: dict[str, Any] = {
                 "required": ["team_id", "lo", "hi", "rationale"],
                 "properties": {
                     "team_id": {"type": "integer"},
-                    "lo": {"type": "integer", "minimum": 1},
-                    "hi": {"type": "integer", "minimum": 1},
+                    # No `minimum`: the API rejects it. A bid below $1 is
+                    # impossible anyway, and `clamp_rivals` drops anything the
+                    # arithmetic rules out rather than trusting the schema.
+                    "lo": {"type": "integer", "description": "dollars, at least 1"},
+                    "hi": {"type": "integer", "description": "dollars, at least lo"},
                     "rationale": {
                         "type": "string",
                         "maxLength": 160,
@@ -71,9 +86,10 @@ ROOM_SCHEMA: dict[str, Any] = {
         },
         "watch_for": {
             "type": "array",
-            "maxItems": 3,
             "items": {"type": "string", "maxLength": 100},
-            "description": "Specific things that would change the picture.",
+            "description": (
+                "At most three specific things that would change the picture."
+            ),
         },
         # "thin" must be reachable and the prompt must say so. A model handed an
         # empty dossier will invent a personality unless refusing is offered as a
@@ -100,7 +116,7 @@ STRATEGIST_SCHEMA: dict[str, Any] = {
         "assessment": {"type": "string", "maxLength": 600},
         "moves": {
             "type": "array",
-            "maxItems": 3,
+            "description": "At most three.",
             "items": {
                 "type": "object",
                 "additionalProperties": False,
@@ -157,7 +173,7 @@ GRADER_SCHEMA: dict[str, Any] = {
         # is over and nothing can be influenced.
         "calls": {
             "type": "array",
-            "maxItems": 20,
+            "description": "At most twenty, the ones worth commenting on.",
             "items": {
                 "type": "object",
                 "additionalProperties": False,

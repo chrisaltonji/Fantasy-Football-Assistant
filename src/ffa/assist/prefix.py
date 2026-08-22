@@ -1,9 +1,9 @@
 """The half of every prompt that never changes, so it can be cached once.
 
-Five thousand tokens of league shape, vocabulary and twelve managers' histories
-go into every agent call. Paid fresh on all ~180 nominations that is most of the
-invoice; cached it is a tenth of the input rate, and the difference is roughly
-$20 a draft.
+Around 3,800 tokens of league shape, vocabulary and twelve managers' histories
+go into every agent call — measured with `count_tokens`, not estimated. Paid
+fresh on all ~180 nominations that is most of the invoice; cached it is a tenth
+of the input rate, and the difference is roughly $16 a draft.
 
 **Built from the loaded sources, never from `build_view()`.** That payload stamps
 `generated_at` on every call, and prompt caching is a byte-exact prefix match — one
@@ -28,11 +28,25 @@ from __future__ import annotations
 from typing import Any
 
 # Below roughly this many tokens the API caches nothing at all, and says nothing
-# about it. The fixed half — contract plus glossary — is about 700, so a prefix
-# only clears the floor once the managers are in it. A league with no dossiers
-# and no history can therefore fail to cache while looking completely healthy,
-# which is exactly the kind of silence `cache_hit_rate` exists to break.
+# about it. The fixed half — contract plus glossary — measures 995, just under
+# the line, so a prefix only caches at all once the managers are in it. A league
+# with no dossiers and no history can therefore fail to cache while looking
+# completely healthy — exactly the kind of silence `cache_hit_rate` exists to break.
 MIN_CACHEABLE_TOKENS = 1024
+
+# Characters per token, measured against `count_tokens` rather than guessed. The
+# familiar "divide by four" is a rule of thumb for ordinary prose and reads this
+# prefix as 2,467 tokens where the tokenizer says 3,782 — wrong by half, on the
+# number that decides whether the cache warning fires.
+#
+# The real ratio varies with the text: 2.61 chars/token for the full prefix,
+# 2.89 for the contract and glossary alone. **This takes the densest of them on
+# purpose**, so the estimate is a floor. Erring low means the warning fires a
+# little early on a prefix that would just have cached; erring high means
+# silence on one that will not cache at all, and pays ten times over for it. At
+# 2.6 the fixed half estimated 1,107 against a measured 995 and cleared a 1,024
+# floor it actually sits under — exactly the wrong way round.
+CHARS_PER_TOKEN = 2.9
 
 CONTRACT = """\
 You are reading a live fantasy football auction draft and adding judgement to
@@ -177,12 +191,22 @@ def build_prefix(*, league: Any, dossiers: Any = None, precedent: Any = None,
     ])
 
 
+def estimate_tokens(text: str) -> int:
+    """Roughly how many tokens this is, without a network call.
+
+    `count_tokens` would be exact and is free, but it needs the API and this is
+    used at startup and in a banner — neither of which should be able to fail
+    because the network is down. Calibrated against the real thing rather than
+    guessed; see `CHARS_PER_TOKEN`.
+    """
+    return int(len(text) / CHARS_PER_TOKEN)
+
+
 def likely_cacheable(prefix: str) -> bool:
     """Is this long enough for the API to cache it at all?
 
-    A rough character-count proxy, because a real token count needs the network
-    and this is checked at startup. Wrong by a few percent and still worth having:
-    the failure it catches is silent, and the fix — record some dossiers — is not
-    something you want to discover from an invoice.
+    The failure it catches is silent — everything works and costs ten times as
+    much — and the fix, recording some dossiers, is not something anyone wants
+    to discover from an invoice.
     """
-    return (len(prefix) // 4) >= MIN_CACHEABLE_TOKENS
+    return estimate_tokens(prefix) >= MIN_CACHEABLE_TOKENS

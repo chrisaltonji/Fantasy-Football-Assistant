@@ -1,10 +1,10 @@
 """What each agent actually gets to see.
 
-`build_view()` is the contract every surface reads, and it is ~6,900 tokens with
-the `teams` block alone accounting for 4,581 that churn on every pick. Handing all
-of it over per nomination is wasteful, but the worse problem is attention: the
-nominated player ends up buried under eleven complete rosters, and the model spends
-its reasoning re-deriving what the board already computed.
+`build_view()` is the contract every surface reads, and it is ~15,200 tokens with
+the `teams` block alone accounting for 10,300 that churn on every pick. Handing
+all of it over per nomination is wasteful, but the worse problem is attention:
+the nominated player ends up buried under eleven complete rosters, and the model
+spends its reasoning re-deriving what the board already computed.
 
 So each agent gets a projection. These are **derived from the contract, not a
 second source of truth** — pure `dict -> dict`, no I/O, no SDK, testable against
@@ -29,13 +29,24 @@ from typing import Any
 RECENT_SALES = 5
 
 
-def _rival_line(team: dict[str, Any]) -> dict[str, Any]:
+def _rival_line(team: dict[str, Any],
+                threat: dict[str, Any] | None = None) -> dict[str, Any]:
     """One rival, compressed to what bears on a bid.
 
     No roster, no dossier, no history — the first is noise at this scale and the
     other two are in the cached prefix.
+
+    **`open_slots_by_pos` is deliberately absent.** The glossary tells the model
+    in as many words that it includes the bench, is almost always non-zero, and
+    is therefore not evidence of need. Sending a field while instructing the
+    reader to disregard it is six keys per rival of pure cost.
+
+    `threat` folds in this player-specific verdict — chiefly `is_live`, which the
+    glossary calls the single most important flag on the board. It arrives here
+    rather than in a parallel list; see `room_payload`.
     """
-    return {
+    threat = threat or {}
+    line = {
         "team_id": team.get("team_id"),
         "label": team.get("label"),
         "remaining": team.get("remaining"),
@@ -43,8 +54,11 @@ def _rival_line(team: dict[str, Any]) -> dict[str, Any]:
         "max_legal_bid": team.get("max_legal_bid"),
         "roster_count": team.get("roster_count"),
         "starter_gaps": team.get("starter_gaps"),
-        "open_slots_by_pos": team.get("open_slots_by_pos"),
     }
+    if threat:
+        line["is_live"] = threat.get("is_live")
+        line["open_at_position"] = threat.get("open_at_position")
+    return line
 
 
 def _my_line(me: dict[str, Any]) -> dict[str, Any]:
@@ -58,7 +72,9 @@ def _my_line(me: dict[str, Any]) -> dict[str, Any]:
         "roster_count": me.get("roster_count"),
         "open_slots": me.get("open_slots"),
         "starter_gaps": me.get("starter_gaps"),
-        "open_slots_by_pos": me.get("open_slots_by_pos"),
+        # Dropped for the same reason as on the rivals: the glossary tells the
+        # model it is not evidence of need, and `open_slots` already says how
+        # many players we still have to buy.
         "roster": [
             {"name": p.get("name"), "position": p.get("position"), "price": p.get("price")}
             for p in (me.get("roster") or [])
@@ -127,7 +143,11 @@ def _sales_tail(sales: list[dict[str, Any]] | None, limit: int) -> list[dict[str
 
 def room_payload(view: dict[str, Any], *, prior_reads: list | None = None
                  ) -> dict[str, Any]:
-    """What the Room sees when a player goes on the block. ~1,800 tokens."""
+    """What the Room sees when a player goes on the block.
+
+    3,200 tokens at the first nomination and ~4,400 mid-draft, measured with
+    `count_tokens` against the real league — a quarter of the full view.
+    """
     # Nothing on the block is the board's normal state, and the Room should not
     # be called then. If it is, say so plainly rather than handing over an empty
     # guidance block that reads like a player with no threats.
@@ -149,19 +169,35 @@ def room_payload(view: dict[str, Any], *, prior_reads: list | None = None
     nomination = dict(view.get("nomination") or {})
     guidance = dict(nomination.get("guidance") or {})
 
-    # The cut that matters. See the module docstring.
-    threats = []
-    for threat in guidance.get("threats") or []:
-        stripped = {k: v for k, v in threat.items() if k != "dossier"}
-        threats.append(stripped)
-    guidance["threats"] = threats
+    # The cut that matters, and it is bigger than it looks. `guidance.threats`
+    # and `teams` are the *same eleven managers*, described twice and sharing
+    # five fields apiece — together 77% of this payload, measured. Worse, it is
+    # the failure the dossier strip below already names: one thing in two
+    # shapes, which is how a reply starts citing one and contradicting the
+    # other.
+    #
+    # So the threats are folded into `rivals` and the array is dropped. The two
+    # fields that are genuinely per-player rather than per-team — `is_live` and
+    # `open_at_position` — travel on the rival line where they are read. The
+    # dossier goes for the original reason: the same testimony is already in the
+    # cached prefix, word for word.
+    #
+    # `guard.clamp_rivals` still checks estimates against the real threat list,
+    # which it takes from the *view* on the main thread. What the model is shown
+    # and what its answer is checked against stay separate on purpose.
+    threats = {
+        t.get("team_id"): {k: v for k, v in t.items() if k != "dossier"}
+        for t in (guidance.get("threats") or [])
+    }
+    guidance.pop("threats", None)
     nomination["guidance"] = guidance
 
     position = nomination.get("position")
     return {
         "nomination": nomination,
         "me": _my_line(view.get("me") or {}),
-        "rivals": [_rival_line(t) for t in (view.get("teams") or []) if not t.get("is_me")],
+        "rivals": [_rival_line(t, threats.get(t.get("team_id")))
+                   for t in (view.get("teams") or []) if not t.get("is_me")],
         "market": view.get("market") or {},
         "scarcity": _scarcity_focus(view.get("scarcity") or {}, position),
         "nomination_plan": _schedule_only(view.get("nomination_plan")),
