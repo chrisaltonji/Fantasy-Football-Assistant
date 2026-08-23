@@ -418,6 +418,11 @@ def _assist_factory(args, config, store, book, precedent, seats_map, directory):
     def factory(inbox):
         return build_session(
             complete=client.complete, inbox=inbox, league=config,
+            # No `assist=` here on purpose. This view is what the *agents*
+            # read, and feeding an agent the previous agent's output through the
+            # board would blur the one line this package exists to keep: the
+            # board is arithmetic. Cross-agent reads go through the ReadLog,
+            # where they are labelled.
             build_view=lambda: build_view(
                 store.state, book, precedent=precedent, seats=seats_map,
                 strategy=config.strategy,

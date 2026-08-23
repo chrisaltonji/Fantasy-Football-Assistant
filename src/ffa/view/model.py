@@ -17,9 +17,16 @@ into a team, so a surface can never mistake one for another:
   the number of seasons behind it travels with every value.
 - **Nothing computed at all**, under the `dossier` key. Recorded testimony about
   a person, in the words somebody chose.
+- **Nothing measured and nothing recorded**, under the `assist` key. What a
+  language model made of the other three. It is judgement, it is the only thing
+  in here that could simply be wrong, and it is the reason the key is top-level
+  and never merged into `teams`, `nomination` or `market` — a read sitting inside
+  a team object would inherit that object's authority. With the assistant off the
+  key is **absent entirely**, so today's payload is byte-identical.
 
-Soft signals — who is *likely* to bid, notability, grades — are none of the
-three. They belong to the advisory layer and are deliberately absent.
+Soft signals — who is *likely* to bid, notability, grades — are none of the first
+three. They belong to the advisory layer, and where they exist at all they live
+under `assist` where their provenance is unmistakable.
 
 Keeping draft state in a file rather than only in a conversation is also what
 lets a 3+ hour draft stay workable: the thread can be summarized or restarted
@@ -52,6 +59,7 @@ def build_view(
     seats: Any = None,
     strategy: Any = None,
     events: Any = None,
+    assist: Any = None,
 ) -> dict[str, Any]:
     if not state.is_initialized:
         return {
@@ -63,7 +71,7 @@ def build_view(
     league = state.league
     advisory = _advisory(state, book, precedent=precedent, seats=seats,
                          strategy=strategy)
-    return {
+    payload = {
         "schema_version": VIEW_SCHEMA_VERSION,
         "draft_id": state.draft_id,
         "generated_at": to_iso(now_utc()),
@@ -107,6 +115,13 @@ def build_view(
         "scarcity": _scarcity_view(advisory),
         "warnings": list(state.warnings) + list(getattr(book, "warnings", ())),
     }
+    # Absent, not empty, when the assistant is off. An `"assist": {}` would make
+    # every existing consumer's payload change the day this shipped, and would
+    # read as "the assistant had nothing to say" rather than "there is no
+    # assistant" — two different things, and a surface should not have to guess.
+    if assist:
+        payload["assist"] = assist
+    return payload
 
 
 def _advisory(state: DraftState, book: Any, *, precedent=None, seats=None,

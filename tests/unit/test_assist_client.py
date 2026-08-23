@@ -423,3 +423,19 @@ def test_one_real_call():
     assert second.cache_hit
 
     print(f"\ncold {first.usage}\nwarm {second.usage}")
+
+
+def test_the_grader_gets_room_to_finish_its_reply():
+    """At the shared 2,000 it truncated on every run — its schema asks for a
+    summary, a roster read, twenty scored calls and a what-was-missed section.
+    With structured output that surfaces as "not the JSON its schema required",
+    which reads like a schema fault and is not one."""
+    assert PROFILES["grader"].max_tokens >= 8000
+    assert PROFILES["narrator"].max_tokens < PROFILES["grader"].max_tokens
+
+
+def test_max_tokens_is_per_agent_in_the_request(sdk):
+    call(sdk, agent="narrator")
+    call(sdk, agent="grader")
+    assert sdk.calls[0]["max_tokens"] == PROFILES["narrator"].max_tokens
+    assert sdk.calls[1]["max_tokens"] == PROFILES["grader"].max_tokens

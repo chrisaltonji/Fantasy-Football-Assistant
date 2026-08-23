@@ -167,8 +167,15 @@ class ReadLog:
 
     # --- accounting ---------------------------------------------------------
 
+    # The key the runner writes. It was `cost_cents` here and `cents` there, so
+    # this returned 0 no matter what had been spent — invisible, because the
+    # spend *cap* is fed separately by `settle()` and kept working. Only the
+    # reported total was wrong. `test_the_ledger_reads_the_key_the_runner_writes`
+    # pins the two together.
+    COST_KEY = "cents"
+
     def spend_cents(self) -> int:
-        return sum(int(r.usage.get("cost_cents", 0) or 0) for r in self._records)
+        return sum(int(r.usage.get(self.COST_KEY, 0) or 0) for r in self._records)
 
     def counts(self) -> dict[str, int]:
         out: dict[str, int] = {}

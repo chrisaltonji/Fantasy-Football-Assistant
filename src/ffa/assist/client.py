@@ -39,8 +39,7 @@ from ffa.assist.errors import AssistError
 
 MODEL = "claude-opus-5"
 
-# Enough for a read plus its rationale, and low enough that a model which
-# decides to write an essay is cut off rather than billed for one.
+# Fallback for an agent with no profile. Real ceilings are per agent below.
 MAX_TOKENS = 2000
 
 
@@ -58,6 +57,7 @@ class AgentProfile:
     model: str
     effort: str
     timeout: float
+    max_tokens: int = MAX_TOKENS
 
 
 # **Every agent runs the same model, and that is a measured decision.**
@@ -95,11 +95,19 @@ class AgentProfile:
 # would have been in time. The Grader gets five minutes because the draft is
 # over and nothing is waiting on it.
 PROFILES: dict[str, AgentProfile] = {
-    "room": AgentProfile(MODEL, "low", 25.0),
-    "strategist": AgentProfile(MODEL, "medium", 30.0),
-    "narrator": AgentProfile(MODEL, "low", 20.0),
-    "analyst": AgentProfile(MODEL, "high", 60.0),
-    "grader": AgentProfile(MODEL, "high", 300.0),
+    "room": AgentProfile(MODEL, "low", 25.0, 2000),
+    "strategist": AgentProfile(MODEL, "medium", 30.0, 2000),
+    # One or two sentences. A thousand is already generous, and a ceiling is the
+    # cheapest defence against an agent that decides to summarise the draft.
+    "narrator": AgentProfile(MODEL, "low", 20.0, 1000),
+    "analyst": AgentProfile(MODEL, "high", 60.0, 4000),
+    # **8,000, and measured rather than chosen.** At the shared 2,000 the Grader
+    # truncated every time: its schema asks for a summary, a roster read, up to
+    # twenty scored calls and a what-was-missed section, and the reply stopped
+    # mid-object. With structured output that surfaces as "the reply was not the
+    # JSON its schema required", which reads like a schema fault and is not one.
+    # It runs once, after the draft, so the ceiling costs nothing to raise.
+    "grader": AgentProfile(MODEL, "high", 300.0, 8000),
 }
 
 DEFAULT_PROFILE = AgentProfile(MODEL, "medium", 30.0)
@@ -221,7 +229,7 @@ class ClaudeClient:
 
         request: dict[str, Any] = {
             "model": model,
-            "max_tokens": MAX_TOKENS,
+            "max_tokens": profile.max_tokens,
             "system": system,
             "messages": [{"role": "user", "content": user}],
             "thinking": {"type": "adaptive"},

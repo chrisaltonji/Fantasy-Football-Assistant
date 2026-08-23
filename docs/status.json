@@ -546,20 +546,20 @@
       {
         "n": 4,
         "name": "Surfaces",
-        "status": "todo",
-        "detail": "One top-level `assist` key; absent entirely when off, so today's payload stays byte-identical.",
+        "status": "done",
+        "detail": "One top-level `assist` key, absent entirely when off so the payload stays byte-identical. The dashboard reads the sidecar and still makes no API calls.",
         "items": [
           {
             "name": "assist key in build_view()",
-            "status": "todo"
+            "status": "done"
           },
           {
             "name": "dashboard reads the sidecar (still makes no API calls)",
-            "status": "todo"
+            "status": "done"
           },
           {
             "name": "highest-risk panel un-pends",
-            "status": "todo"
+            "status": "done"
           }
         ]
       },

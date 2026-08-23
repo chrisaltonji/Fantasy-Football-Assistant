@@ -63,7 +63,7 @@ class AssistSession:
         parts = ", ".join(f"{n} {status}" for status, n in sorted(counts.items()))
         return (
             f"assistant: {parts}. ${self.log.spend_cents() / 100:.2f} spent, "
-            f"{self.log.cache_hit_rate():.0%} of calls hit the cache."
+            f"{self.log.cache_hit_rate():.0%} of input tokens came from cache."
         )
 
 

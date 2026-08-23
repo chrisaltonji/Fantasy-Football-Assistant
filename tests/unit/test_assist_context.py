@@ -89,9 +89,17 @@ def test_since_returns_only_what_is_new():
 
 
 def test_spend_and_counts_are_summed_from_the_records():
+    """Keyed off `ReadLog.COST_KEY` rather than a literal.
+
+    This test used to spell the key `cost_cents` — the same spelling the reader
+    used, and neither matched the `cents` the runner actually writes. Both sides
+    agreed with each other and disagreed with reality, so the total read $0.00
+    for every real draft and the test stayed green. A literal here tests the
+    reader against itself; the constant ties it to the writer.
+    `test_assist_runner.py` closes the loop against the real output."""
     log = ReadLog()
-    log.append(read(usage={"cost_cents": 3}))
-    log.append(read(usage={"cost_cents": 4}, status="late"))
+    log.append(read(usage={ReadLog.COST_KEY: 3}))
+    log.append(read(usage={ReadLog.COST_KEY: 4}, status="late"))
     log.append(read(status="failed"))
 
     assert log.spend_cents() == 7

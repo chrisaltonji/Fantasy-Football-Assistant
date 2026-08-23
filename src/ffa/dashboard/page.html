@@ -109,6 +109,18 @@ body{
 .riskrow .e{font:600 14px/1 var(--mono);text-align:right}
 .riskrow .why{font:400 11px/1.4 var(--ui);color:var(--label)}
 .riskrow .of{font:400 10.5px/1 var(--mono);color:var(--caption);text-align:right;white-space:nowrap}
+/* The estimate takes its own full-width row rather than a cell: the row is a
+   two-column grid and squeezing a fifth element in would push .why and .of out
+   of place. Right-aligned so it sits under the ceiling it relates to, and
+   styled to be unmistakably not that ceiling — lighter weight, a tag, and a
+   dashed rule marking where arithmetic stops. */
+.riskrow .est{grid-column:1/-1;text-align:right;margin-top:1px}
+.riskrow .esttag{
+  font:600 9px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--caption);border:1px dashed var(--card-line);border-radius:3px;
+  padding:2px 4px;margin-right:6px;vertical-align:1px;
+}
+.riskrow .estband{font:500 12px/1 var(--mono);color:var(--ink2)}
 .riskrow.dim .n{font-weight:500;font-size:12.5px;color:var(--ink2)}
 .riskrow.dim .why{color:var(--caption)}
 .note{
@@ -333,10 +345,10 @@ body{
   <div class="tile pending" id="ask">
     <div class="tilehead"><span class="eyebrow">ask the assistant</span><span class="sub">anything on this board, or the draft as a whole</span></div>
     <div class="empty">Not connected.</div>
-    <div class="why"><b>Needs the inference layer.</b> Every input is in place —
-      the dossiers, four seasons of precedent, and this board's own payload — but
-      nothing reads them yet. It will run beside the engine, never inside it: a
-      slow answer here can never delay a bid readout.</div>
+    <div class="why"><b>Ask from the terminal.</b> The inference layer is live —
+      reads appear under “highest risk to me” as they land. Asking from here would
+      make this page the first thing that writes and spends, and it is deliberately
+      a reader: it shows what the agents already said and calls nothing itself.</div>
     <div class="chips">
       <span class="chip">who can still afford Chase?</span>
       <span class="chip">am I short at WR?</span>
@@ -496,6 +508,11 @@ function renderRisk(v, g){
 
   if(!g){ rows.appendChild(el("div","empty","Nothing on the block.")); note.textContent=""; return; }
 
+  // Estimates, if the assistant is on and has read *this* player. Keyed by
+  // team so a band can only ever land beside the rival it was said about.
+  const read = (v.assist && v.assist.current) ? v.assist.current.payload : null;
+  const bands = new Map(((read && read.rivals) || []).map(r=>[r.team_id, r]));
+
   const live = g.threats.filter(t=>t.is_live);
   $("risk-sub").textContent = live.length
     ? "who can actually pay" : "nobody who needs the position can pay";
@@ -510,22 +527,45 @@ function renderRisk(v, g){
     e.style.color = tiers[Math.min(i,3)];
     r.appendChild(e);
 
-    // No estimate exists, so the second line says something true instead: what
-    // the record shows about how this person drafts, when it discriminates.
+    // The estimate, when there is one — and never in the ceiling's slot. The
+    // ceiling above is arithmetic; this is a guess about a person, so it says
+    // "est" and carries the evidence it rests on.
+    const band = bands.get(t.team_id);
+    if(band){
+      const b = el("div","est");
+      b.appendChild(el("span","esttag","est"));
+      b.appendChild(el("span","estband",
+        band.lo === band.hi ? `$${band.lo}` : `$${band.lo}–${band.hi}`));
+      r.appendChild(b);
+    }
+
     const p = pace.get(t.team_id);
-    r.appendChild(el("div","why", p
+    r.appendChild(el("div","why", band && band.rationale ? band.rationale : (p
       ? `${Math.round(p.actual_share*100)}% of budget out, usually ${Math.round(p.expected_share*100)}% by now · ${p.dollars_vs_script<0?"holding":"ahead"} ~$${Math.abs(p.dollars_vs_script)}`
-      : `${t.open_at_position} starting slot(s) open · ${money(t.remaining,t.remaining_is_floor)} in hand`));
+      : `${t.open_at_position} starting slot(s) open · ${money(t.remaining,t.remaining_is_floor)} in hand`)));
     r.appendChild(el("div","of m", t.is_live ? "can start him" : "no slot"));
     rows.appendChild(r);
   });
 
-  const b = el("b",null,"These are ceilings, not estimates.");
-  note.appendChild(b);
-  note.appendChild(document.createTextNode(
-    " What a rival could pay is arithmetic and is shown. What they will actually" +
-    " bid is inference — capability 2's intent half, which reads the dossiers and" +
-    " four seasons of precedent. It does not exist yet, so nothing here guesses."));
+  if(bands.size){
+    note.appendChild(el("b",null,"Dollar figures are ceilings. Bands are guesses."));
+    note.appendChild(document.createTextNode(
+      " What a rival could pay is arithmetic and is exact. A band marked est is" +
+      " a model reading the dossiers and four seasons of precedent, and it can be" +
+      " wrong. Any band above its own ceiling was dropped rather than corrected."));
+    if(read && read.confidence === "thin"){
+      note.appendChild(el("b",null," Confidence: thin."));
+      note.appendChild(document.createTextNode(
+        " The evidence behind these is weak — treat them as prompts to watch," +
+        " not as numbers."));
+    }
+  } else {
+    note.appendChild(el("b",null,"These are ceilings, not estimates."));
+    note.appendChild(document.createTextNode(
+      " What a rival could pay is arithmetic and is shown. What they will actually" +
+      " bid is inference; the assistant is off, or has not read this player yet," +
+      " so nothing here guesses."));
+  }
 }
 
 function renderMatrix(v, me, g){

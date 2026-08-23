@@ -329,3 +329,21 @@ def test_the_prefix_is_the_cached_first_block():
 
     assert blocks[0][0]["text"] == "PREFIX"
     assert blocks[0][0]["cache_control"]["type"] == "ephemeral"
+
+
+def test_the_ledger_reads_the_key_the_runner_writes():
+    """These were `cents` and `cost_cents` and disagreed silently. The spend cap
+    is fed separately by settle(), so it kept working and only the reported
+    total was wrong — a number on screen that was always $0.00.
+
+    Written against the runner's real output rather than a literal, so renaming
+    the key in one place breaks this instead of the summary line."""
+    run, inbox = runner(ok())
+    log = ReadLog()
+    run.submit("room", {}, moment="m")
+    run.settle(wait(inbox), log=log)
+
+    written = log.all()[-1].usage
+    assert ReadLog.COST_KEY in written
+    assert log.spend_cents() == written[ReadLog.COST_KEY] > 0
+    assert log.spend_cents() == run.spend.spent_cents
