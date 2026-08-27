@@ -44,7 +44,9 @@ flowchart TB
   end
   subgraph open["Not started"]
     D["Dashboard<br/>297-line spec, zero code"]
-    C["Chat / LLM layer<br/>the inference half"]
+  end
+  subgraph built2["Built, not yet rehearsed live"]
+    C["Assistant — 4 agents<br/>the inference half"]
   end
   N["Nomination order — CP4<br/>whole schedule, known in advance"]
   S["Draft plan — C2 + cap 12<br/>declared, and measured against"]
@@ -84,7 +86,7 @@ flowchart TB
 | # | Capability | Status | Where |
 |---|---|---|---|
 | 1 | Opponent snapshot | ✅ | `advice/bidding.py::threats_for` |
-| 2 | Bid forecasting | 🟡 **half** | capacity ships; **intent needs the LLM layer** |
+| 2 | Bid forecasting | ✅ | capacity is arithmetic; intent is the Room — built, guarded, not yet rehearsed live |
 | 3 | Our bid recommendation | ✅ | `guidance_for`, incl. `safe_legal_bid` |
 | 5 | Overspend alerts | ✅ | `advice/market.py::value_alert` |
 | 7 | Owner dossiers | ✅ | `dossier/` — and **100% filled** |
@@ -93,8 +95,11 @@ flowchart TB
 | 12 | Strategy adherence | ✅ **new** | `advice/strategy.py` — needs a plan declared |
 | — | Market inflation | ✅ | `advice/market.py::market_state` |
 
-Capability 2 is the only partial one, and the split is deliberate: **capacity is
-arithmetic and is finished; intent is inference and is not.**
+Capability 2 was the only partial one and the split is still the design:
+**capacity is arithmetic; intent is inference.** Both halves now ship, and they
+stay in separate packages with an import boundary a test enforces — nothing in
+`advice/`, `domain/` or `state/` may import `assist/`. What has not happened yet
+is a live rehearsal of the inference half.
 
 ### v1.1 — two shipped early
 
@@ -118,7 +123,7 @@ arithmetic and is finished; intent is inference and is not.**
 |---|---|
 | **Terminal REPL** | ✅ Complete. Rehearsed live 2026-08-17; full 180-pick dry runs 2026-08-18, incl. the new `turns` readout. |
 | **Dashboard** | ❌ **Not started.** `docs/dashboard_requirements.md` is a 297-line panel-by-panel spec with no implementation. `build_view()` already emits every key it asks for, including the new `history` block. |
-| **Chat / LLM layer** | ❌ **Not started.** Every input is now in place: dossiers filled, history measured, `build_view()` as the contract. Keep it **beside** the hot path — `advice` is instant and cannot fail, and a network call in that loop would add latency and a failure mode while a clock runs. |
+| **Assistant (chat / LLM)** | ✅ **Built, not yet rehearsed live.** Four agents over one cached prefix and one shared memory — see [`docs/agents.md`](agents.md). It sits **beside** the hot path, never inside it: the deterministic readout prints first and nothing here can delay it. Off unless you pass `--assist`. Remaining: a live run for real latency, a real cache hit rate on the second model tier, and a real invoice. |
 
 ---
 
@@ -179,8 +184,15 @@ ffa strategy init      # needs `ffa data fetch` to have run; it has
 ffa config check       # prints the plan back, and says when there is none
 ```
 
-**Two large optional builds:** the dashboard and the LLM layer. Both fully
-unblocked. Neither is needed on 2026-08-31.
+**One large optional build left:** the dashboard. Fully unblocked, and not
+needed on 2026-08-31.
+
+**The assistant is built and unrehearsed.** Every agent is unit-tested against a
+fake `complete` callable, and the invariant that matters — a draft run with
+`--assist` and one without produce a byte-identical `events.jsonl` — is pinned by
+test. What no test can produce is real latency, a real cache hit rate across two
+model tiers, or a real bill. `ffa sim --assist` is the acceptance test, and it
+should run before the assistant is trusted on draft day.
 
 **One question the next rehearsal can still answer for free.** The draft room marks a seat
 `--selecting`, and `RoomTeam.is_nominating` already parses it, but what it means

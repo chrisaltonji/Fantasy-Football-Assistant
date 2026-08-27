@@ -17,11 +17,17 @@ from ffa.cli.repl import run_repl
 from ffa.config.identity import seats
 from ffa.config.loader import DEFAULT_CONFIG_PATH, load_config, load_credentials
 from ffa.config.schema import ConfigError, LeagueConfig
-from ffa.domain.events import DraftInitialized, PlayerNominated, TeamSeed
+from ffa.domain.events import (
+    DraftInitialized,
+    PlayerNominated,
+    PlayerSold,
+    TeamSeed,
+)
 from ffa.dossier.schema import DossierError
 from ffa.domain.models import LeagueSnapshot
 from ffa.domain.reducers import replay
 from ffa.ingest.manual.errors import CommandError
+from ffa.ingest.source import BidObservation
 from ffa.reference.loader import ReferenceError, load_reference
 from ffa.state.journal import JournalError
 from ffa.state.recovery import RUNS_DIR, load_run, make_draft_id, latest_run, run_dir
@@ -644,7 +650,10 @@ def cmd_sim(args: argparse.Namespace) -> int:
         faults=profile,
         human_team=config.my_team_id if args.against_me else None,
     )
-    source = SimSource(sim)
+    # The ladder exists only to give the tick agent something to read. Off
+    # otherwise, so a plain `ffa sim` puts exactly what it always did on the
+    # queue and every existing sim test sees the stream it always saw.
+    source = SimSource(sim, bids=bool(args.assist))
 
     print(f"simulating {draft_id}")
     print(f"  seed     {args.seed}")
@@ -654,17 +663,24 @@ def cmd_sim(args: argparse.Namespace) -> int:
     store = DraftStore.create(directory, init)
     assist = _sim_assist(args, config, store, directory) if args.assist else None
     try:
-        for event in source.events():
-            store.dispatch(event)
+        stream = source.events_with_bids() if assist is not None else source.events()
+        for item in stream:
+            # A `BidObservation` is not an event and never reaches the store.
+            # The live loop makes exactly this split in `_TaggingQueue`; making
+            # it here too is what stops the two disagreeing about ground truth.
+            if isinstance(item, BidObservation):
+                assist.observe(item)
+                continue
+            store.dispatch(item)
             if assist is not None:
-                _sim_assist_step(assist, store, event)
+                assist.step(item)
         state = store.state
     finally:
         store.close()
 
     if assist is not None:
         print()
-        print(assist.summary())
+        print(assist.session.summary())
 
     print(f"\n{source.status().detail}")
     print(f"journal  {directory / 'events.jsonl'}")
@@ -707,42 +723,100 @@ def _sim_assist(args, config, store, directory):
         cap_dollars=args.assist_budget,
     )
     print(session.banner())
-    return session
+    return _SimAssist(session, store, book, config.strategy)
 
 
-def _sim_assist_step(assist, store, event) -> None:
-    """Fire the Room on a nomination, and wait for it.
+class _SimAssist:
+    """Drives every agent through a simulated draft, and waits for each read.
 
     **Waiting is deliberate, and only right here.** A live draft must never
     block on a read — that is the entire point of `runner.py`, and the unit
-    tests cover it. But a simulator dispatches every event in under a second,
-    so without waiting each read would be superseded before it landed and the
-    run would prove nothing except that supersede works. Waiting turns this
-    into what it is for: real reads, in order, with a real bill at the end.
+    tests cover it. But a simulator dispatches a whole draft in well under a
+    second, so without waiting every read would be superseded before it landed
+    and the run would prove nothing except that supersede works. Waiting turns
+    this into what it is for: real reads, in order, against the real API, with a
+    real invoice at the end.
+
+    It calls the REPL's own trigger functions rather than reimplementing them.
+    That is the whole point of the rehearsal — firing the agents by a different
+    route would be rehearsing something the draft does not do.
     """
-    from ffa.assist.runner import ASSIST
-    from ffa.cli.repl import _maybe_assist
 
-    if not isinstance(event, PlayerNominated) or assist.runner.muted:
-        return
+    # Long enough for the slowest profile, short enough that one wedged call
+    # cannot hold a rehearsal open indefinitely.
+    WAIT = 60
 
-    _maybe_assist(assist, store, None, [event])
-    try:
-        tag, outcome = assist.runner._inbox.get(timeout=45)
-    except Exception:  # noqa: BLE001 - a silent read, not a crash
-        return
-    if tag != ASSIST:
-        return
+    def __init__(self, session, store, book, strategy) -> None:
+        from ffa.cli.repl import _Bidding
 
-    text = assist.runner.settle(outcome, log=assist.log)
-    name = getattr(event, "name", "") or outcome.record.player_key
-    if text:
-        print("\n" + "  " + name + "\n" + text)
-    elif outcome.record.status != "ok":
-        print("\n" + "  " + name + ": " + outcome.record.status
-              + " - " + outcome.record.detail)
-    if assist.runner.muted:
-        print("\n" + "! " + assist.runner.muted_reason)
+        self.session = session
+        self.store = store
+        self.book = book
+        self.strategy = strategy
+        self.bidding = _Bidding()
+
+    def observe(self, observation) -> None:
+        """One price move off the synthetic ladder, then a tick if warranted."""
+        from ffa.cli.repl import _maybe_tick
+
+        if self.session.runner.muted:
+            return
+        if not self.bidding.observe(observation):
+            return
+        _maybe_tick(self.session, self.store, self.bidding)
+        self._drain(f"${observation.price}")
+
+    def step(self, event) -> None:
+        """One journal event, and whichever agents it triggers."""
+        from ffa.cli.repl import _maybe_assist, _maybe_narrator, _maybe_strategist
+
+        if self.session.runner.muted:
+            return
+
+        if isinstance(event, PlayerNominated):
+            _maybe_assist(self.session, self.store, self.book, [event],
+                          self.bidding, strategy=self.strategy)
+            self._drain(self._name(event))
+        elif isinstance(event, PlayerSold):
+            _maybe_strategist(self.session, self.store, self.book, [event],
+                              self.strategy)
+            _maybe_narrator(self.session, self.store, self.book, [event],
+                            self.strategy)
+            self._drain(self._name(event))
+
+    def _drain(self, label: str = "") -> None:
+        """Settle everything in flight, printing exactly what the REPL would show.
+
+        Drains on `in_flight` rather than on a fixed count because a trigger may
+        submit nothing at all — the Strategist is gated on a plan transition, the
+        tick on a slot — and waiting for a read that was never requested would
+        stall the whole run for `WAIT` seconds per pick.
+        """
+        from ffa.assist.runner import ASSIST
+        from ffa.cli.repl import _settle_assist
+
+        while self.session.runner.in_flight or not self.session.runner.inbox.empty():
+            try:
+                tag, outcome = self.session.runner.inbox.get(timeout=self.WAIT)
+            except Exception:  # noqa: BLE001 - a silent read, never a crash
+                return
+            if tag != ASSIST:
+                continue
+
+            shown: list[str] = []
+            _settle_assist(shown.append, self.session, outcome, self.bidding)
+            head = f"  {label or outcome.record.player_key} [{outcome.record.agent}]"
+            if shown:
+                print("\n" + head + "\n" + "\n".join(shown))
+            elif outcome.record.status != "ok":
+                print(f"\n{head}: {outcome.record.status} - {outcome.record.detail}")
+            if self.session.runner.muted:
+                print("\n! " + self.session.runner.muted_reason)
+                return
+
+    @staticmethod
+    def _name(event) -> str:
+        return getattr(getattr(event, "player", None), "name", "") or ""
 
 
 def _print_sim_summary(state, sim) -> int:

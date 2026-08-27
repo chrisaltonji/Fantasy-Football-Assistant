@@ -225,6 +225,22 @@ Runs live in `runs/<draft_id>/events.jsonl` — an append-only log that *is* the
 draft. It's plain JSON lines; you can read it, grep it, and hand it to anyone
 debugging a discrepancy.
 
+### Asking the assistant
+
+With `--assist` running, `ask` puts a question to it directly:
+
+```
+> ask who can still afford him
+thinking...
+
+[answer] Dave has $52 and two open back slots; nobody else above $30
+         still needs the position.
+```
+
+It answers in prose and quotes numbers the board already computed rather than
+working any out. It will tell you what a choice would cost. It will not tell you
+which one to make.
+
 ### Your auction values
 
 `ffa data fetch` pulls ESPN's own `ownership.auctionValueAverage` for ~355
@@ -558,9 +574,43 @@ Adding a web UI is one new `DraftStore` subscriber plus one new `EventSource`.
 2026-08-17. Never run it live for the first time on the day.
 
 Still ahead, and all of it product rather than plumbing: the dashboard
-(`docs/dashboard_requirements.md` is a full spec with no implementation) and the
-inference layer that reads `build_view()` beside the hot path rather than inside
-it.
+(`docs/dashboard_requirements.md` is a full spec with no implementation).
+
+---
+
+## The assistant
+
+Off unless you ask for it: `ffa draft --assist`, or `ffa sim --assist` to
+rehearse it against a simulated draft and get a real invoice rather than an
+estimate of one. Cap it with `--assist-budget`.
+
+Four agents share one cached prefix and one memory. Full design in
+[`docs/agents.md`](docs/agents.md).
+
+| Agent | Fires on | Says |
+|---|---|---|
+| **The Room** | a player is nominated | where each live rival plausibly stops, and what is worth noticing |
+| **The Room**, again | every ~5s while the bidding runs | what the last few seconds changed — nothing, most of the time |
+| **The Strategist** | your plan state changes | what the pick did to the plan, and options that would help |
+| **The Narrator** | the feed flags something notable | one sentence on why it mattered |
+| **The Analyst** | you type `ask ...` | a direct answer to a direct question |
+
+Two rules hold it in place, and both are mechanical rather than prompted:
+
+- **It never tells you what to do.** Not bid, not pass, not chase, not avoid.
+  `assist/guard.py` checks every reply after parsing and drops what breaks it.
+  The reason is placement: this text lands beside `max_advisable_bid`, which is
+  arithmetic, and anything printed next to a computed number inherits its
+  authority.
+- **It never contradicts arithmetic.** An estimate above a rival's
+  `max_legal_bid` describes money that does not exist, so it is dropped and
+  logged — never rewritten, because a corrected estimate is a fabrication
+  wearing the model's byline.
+
+Reads are written to `runs/<id>/assist.jsonl`, beside the journal and
+deliberately not part of it. `events.jsonl` is ground truth; that file is
+opinions. A draft run with `--assist` and one without produce a byte-identical
+journal, and there is a test that says so.
 
 ---
 

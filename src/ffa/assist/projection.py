@@ -141,8 +141,8 @@ def _sales_tail(sales: list[dict[str, Any]] | None, limit: int) -> list[dict[str
     ]
 
 
-def room_payload(view: dict[str, Any], *, prior_reads: list | None = None
-                 ) -> dict[str, Any]:
+def room_payload(view: dict[str, Any], *, prior_reads: list | None = None,
+                 digest: str = "") -> dict[str, Any]:
     """What the Room sees when a player goes on the block.
 
     3,200 tokens at the first nomination and ~4,400 mid-draft, measured with
@@ -164,6 +164,7 @@ def room_payload(view: dict[str, Any], *, prior_reads: list | None = None
             "strategy": _strategy_line(view.get("strategy")),
             "recent_sales": _sales_tail(view.get("recent_sales"), RECENT_SALES),
             "prior_reads": prior_reads or [],
+            "digest": digest,
         }
 
     nomination = dict(view.get("nomination") or {})
@@ -205,12 +206,72 @@ def room_payload(view: dict[str, Any], *, prior_reads: list | None = None
         "strategy": _strategy_line(view.get("strategy")),
         "recent_sales": _sales_tail(view.get("recent_sales"), RECENT_SALES),
         "prior_reads": prior_reads or [],
+        "digest": digest,
+    }
+
+
+def room_tick_payload(view: dict[str, Any], *, live_bid: dict[str, Any] | None = None,
+                      opening_read: dict[str, Any] | None = None,
+                      digest: str = "") -> dict[str, Any]:
+    """What the Room sees on a tick, while the bidding is still running.
+
+    **~500 tokens, and the smallness is the design.** This fires every five
+    seconds against a model chosen for speed, and both of those only work if the
+    question is small. It is not `room_payload` trimmed — it is a different
+    question: *given what you already said, what have the last twenty seconds
+    changed?* The opening read travels with it, so the model is revising its own
+    estimate rather than re-deriving one, which is the whole reason a small model
+    is adequate here.
+
+    Four things and nothing else:
+
+    - `live_bid` — the price now, and who holds it. Ephemeral, never journalled.
+    - `rivals` — only the ones still live. A rival who cannot bid is not a
+      threat and costs six keys to say so.
+    - `opening_read` — what this agent said at nomination. The thing being revised.
+    - `digest` — where the draft stands, per the Strategist.
+
+    No market block, no scarcity, no watchlist, no nomination plan, no recent
+    sales. All of it is in the opening read's context already and none of it
+    moves inside one nomination.
+    """
+    nomination = dict(view.get("nomination") or {})
+    guidance = dict(nomination.get("guidance") or {})
+
+    # Live threats only, and stripped the same way `room_payload` strips them —
+    # the dossier is in the cached prefix word for word.
+    threats = [
+        {k: v for k, v in t.items() if k != "dossier"}
+        for t in (guidance.get("threats") or [])
+        if t.get("is_live")
+    ]
+
+    return {
+        "player": {
+            "key": nomination.get("player_key") or nomination.get("key"),
+            "name": nomination.get("name"),
+            "position": nomination.get("position"),
+        },
+        "live_bid": live_bid or {},
+        # The two numbers a revision has to stay consistent with. They are
+        # arithmetic and they do not move during a nomination, but leaving them
+        # out would have the model revising a band with no idea where our own
+        # ceiling sits.
+        "our_ceiling": {
+            "max_advisable_bid": guidance.get("max_advisable_bid"),
+            "max_legal_bid": guidance.get("max_legal_bid"),
+            "plan_cap": guidance.get("plan_cap"),
+        },
+        "rivals": threats,
+        "opening_read": opening_read or {},
+        "digest": digest,
     }
 
 
 def strategist_payload(view: dict[str, Any], *, sale: dict[str, Any] | None = None,
                        reconciled: dict[str, Any] | None = None,
-                       plan_state: str | None = None) -> dict[str, Any]:
+                       plan_state: str | None = None,
+                       digest: str = "") -> dict[str, Any]:
     """What the Strategist sees after a pick lands.
 
     Our own team in full and the plan in full — it is the only agent whose whole
@@ -230,12 +291,14 @@ def strategist_payload(view: dict[str, Any], *, sale: dict[str, Any] | None = No
         "sale": sale or {},
         "reconciled": reconciled or {},
         "recent_sales": _sales_tail(view.get("recent_sales"), RECENT_SALES),
+        "digest": digest,
     }
 
 
 def narrator_payload(view: dict[str, Any], *, entry: dict[str, Any],
                      reconciled: dict[str, Any] | None = None,
-                     prior_read: dict[str, Any] | None = None) -> dict[str, Any]:
+                     prior_read: dict[str, Any] | None = None,
+                     digest: str = "") -> dict[str, Any]:
     """What the Narrator sees. Deliberately tiny — ~400 tokens.
 
     It writes one sentence about one event. Handing it the board would dilute
@@ -250,11 +313,13 @@ def narrator_payload(view: dict[str, Any], *, entry: dict[str, Any],
         "position_scarcity": {position: scarcity} if scarcity else {},
         "reconciled": reconciled or {},
         "what_we_said": prior_read or {},
+        "digest": digest,
     }
 
 
 def analyst_payload(view: dict[str, Any], *, question: str,
-                    prior_reads: list | None = None) -> dict[str, Any]:
+                    prior_reads: list | None = None,
+                    digest: str = "") -> dict[str, Any]:
     """What the Analyst sees: everything.
 
     On demand, not latency-bound, and the question could be about any corner of
@@ -264,6 +329,7 @@ def analyst_payload(view: dict[str, Any], *, question: str,
         "question": question,
         "board": view,
         "prior_reads": prior_reads or [],
+        "digest": digest,
     }
 
 

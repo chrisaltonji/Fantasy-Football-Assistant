@@ -60,8 +60,9 @@
       "n": 2,
       "name": "Bid forecasting",
       "tier": "v1",
-      "status": "partial",
-      "where": "capacity ships; intent needs the LLM layer"
+      "status": "done",
+      "where": "capacity ships; intent needs the LLM layer",
+      "note": "capacity is arithmetic; intent is the Room, built and guarded, not yet rehearsed live"
     },
     {
       "n": 3,
@@ -259,8 +260,8 @@
         },
         {
           "name": "Chat / LLM layer",
-          "status": "todo",
-          "note": "every input now in place"
+          "status": "done",
+          "note": "four agents; not yet rehearsed live"
         }
       ]
     },
@@ -287,6 +288,54 @@
         {
           "name": "Manager aliases, precedent, pace",
           "status": "done"
+        }
+      ]
+    },
+    {
+      "name": "Inference",
+      "blurb": "The half that can be wrong. Reads what the advisory layer computed and adds judgement; never the other way round.",
+      "items": [
+        {
+          "name": "client.py — one door to the API, every failure translated",
+          "status": "done"
+        },
+        {
+          "name": "runner.py — daemon threads, supersede, mute, spend cap",
+          "status": "done"
+        },
+        {
+          "name": "guard.py — no verdicts, no contradicting arithmetic",
+          "status": "done"
+        },
+        {
+          "name": "context.py — the sidecar the agents read each other through",
+          "status": "done"
+        },
+        {
+          "name": "The Room — on nomination, and again every ~5s while bidding",
+          "status": "done",
+          "note": "two model tiers; Haiku for the tick"
+        },
+        {
+          "name": "The Strategist — on a plan-state transition; writes the digest",
+          "status": "done"
+        },
+        {
+          "name": "The Narrator — on a notable feed event",
+          "status": "done"
+        },
+        {
+          "name": "The Analyst — on `ask`",
+          "status": "done"
+        },
+        {
+          "name": "The Grader — post-draft",
+          "status": "not started",
+          "note": "out of scope; prompt and schema exist unused"
+        },
+        {
+          "name": "Live rehearsal",
+          "status": "not started"
         }
       ]
     }
@@ -337,11 +386,10 @@
   ],
   "next": [
     {
-      "title": "LLM layer",
+      "title": "Rehearse the assistant against a practice room",
       "owner": "build",
-      "urgency": "after the dashboard",
-      "detail": "Completes capability 2's intent half. Must sit beside the hot path, never inside it — advice is instant and cannot fail, and a network call in that loop would add latency and a failure mode while a clock runs.",
-      "command": ""
+      "urgency": "before trusting it",
+      "detail": "Four agents are built and unit-tested against a fake API, and the journal-identity invariant is pinned by test. What has not happened is a live run: real latency on the tick, a real cache hit rate on the second model tier, and a real invoice. `ffa sim --assist` is the acceptance test."
     },
     {
       "title": "Join the plan to nomination strategy",
@@ -433,6 +481,14 @@
     {
       "title": "Capability 9 counts demand the way a roster actually works",
       "body": "A position is dangerous when the teams who can still act on it outnumber what is left. Two counting decisions carry it. Demand is counted against the position's own starting slot, never the flex: has_starter_gap folds the flex in, which is right for 'could they start this player' and would otherwise add twelve phantom contenders to RB, WR and TE at once and make every position look squeezed from pick one. And a contender must be able to pay — needing one and being able to buy one are different things. The list is empty for most of a draft by construction, which is the point."
+    },
+    {
+      "title": "LangGraph, declined",
+      "body": "The migration plan and its topology brief are archived under docs/declined/. It proposed replacing ~359 lines of rehearsed orchestration with LangGraph and LangSmith, never cleared its own Python 3.14 blocker, and would have put twelve managers' dossiers on a third party's cloud for a diagram. The four agents are plain modules over the transport that already worked; see docs/agents.md."
+    },
+    {
+      "title": "Two model tiers",
+      "body": "Every agent shares one model and therefore one cache entry, except the Room's tick. Caching is keyed on the model, so that argument holds for an agent firing 33 times and collapses for one firing every five seconds: the tick keeps its own entry warm continuously and pays the prefix write a handful of times against ~900 reads. Opus is also disqualified there on latency rather than cost — an 11-14s read cannot follow a live auction."
     }
   ],
   "build": {

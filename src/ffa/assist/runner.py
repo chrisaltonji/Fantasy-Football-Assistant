@@ -46,6 +46,23 @@ ASSIST = "assist"
 # the player is still on the block.
 MAX_IN_FLIGHT = 2
 
+# **The tick gets its own slot, and this is not a tuning number.**
+#
+# Sharing the pool above would have starved it outright: a 25s Room read plus one
+# Strategist holds both slots for most of a nomination, which is exactly the
+# window the tick exists to cover. It would have fired, found no slot, dropped,
+# and the failure would have looked like the API being slow rather than like the
+# design being wrong.
+#
+# One, not two, because a second concurrent tick can only describe a board the
+# first one is already describing. When one is in flight the next is skipped —
+# same argument as `submit`'s refusal to queue: a tick that waits for a slot
+# lands describing a price nobody is bidding any more.
+TICK_IN_FLIGHT = 1
+
+# Which agents draw on the tick slot rather than the shared pool.
+TICK_AGENTS = frozenset({"room_tick"})
+
 # Consecutive failures before muting. Three is enough to ride out a blip and few
 # enough that a genuinely broken setup stops costing time.
 FAILURE_LIMIT = 3
@@ -83,6 +100,13 @@ class AssistRunner:
         self._prefix = prefix
         self.spend = spend or SpendGuard()
         self._slots = threading.Semaphore(max_in_flight)
+        self._tick_slots = threading.Semaphore(TICK_IN_FLIGHT)
+        # How many workers are alive. The only counter here that more than one
+        # thread touches, so it is the only thing in this file with a lock.
+        # It exists for the simulator, which has no REPL loop to drain results
+        # for it and needs to know when there is nothing more coming.
+        self._in_flight = 0
+        self._in_flight_lock = threading.Lock()
 
         # Bumped on every nomination. A result whose generation is stale
         # describes a player who is no longer on the block.
@@ -92,6 +116,25 @@ class AssistRunner:
         self._counts: dict[str, int] = {}
 
     # --- state the main thread owns ----------------------------------------
+
+    @property
+    def in_flight(self) -> int:
+        """Workers still running. A live draft never asks; the simulator does."""
+        with self._in_flight_lock:
+            return self._in_flight
+
+    @property
+    def inbox(self) -> "queue.Queue":
+        """The queue results are posted onto.
+
+        Public because the simulator drains it directly — it has no REPL loop to
+        do that for it, and reaching through `_inbox` from `cli/app.py` was a
+        hole in the one seam this class exists to define.
+
+        A live draft must never read this: the REPL owns the drain, and a second
+        consumer would take results the loop needed.
+        """
+        return self._inbox
 
     @property
     def muted(self) -> bool:
@@ -133,17 +176,20 @@ class AssistRunner:
         if self.spend.exceeded:
             self.mute(self.spend.reason())
             return False
-        if not self._slots.acquire(blocking=False):
+        slots = self._tick_slots if agent in TICK_AGENTS else self._slots
+        if not slots.acquire(blocking=False):
             # Deliberately not queued. A call that has to wait for a slot will
             # land after the player sold, and an unbounded backlog is how a slow
             # API turns into a bill for reads nobody ever saw.
             return False
 
         generation = self._generation
+        with self._in_flight_lock:
+            self._in_flight += 1
         thread = threading.Thread(
             target=self._work,
             args=(agent, payload, moment, event_id, player_key, schema,
-                  instructions, check, show, generation),
+                  instructions, check, show, generation, slots),
             daemon=True,
             name=f"assist-{agent}-{generation}",
         )
@@ -153,7 +199,7 @@ class AssistRunner:
     # --- the worker ---------------------------------------------------------
 
     def _work(self, agent, payload, moment, event_id, player_key, schema,
-              instructions, check, show, generation) -> None:
+              instructions, check, show, generation, slots) -> None:
         """Runs off the main thread. Must never raise, and never touch the store."""
         try:
             outcome = self._call(agent, payload, moment, event_id, player_key,
@@ -169,7 +215,13 @@ class AssistRunner:
                 generation=generation,
             )
         finally:
-            self._slots.release()
+            # The one it took, not `self._slots` — releasing the wrong semaphore
+            # would grow the shared pool by one every tick.
+            slots.release()
+        # Decremented *before* the post, so a consumer that drains until
+        # `in_flight` is zero cannot see zero while a result is still in the air.
+        with self._in_flight_lock:
+            self._in_flight -= 1
         self._inbox.put((ASSIST, outcome))
 
     def _call(self, agent, payload, moment, event_id, player_key, schema,

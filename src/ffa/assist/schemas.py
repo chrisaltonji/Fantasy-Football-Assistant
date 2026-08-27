@@ -99,6 +99,57 @@ ROOM_SCHEMA: dict[str, Any] = {
 }
 
 
+ROOM_TICK_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["changed"],
+    "properties": {
+        # **The only required field, and it is the one that licenses silence.**
+        # Nothing having changed is the common case on a five-second cadence, and
+        # a schema whose every field were required would make "nothing to add"
+        # unrepresentable — so the model would invent something to fill it. This
+        # is also what `render_tick` keys off to print nothing.
+        "changed": {
+            "type": "boolean",
+            "description": (
+                "Whether anything material has changed since the opening read. "
+                "False is the expected answer most of the time."
+            ),
+        },
+        # A quarter of the Room's 400. This is read at a glance between bids.
+        "note": {
+            "type": "string",
+            "maxLength": 120,
+            "description": (
+                "One short sentence, only if `changed`. What moved and why it "
+                "matters. Never an instruction: not bid, pass, stop or stay in."
+            ),
+        },
+        "rivals": {
+            "type": "array",
+            "description": (
+                "Only rivals whose band has actually moved. At most three. Do "
+                "not restate an estimate the price has not contradicted."
+            ),
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["team_id", "lo", "hi"],
+                "properties": {
+                    "team_id": {"type": "integer"},
+                    "lo": {"type": "integer", "description": "dollars, at least 1"},
+                    "hi": {"type": "integer", "description": "dollars, at least lo"},
+                    # Half the Room's 160 and optional. Under a bidding clock the
+                    # band is the message; the reasoning is a luxury.
+                    "rationale": {"type": "string", "maxLength": 80},
+                },
+            },
+        },
+        "confidence": {"type": "string", "enum": ["thin", "fair", "strong"]},
+    },
+}
+
+
 STRATEGIST_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -130,6 +181,22 @@ STRATEGIST_SCHEMA: dict[str, Any] = {
         "positions_at_risk": {
             "type": "array",
             "items": {"type": "string", "enum": POSITIONS},
+        },
+        # **The shared memory every other agent reads, and the only field here
+        # that is not about the plan.** Capped hard at 400 rather than left to
+        # the prompt, because this is the one string that rides in *every* other
+        # agent's payload — including the tick's, which is ~500 tokens total and
+        # fires every five seconds. An unbounded digest is a slow leak straight
+        # into the one payload that must stay small, and nothing in the output
+        # would say it was happening.
+        "digest": {
+            "type": "string",
+            "maxLength": 400,
+            "description": (
+                "Two or three sentences on where the draft now stands, for the "
+                "other agents to read. Not about the plan. Written fresh each "
+                "time, under 60 words."
+            ),
         },
     },
 }
@@ -192,6 +259,7 @@ GRADER_SCHEMA: dict[str, Any] = {
 
 BY_AGENT: dict[str, dict[str, Any]] = {
     "room": ROOM_SCHEMA,
+    "room_tick": ROOM_TICK_SCHEMA,
     "strategist": STRATEGIST_SCHEMA,
     "narrator": NARRATOR_SCHEMA,
     "grader": GRADER_SCHEMA,

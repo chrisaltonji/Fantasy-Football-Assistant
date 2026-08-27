@@ -55,32 +55,46 @@ class AgentProfile:
     """
 
     model: str
-    effort: str
+    # `None` means the model does not take an effort setting, and the key is
+    # left off the request entirely. This is not a "use the default" — Haiku 4.5
+    # **rejects** `output_config.effort`, so sending it with any value is a 400.
+    effort: str | None
     timeout: float
     max_tokens: int = MAX_TOKENS
+    # Same shape of problem, separately, because the two are not always set
+    # together: adaptive thinking is not a Haiku 4.5 mode. An agent chosen for
+    # speed does not want thinking anyway, so `False` omits the key rather than
+    # sending `{"type": "disabled"}` — the request that is not made cannot be
+    # rejected by a model that has never heard of the parameter.
+    thinking: bool = True
 
 
-# **Every agent runs the same model, and that is a measured decision.**
+# **Almost every agent runs the same model, and that is a measured decision.**
 #
 # The obvious economy is to put the small agents on a cheaper model — the
 # Narrator writes two sentences 33 times, which looks like an extravagant use of
 # Opus. Priced against this league's real numbers it is not: moving the
-# Strategist, Narrator and Grader to Sonnet saves about $0.29 across an entire
-# draft, against a $25 cap.
+# Strategist and Narrator to Sonnet saves about $0.29 across an entire draft,
+# against a $25 cap.
 #
 # It saves so little because of the cache. **Caching is keyed on the model**, so
-# a second model cannot share the prefix the other four are reading — it pays its
-# own ~2,500-token write, more than once across a three-hour auction as the TTL
+# a second model cannot share the prefix the others are reading — it pays its own
+# ~2,500-token write, more than once across a three-hour auction as the TTL
 # lapses. Most of what a small agent would save on rates, it gives back on cache
 # writes it now has to pay alone.
 #
-# The Room is the only agent where the model moves real money (~$1.62 to Sonnet),
-# and it is the one to weaken last: it synthesises recorded testimony against
-# tonight's arithmetic, under a bidding clock, and it is the read that reaches
-# the screen while a decision is still open. So: one model, one cache entry, one
-# set of behaviour to rehearse. The field exists per agent because the plumbing
-# is free and the day Opus is overloaded mid-draft, moving one agent is a
-# one-line change rather than a redesign.
+# **`room_tick` is the one exception, and it is the same argument reversed.**
+# That reasoning holds for an agent firing 33 times. It collapses for one firing
+# every five seconds: the tick keeps its own cache entry warm continuously, the
+# 1h TTL never lapses, and it pays the prefix write a handful of times across the
+# night against ~900 reads. It is also the one agent where Opus is disqualified
+# on latency rather than cost — an 11-14s read cannot follow a live auction, and
+# no effort setting closes that gap. So it gets Haiku, its own cache entry, and a
+# payload small enough that a small model is being asked something it can answer:
+# revise your own earlier read, given what the last twenty seconds changed.
+#
+# The Room's *open* read is the one to weaken last: it synthesises recorded
+# testimony against tonight's arithmetic while a decision is still open.
 #
 # Effort and timeout are where the agents genuinely differ, and the numbers are
 # measured rather than guessed. A Room call at `low` effort takes **11-14s**
@@ -92,10 +106,20 @@ class AgentProfile:
 # So the Room gets 25s and `supersede` does the job the short timeout was trying
 # to do: a read that arrives after the player sold is marked `late` and never
 # printed, which is the correct outcome and does not also discard the reads that
-# would have been in time. The Grader gets five minutes because the draft is
-# over and nothing is waiting on it.
+# would have been in time.
+# The fast tier. Only the tick runs here.
+FAST_MODEL = "claude-haiku-4-5"
+
 PROFILES: dict[str, AgentProfile] = {
     "room": AgentProfile(MODEL, "low", 25.0, 2000),
+    # **8s, which is longer than the 5s cadence on purpose.** The ticker skips
+    # rather than queues while one is in flight, so a slow tick costs the next
+    # slot and nothing else. A ceiling *below* the cadence would instead kill
+    # reads that were about to land — the same mistake the Room's first 12s
+    # ceiling made, at a tenth of the scale but ten times as often.
+    # No effort and no thinking: Haiku 4.5 rejects the first and does not offer
+    # the second. 600 tokens because the whole reply is a line and a few bands.
+    "room_tick": AgentProfile(FAST_MODEL, None, 8.0, 600, thinking=False),
     "strategist": AgentProfile(MODEL, "medium", 30.0, 2000),
     # One or two sentences. A thousand is already generous, and a ceiling is the
     # cheapest defence against an agent that decides to summarise the draft.
@@ -232,15 +256,29 @@ class ClaudeClient:
             "max_tokens": profile.max_tokens,
             "system": system,
             "messages": [{"role": "user", "content": user}],
-            "thinking": {"type": "adaptive"},
-            "output_config": {"effort": effort or profile.effort},
+            "output_config": {},
             "timeout": timeout if timeout is not None else profile.timeout,
         }
+
+        # Both of these are omitted rather than defaulted when the profile says
+        # so, because the fast tier does not merely prefer their absence — Haiku
+        # 4.5 rejects `effort` outright, and adaptive thinking is not one of its
+        # modes. A key sent with a sensible value is still a 400 there.
+        resolved_effort = effort or profile.effort
+        if resolved_effort:
+            request["output_config"]["effort"] = resolved_effort
+        if profile.thinking:
+            request["thinking"] = {"type": "adaptive"}
+
         if schema:
             request["output_config"]["format"] = {
                 "type": "json_schema",
                 "schema": schema,
             }
+        if not request["output_config"]:
+            # An empty `output_config` is not the same as no `output_config`.
+            # Send the parameter only when it carries something.
+            request.pop("output_config")
 
         started = time.monotonic()
         try:

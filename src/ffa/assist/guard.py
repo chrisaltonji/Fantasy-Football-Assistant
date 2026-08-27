@@ -169,3 +169,131 @@ def check_room(parsed: dict[str, Any], threats: Sequence[dict[str, Any]]
     violations.extend(dropped)
 
     return cleaned, violations
+
+
+def check_room_tick(parsed: dict[str, Any], threats: Sequence[dict[str, Any]]
+                    ) -> tuple[dict[str, Any], list[str]]:
+    """The same two rules as `check_room`, over the tick's smaller reply.
+
+    Not folded into `check_room` with a flag: the tick's `note` is a different
+    field from the Room's `read`, it has no `watch_for`, and its `changed` flag
+    has to be cleared when the sentence behind it is stripped. A shared function
+    with two shapes would be the kind of branch that quietly checks the wrong key.
+
+    **`changed` is forced false when nothing survives.** Otherwise a reply whose
+    only content was rejected still says something changed, and `render_tick`
+    would print an empty line under a live auction — which reads like the
+    assistant losing its train of thought rather than like it saying nothing.
+    """
+    violations: list[str] = []
+    cleaned = dict(parsed)
+
+    offending = reject_verdict(str(parsed.get("note", "")))
+    if offending:
+        violations.append(f"note contains a verdict: {offending!r}")
+        cleaned["note"] = ""
+
+    kept, dropped = clamp_rivals(parsed.get("rivals") or [], threats)
+    cleaned["rivals"] = kept
+    violations.extend(dropped)
+
+    if not (cleaned.get("note") or "").strip() and not kept:
+        cleaned["changed"] = False
+
+    return cleaned, violations
+
+
+def check_strategist(parsed: dict[str, Any], plan_state: str | None
+                     ) -> tuple[dict[str, Any], list[str]]:
+    """Everything the Strategist's reply has to survive.
+
+    Unlike the Room, a failed check here rejects the **whole** reply rather than
+    blanking a field. `verdict_matches` is not a style rule — it asks whether the
+    model agrees with the arithmetic about the one thing the arithmetic decides.
+    A reply that disagrees has lost the thread, and its prose is not worth reading
+    either. Returning `{}` is what makes `runner._call` record it as `rejected`.
+
+    The digest gets the same verdict check as everything else, and it matters more
+    here than anywhere: it is the one string that will be read by every other
+    agent, so an instruction smuggled into it would launder itself into the tick's
+    payload and out onto the screen under a different byline.
+    """
+    if not verdict_matches(str(parsed.get("verdict_echo", "")), plan_state):
+        return {}, [
+            f"verdict_echo {parsed.get('verdict_echo')!r} disagrees with the "
+            f"computed plan state {plan_state!r}"
+        ]
+
+    violations: list[str] = []
+    cleaned = dict(parsed)
+
+    for field in ("assessment", "digest"):
+        offending = reject_verdict(str(parsed.get(field, "")))
+        if offending:
+            violations.append(f"{field} contains a verdict: {offending!r}")
+            cleaned[field] = ""
+
+    # A move is a described option with a cost — "free up $12 by passing on a
+    # second tight end" is the shape that is wanted, and it necessarily contains
+    # words the opener pattern fires on. So `what` is left alone and only `why`
+    # is checked, which is where an actual instruction would be phrased at the
+    # user rather than about the board.
+    moves = []
+    for move in parsed.get("moves") or []:
+        if not isinstance(move, dict):
+            violations.append(f"unreadable move {move!r}")
+            continue
+        found = reject_verdict(str(move.get("why", "")))
+        if found:
+            violations.append(f"move rationale contains a verdict: {found!r}")
+            continue
+        moves.append(move)
+    cleaned["moves"] = moves
+
+    return cleaned, violations
+
+
+def check_narrator(parsed: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """One field, one rule.
+
+    The Narrator writes a sentence about an event that has already happened, so
+    it has the least room to do damage of any agent here — but it prints in the
+    ambient feed beside deterministic lines, which is exactly the adjacency the
+    no-verdict rule exists for.
+    """
+    violations: list[str] = []
+    cleaned = dict(parsed)
+
+    offending = reject_verdict(str(parsed.get("why", "")))
+    if offending:
+        violations.append(f"why contains a verdict: {offending!r}")
+        cleaned["why"] = ""
+
+    return cleaned, violations
+
+
+def check_analyst(parsed: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Prose, and the one place the rule is loosened on purpose.
+
+    The Analyst answers a direct question. "What would it cost me to chase him?"
+    is a question about arithmetic, and an answer to it must be allowed to use the
+    word chase — the `_VERDICT_OPENERS` pattern would eat half of every legitimate
+    reply here.
+
+    So only the unambiguous phrases are checked, the ones that cannot be innocent
+    in any context: "you should bid", "I recommend", "go up to $". Those are still
+    refused, because the standing promise is that this tool never tells you what
+    to do, and a question does not suspend it.
+    """
+    text = str(parsed.get("text", ""))
+    lowered = text.lower()
+
+    for phrase in _VERDICT_PHRASES:
+        if phrase in lowered:
+            # The whole reply, not the phrase: unlike the structured agents there
+            # is no field to blank here, and half an answer with a hole in it is
+            # worse than the plain sentence saying it was refused.
+            return {}, [f"answer contains a verdict: {phrase!r}"]
+
+    return dict(parsed), []
+

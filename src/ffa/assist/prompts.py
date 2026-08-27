@@ -5,11 +5,16 @@ Two system blocks, always in this order:
     [0] the prefix — league, glossary, twelve managers.  cache_control here.
     [1] this agent's instructions.                        after the breakpoint.
 
-All five agents share a byte-identical block 0, so they share **one** cache entry
-rather than five. Their instructions differ by a few hundred tokens and sit after
-the breakpoint, where they are re-read uncached on every call — which is correct
-and costs almost nothing. Putting the instructions *before* the breakpoint would
-give each agent its own cached prefix and quintuple the write cost for no gain.
+Every agent shares a byte-identical block 0, so they share **one** cache entry per
+model tier rather than one apiece. Their instructions differ by a few hundred
+tokens and sit after the breakpoint, where they are re-read uncached on every
+call — which is correct and costs almost nothing. Putting the instructions
+*before* the breakpoint would give each agent its own cached prefix and multiply
+the write cost for no gain.
+
+`room_tick` runs on a different model and so necessarily has its own cache entry —
+caching is keyed on the model. That is the one place the sharing does not apply,
+and `client.py` explains why it is worth it there and nowhere else.
 
 **TTL is an hour, not the five-minute default.** An auction has lulls — a
 commissioner pause, an argument about a keeper, someone's dog. A five-minute
@@ -53,6 +58,28 @@ Set `confidence` to "thin" when the dossiers are empty or the history is short.
 That is a useful answer. A confident read invented from nothing is not."""
 
 
+ROOM_TICK = """The bidding on this player is still running. You read this nomination when it
+opened; `opening_read` is what you said. Revise it against the price now.
+
+Be brief. This lands mid-auction on a five-second cadence, and a paragraph is
+worse than nothing here.
+
+Say something only when something changed. If the price is climbing the way you
+expected and the same rivals are still in, `changed` is false and everything else
+is empty — that is the correct and most common answer, not a failure to be useful.
+Set `changed` true when a band you gave is now wrong, when a rival you expected to
+be gone is still bidding, or when the price has passed a number in `our_ceiling`.
+
+Revise a band only where the price has actually contradicted it. `rivals` holds
+just the ones whose estimate has moved; leave the rest out rather than restating
+them. Your band's top may never exceed that rival's `max_legal_bid` — that is
+arithmetic, not an estimate.
+
+Never issue an instruction. Not bid, not pass, not stop, not stay in. The numbers
+in `our_ceiling` are computed and sit next to whatever you write; anything that
+reads like advice inherits their authority and will be rejected."""
+
+
 STRATEGIST = """\
 A pick has just landed. Assess the declared plan against where the draft now is.
 
@@ -63,7 +90,15 @@ your reading is what is wrong, and the reply will be discarded.
 In `assessment`, say what has actually changed for this plan and why. In `moves`,
 give at most three concrete things that would help — a position to prioritise,
 money to free up, an allocation that no longer fits the board. These are options,
-not orders: describe the move and its cost, and leave the choosing alone."""
+not orders: describe the move and its cost, and leave the choosing alone.
+
+`digest` is different from the rest and is not about the plan. It is the running
+state of the draft that every other agent reads — you are the only one that writes
+it. Two or three sentences on where the night actually is: how the market is
+running, which positions have emptied out, which rivals have committed their
+money. Write it fresh each time from what is in front of you rather than editing
+what you last said, and keep it under 60 words. It is read under a bidding clock
+by an agent that has room for very little."""
 
 
 NARRATOR = """\
@@ -104,6 +139,7 @@ now, so say what you actually think."""
 
 BY_AGENT: dict[str, str] = {
     "room": ROOM,
+    "room_tick": ROOM_TICK,
     "strategist": STRATEGIST,
     "narrator": NARRATOR,
     "analyst": ANALYST,

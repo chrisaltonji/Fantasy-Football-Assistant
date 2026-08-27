@@ -34,6 +34,14 @@ class AssistSession:
     labels: dict[int, str] = field(default_factory=dict)
     prefix_tokens: int = 0
     cacheable: bool = True
+    # The last plan state the Strategist was told about, so its trigger can fire
+    # on the transition rather than on every sale. Main thread only, like the
+    # rest of the loop state; the runner never sees it.
+    #
+    # `None` before a plan exists and after one is cleared, which is why the
+    # trigger tests for it separately: a draft with no plan is a normal draft,
+    # not a plan that is failing.
+    plan_state: str | None = None
 
     def banner(self) -> str:
         """What to say at startup — including the one warning worth making loud.

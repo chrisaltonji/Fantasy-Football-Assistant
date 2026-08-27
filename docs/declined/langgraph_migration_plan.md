@@ -1,3 +1,22 @@
+> # DECLINED — 2026-08-27
+>
+> This plan was never implemented and will not be. It proposed replacing ~359 lines
+> of working, rehearsed orchestration (`assist/runner.py`, `assist/session.py`) with
+> LangGraph + LangSmith. Three reasons it was dropped:
+>
+> - **It replaces the half that works.** The transport was verified live over a full
+>   simulated draft. The half that does *not* work is that four of five agents had no
+>   modules at all — a framework migration does not write them.
+> - **It never cleared its own Step 0.** LangGraph 1.2.11 classifies up to Python
+>   3.13; this machine runs 3.14.3. The blocker sat unverified.
+> - **It put real people on someone else's cloud.** Full LangSmith traces include the
+>   dossiers — written testimony about twelve named managers — for the stated benefit
+>   of a `draw_mermaid()` diagram.
+>
+> What was worth keeping — the parts bin and the six invariants — moved to
+> `docs/agents.md`, which describes what was actually built. Those invariants are
+> still binding.
+
 # The inference layer, on LangGraph — DRAFT
 
 > **Status: draft, blocked on the graph topology.**

@@ -24,7 +24,7 @@ from ffa.ingest.espn.draftroom import (
     RoomPick,
     RoomSnapshot,
 )
-from ffa.ingest.source import SourceHealth, SourceStatus
+from ffa.ingest.source import BidObservation, SourceHealth, SourceStatus
 from ffa.util.clock import now_utc
 
 
@@ -213,6 +213,9 @@ class DraftRoomSource:
         self._failures = 0
         self._previous: RoomSnapshot | None = None
         self._nominated_key: str | None = None
+        # The last price seen on the current nomination, so a re-poll that shows
+        # the same number stays silent. Reset with the nomination, not carried.
+        self._last_bid: int | None = None
         self._health = SourceHealth.OK
         self._detail = ""
         self._emitted = 0
@@ -266,10 +269,28 @@ class DraftRoomSource:
             nomination = snapshot.nominated
             if nomination is not None and nomination.key != self._nominated_key:
                 self._nominated_key = nomination.key
+                self._last_bid = nomination.current_bid
                 self._emitted += 1
                 yield nomination_event(nomination)
             elif nomination is None:
                 self._nominated_key = None
+                self._last_bid = None
+            elif nomination.current_bid != self._last_bid:
+                # **Same player, higher price.** Until now this branch did not
+                # exist and the number was simply dropped: the gate above fires
+                # once per player, so every raise after the opening bid was
+                # scraped, parsed, and thrown away.
+                #
+                # It is yielded as a `BidObservation`, not an event, and the
+                # distinction is the whole design — see that class. Nothing
+                # downstream folds it, `_emitted` does not count it, and a draft
+                # run with the assistant off never sees it at all.
+                self._last_bid = nomination.current_bid
+                yield BidObservation(
+                    player_key=nomination.key,
+                    price=nomination.current_bid,
+                    at=now_utc().isoformat(),
+                )
 
             for pick in diff_picks(self._previous, snapshot):
                 self._emitted += 1

@@ -15,17 +15,32 @@ number inherits its authority.
 
 The rendered form is deliberately plain and clearly attributed. `[read]` marks
 the whole block as the one part of the screen that is not measured.
+
+## Two gears
+
+The **open** read fires once, when the player goes up, on the full board. The
+**tick** fires every ~5s while the bidding runs, on a small payload and a fast
+model, and is a *revision of the open read* rather than a fresh analysis.
+
+They are one agent in one module on purpose. It is one voice about one player,
+sharing a guard, a rendering vocabulary and a moment key — and the whole premise
+of the tick is that it is answering back to something this same module already
+said. Two modules would have made that a cross-agent join rather than a local one.
+
+What differs between them is a profile row and a payload, which is exactly the
+amount of difference there actually is.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from ffa.assist.guard import check_room
-from ffa.assist.projection import room_payload
-from ffa.assist.schemas import ROOM_SCHEMA
+from ffa.assist.guard import check_room, check_room_tick
+from ffa.assist.projection import room_payload, room_tick_payload
+from ffa.assist.schemas import ROOM_SCHEMA, ROOM_TICK_SCHEMA
 
 AGENT = "room"
+TICK_AGENT = "room_tick"
 
 
 def moment_key(player_key: str, event_id: int) -> str:
@@ -36,6 +51,18 @@ def moment_key(player_key: str, event_id: int) -> str:
     Narrator citing an estimate made under a different board.
     """
     return f"{AGENT}:{player_key}:{event_id}"
+
+
+def tick_moment_key(player_key: str, event_id: int, price: int) -> str:
+    """The same, plus the price, because there are many ticks per nomination.
+
+    The price rather than a counter: two ticks at the same price on the same
+    nomination genuinely *are* the same moment, and a counter would file them as
+    two — which would make the sidecar read as though the board had moved when it
+    had not. It also means the key states what was true when the read was made,
+    which is the property that makes the log worth reading back.
+    """
+    return f"{TICK_AGENT}:{player_key}:{event_id}:{price}"
 
 
 def threats_of(view: dict[str, Any]) -> list[dict[str, Any]]:
@@ -87,8 +114,98 @@ def render(parsed: dict[str, Any], *, labels: dict[int, str] | None = None) -> s
     return "\n".join(lines)
 
 
+def _bands(parsed: dict[str, Any]) -> dict[int, tuple[int, int]]:
+    """Rival bands as a comparable mapping, for deciding whether a tick is news."""
+    out: dict[int, tuple[int, int]] = {}
+    for rival in parsed.get("rivals") or []:
+        try:
+            out[int(rival["team_id"])] = (int(rival["lo"]), int(rival["hi"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def render_tick(parsed: dict[str, Any], *, last: dict[str, Any] | None = None,
+                crossed: str = "", labels: dict[int, str] | None = None) -> str:
+    """One line, or nothing — and nothing is the expected answer.
+
+    **Silence is the default and it is the feature.** This fires every five
+    seconds. A line per tick is roughly forty lines while one player is on the
+    block, which does not read as an assistant paying attention; it reads as
+    noise scrolling the arithmetic off the screen at the exact moment someone is
+    trying to decide whether to raise. The deterministic readout is what must
+    stay visible, and this is the only thing on screen that can push it away.
+
+    So three gates, in order:
+
+    - the model said nothing changed — the common case, by design;
+    - nothing survived the guard;
+    - it changed its mind but says what it last said, which happens whenever the
+      price moves inside a band it has already given.
+
+    `crossed` overrides the last gate. It is computed from arithmetic on the main
+    thread — the price passing our own ceiling or plan cap — and when that
+    happens the read is worth repeating even verbatim, because the same sentence
+    means something different on the other side of that number.
+    """
+    if not parsed.get("changed"):
+        return ""
+
+    labels = labels or {}
+    note = (parsed.get("note") or "").strip()
+    bands = _bands(parsed)
+    if not note and not bands:
+        return ""
+
+    if last is not None and not crossed:
+        # Saying the same thing again is not news. Compared on content rather
+        # than on the whole reply, so a changed confidence or a dropped
+        # rationale does not by itself count as movement.
+        if note == (last.get("note") or "").strip() and bands == _bands(last):
+            return ""
+
+    head = f"[read] {note}" if note else "[read]"
+    if crossed:
+        head += f"  — past {crossed}"
+    confidence = (parsed.get("confidence") or "").strip()
+    if confidence:
+        head += f"  ({confidence})"
+
+    lines = [head]
+    for team_id, (lo, hi) in bands.items():
+        who = labels.get(team_id, f"team {team_id}")
+        band = f"${lo}-{hi}" if lo != hi else f"${lo}"
+        lines.append(f"       {who:<14} {band:>9}   now")
+    return "\n".join(lines)
+
+
+def crossing(live_bid: dict[str, Any] | None, view: dict[str, Any]) -> str:
+    """Which of our own computed ceilings the price has just passed, if any.
+
+    Arithmetic, done here on the main thread and handed to the renderer as a
+    finding. The model is never asked whether the price passed a number — it is
+    shown the numbers and the price, and this decides. Same division as
+    everywhere else in the package: the model says what something means, never
+    whether it happened.
+    """
+    price = (live_bid or {}).get("price")
+    if not isinstance(price, int):
+        return ""
+
+    guidance = (view.get("nomination") or {}).get("guidance") or {}
+    # Ordered by which is the more serious thing to have passed, so a price above
+    # both names the one that actually binds.
+    for label, key in (("your plan cap", "plan_cap"),
+                       ("the advisable bid", "max_advisable_bid")):
+        value = guidance.get(key)
+        if isinstance(value, int) and price > value:
+            return label
+    return ""
+
+
 def build(view: dict[str, Any], *, prior_reads: list | None = None,
-          labels: dict[int, str] | None = None) -> dict[str, Any]:
+          digest: str = "", labels: dict[int, str] | None = None
+          ) -> dict[str, Any]:
     """Everything `AssistRunner.submit` needs for one nomination.
 
     Assembled here rather than in the runner so the runner stays agent-agnostic,
@@ -102,11 +219,43 @@ def build(view: dict[str, Any], *, prior_reads: list | None = None,
 
     return {
         "agent": AGENT,
-        "payload": room_payload(view, prior_reads=prior_reads),
+        "payload": room_payload(view, prior_reads=prior_reads, digest=digest),
         "player_key": player_key,
         "schema": ROOM_SCHEMA,
-        # Both closures capture only what is already computed. `check` runs on
-        # the worker, `show` on the main thread, and neither reads the store.
+        # Both closures capture only what is already computed. Neither reads the
+        # store, and neither can see a board that has moved since the spawn.
         "check": lambda parsed: check_room(parsed, threats),
         "show": lambda parsed: render(parsed, labels=labels),
+    }
+
+
+def build_tick(view: dict[str, Any], *, live_bid: dict[str, Any] | None = None,
+               opening_read: dict[str, Any] | None = None,
+               last_tick: dict[str, Any] | None = None,
+               digest: str = "", labels: dict[int, str] | None = None
+               ) -> dict[str, Any]:
+    """The same, for one tick of live bidding.
+
+    `last_tick` is the previously *shown* tick, captured at spawn like everything
+    else here. It is what `render_tick` suppresses against. Freezing it at spawn
+    rather than reading it when the reply lands is the same argument as the rest
+    of this file: two ticks can be in flight across a slow API, and a renderer
+    that read live state would compare against whichever happened to land first.
+    """
+    nomination = view.get("nomination") or {}
+    player_key = nomination.get("player_key") or nomination.get("key") or ""
+    threats = threats_of(view)
+    crossed = crossing(live_bid, view)
+
+    return {
+        "agent": TICK_AGENT,
+        "payload": room_tick_payload(
+            view, live_bid=live_bid, opening_read=opening_read, digest=digest,
+        ),
+        "player_key": player_key,
+        "schema": ROOM_TICK_SCHEMA,
+        "check": lambda parsed: check_room_tick(parsed, threats),
+        "show": lambda parsed: render_tick(
+            parsed, last=last_tick, crossed=crossed, labels=labels,
+        ),
     }

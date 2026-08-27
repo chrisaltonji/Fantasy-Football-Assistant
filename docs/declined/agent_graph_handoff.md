@@ -1,3 +1,16 @@
+> # DECLINED — 2026-08-27
+>
+> The brief for a design conversation that produced `langgraph_migration_plan.md`,
+> also declined. See that file's header for why.
+>
+> This document was not wrong about the agents — the five roles, their triggers, the
+> shared-memory sidecar, the mechanical guard and the six invariants were all correct
+> and all survive. Only the LangGraph topology it was written to specify was dropped.
+> The surviving material lives in `docs/agents.md`.
+>
+> Kept here because the measured numbers (Room at 12-14s and 4.0c/call, 100% cache
+> hits, the Analyst's 19.8k-token payload) are real observations worth not losing.
+
 # Agent graph design — handoff brief
 
 **What I want from this conversation:** help me design the LangGraph topology for

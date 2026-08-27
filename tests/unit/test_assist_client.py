@@ -21,7 +21,7 @@ import types
 
 import pytest
 
-from ffa.assist.client import MODEL, PROFILES, ClaudeClient, Reply
+from ffa.assist.client import MODEL, PROFILES, ClaudeClient, Reply, FAST_MODEL
 from ffa.assist.errors import AssistError
 
 
@@ -165,12 +165,43 @@ def test_each_agent_is_dialled_without_being_told(sdk):
     assert grader["timeout"] == 300.0
 
 
-def test_every_agent_shares_one_model_so_they_share_one_cache(sdk):
+def test_every_agent_but_the_tick_shares_one_model(sdk):
     """Caching is keyed on the model. A second model cannot read the prefix the
-    others are paying to keep warm, and moving the three small agents to Sonnet
-    saves about $0.29 a draft against a $25 cap — which is not worth a second
-    cache entry or a second set of behaviour to rehearse."""
-    assert {p.model for p in PROFILES.values()} == {MODEL}
+    others are paying to keep warm, and moving the small agents to Sonnet saves
+    about $0.29 a draft against a $25 cap — not worth a second cache entry or a
+    second set of behaviour to rehearse.
+
+    `room_tick` is the deliberate exception and the same argument reversed: at a
+    call every five seconds it keeps its own entry warm continuously, and Opus is
+    disqualified on latency rather than cost. Pinned here so a *third* model
+    cannot arrive without someone making that argument again."""
+    assert {p.model for p in PROFILES.values()} == {MODEL, FAST_MODEL}
+    assert PROFILES["room_tick"].model == FAST_MODEL
+
+
+def test_the_fast_tier_sends_neither_effort_nor_thinking(sdk):
+    """Haiku 4.5 rejects `output_config.effort` and has no adaptive thinking.
+
+    Omitted, not defaulted — a key sent with a sensible value is still a 400,
+    and this would surface on draft night rather than at import."""
+    call(sdk, agent="room_tick")
+    request = sdk.calls[0]
+
+    assert "thinking" not in request
+    assert "effort" not in request.get("output_config", {})
+    assert request["model"] == FAST_MODEL
+    assert request["timeout"] == 8.0
+
+
+def test_the_fast_tier_still_gets_its_schema(sdk):
+    """Dropping effort must not drop the structured output with it.
+
+    `output_config` carries both, and the tick is the one agent where the dict
+    would otherwise be empty — so the branch that omits an empty `output_config`
+    has to not fire when a schema is present."""
+    call(sdk, agent="room_tick", schema={"type": "object"})
+    assert sdk.calls[0]["output_config"]["format"]["schema"] == {"type": "object"}
+    assert "effort" not in sdk.calls[0]["output_config"]
 
 
 def test_an_unknown_agent_still_gets_a_sane_call(sdk):
