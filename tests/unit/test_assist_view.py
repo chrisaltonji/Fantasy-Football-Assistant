@@ -22,7 +22,7 @@ from ffa.view.model import build_view
 def record(**kw):
     base = dict(agent="room", moment="m", status="ok", player_key="bijan",
                 payload={"read": "a thin room"},
-                usage={"cents": 4, "cache_read": 2000, "input": 100})
+                usage={"micros": 40_000, "cents": 4, "cache_read": 2000, "input": 100})
     base.update(kw)
     return ReadRecord(**base)
 
@@ -150,6 +150,7 @@ def test_spend_and_cache_rate_travel_with_it():
     view = assist_view(log_with(record(), record()))
 
     assert view["spend_cents"] == 8
+    assert view["spend_dollars"] == 0.08
     assert view["cache_hit_rate"] == round(2000 / 2100, 3)
 
 

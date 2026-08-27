@@ -62,21 +62,57 @@ sidecar is a shrug.
 append-only file that undo and crash-resume replay. A draft run with `--assist` and
 one without must produce byte-identical `events.jsonl`.
 
-## Two model tiers, on purpose
+## Two model tiers, and the tick reads no prefix at all
 
-The rest of the agents share one model so they share one cache entry. The tick does
-not, and the reasoning that put them together is exactly why:
+Every agent but the tick shares one model, so they share one cache entry. The
+tick runs on Haiku 4.5 because Opus is disqualified on latency: an 11-14s read
+cannot follow a live auction, and no effort setting closes that.
 
-> Caching is keyed on the model, so a second model cannot share the prefix the others
-> read — it pays its own cache write, more than once as the TTL lapses.
+**It carries its own small system prompt rather than the shared prefix, and that
+is a measured decision.** The minimum cacheable prefix is per model and is *not*
+monotonic across generations:
 
-That holds for an agent firing 33 times. It does not hold for one firing every five
-seconds: the tick keeps its own entry warm continuously and the 1h TTL never lapses.
-It writes the prefix a handful of times across a three-hour auction and reads it
-~900 times.
+| Model | Floor |
+|---|---|
+| Claude Opus 5 | 512 tokens |
+| Claude Sonnet 5, Opus 4.8 | 1,024 |
+| Claude Haiku 4.5 | **4,096** |
 
-Haiku 4.5 rejects `output_config.effort` and does not take adaptive thinking, so
-`AgentProfile` carries both as optional and `client.complete` omits them when unset.
+The shared prefix is ~3,400 tokens. It caches perfectly on Opus 5 and **silently
+not at all** on Haiku 4.5 - no error, no warning, just
+`cache_creation_input_tokens: 0` and full price on every call. The first live
+rehearsal measured 15 ticks paying for 82,593 uncached tokens.
+
+So the tick gets `TICK_PREAMBLE`: the two rules it must not break and the four
+terms its payload actually contains, ~400 tokens, uncached because at that size
+a breakpoint buys nothing. It does not need the dossiers - it is revising a read
+that already used them, and `opening_read` carries those conclusions with their
+citations. Input per call fell 5,431 to 2,880.
+
+`prefix.MIN_CACHEABLE_BY_MODEL` holds the floors and defaults to the highest
+rather than the lowest, `prompts.STANDALONE` names the agents that skip the
+prefix, and `session.banner()` names the floor it checked against.
+
+Haiku 4.5 also rejects `output_config.effort` and does not take adaptive
+thinking, so `AgentProfile` carries both as optional and `client.complete` omits
+them when unset.
+
+## What it costs
+
+Measured over `ffa sim --assist`, not estimated:
+
+| | per call | per draft |
+|---|---|---|
+| The Room, open | $0.0398 | ~$7.17 @ 180 |
+| The Room, tick | $0.0030 | ~$2.66 @ ~900 |
+| Strategist + Narrator | $0.0399 | ~$2.30 |
+| | | **~$12** against a $25 cap |
+
+**The ledger counts micro-dollars, not cents.** Whole cents are right while the
+cheapest agent costs 4c and wrong the moment one costs 0.29c - and that agent is
+also the most numerous. Rounding each tick up to a penny over-reported by 3.4x
+and muted the assistant at two thirds of the budget it was given. `cost_cents`
+survives for the one line a person reads; nothing accumulates in it.
 
 ## The invariants
 

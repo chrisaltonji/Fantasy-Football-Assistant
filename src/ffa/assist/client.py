@@ -83,15 +83,28 @@ class AgentProfile:
 # lapses. Most of what a small agent would save on rates, it gives back on cache
 # writes it now has to pay alone.
 #
-# **`room_tick` is the one exception, and it is the same argument reversed.**
-# That reasoning holds for an agent firing 33 times. It collapses for one firing
-# every five seconds: the tick keeps its own cache entry warm continuously, the
-# 1h TTL never lapses, and it pays the prefix write a handful of times across the
-# night against ~900 reads. It is also the one agent where Opus is disqualified
-# on latency rather than cost — an 11-14s read cannot follow a live auction, and
-# no effort setting closes that gap. So it gets Haiku, its own cache entry, and a
-# payload small enough that a small model is being asked something it can answer:
-# revise your own earlier read, given what the last twenty seconds changed.
+# **`room_tick` is the one exception, and not for the reason first written here.**
+#
+# Opus is disqualified there on latency rather than cost: an 11-14s read cannot
+# follow a live auction and no effort setting closes that gap. So the tick gets
+# Haiku. The first draft of this comment then reasoned that it would keep its own
+# cache entry warm across ~900 calls and so amortise its own prefix write.
+#
+# **That was wrong, and a live rehearsal is what said so.** The minimum cacheable
+# prefix is per model and is not monotonic across generations: Opus 5 caches from
+# 512 tokens, Haiku 4.5 from 4,096. The shared prefix is ~3,400. It sat under the
+# floor, so it cached nothing at all — no error, no warning, just
+# `cache_creation_input_tokens: 0` on every call and full price for 3,400 tokens
+# it could never reuse. Measured: 15 ticks, 82,593 uncached input tokens.
+#
+# So the tick does not read the shared prefix. It carries `prompts.TICK_PREAMBLE`
+# — the two rules and the four terms its payload contains, ~400 tokens, uncached
+# because at that size a breakpoint buys nothing. It does not need the dossiers:
+# it is revising a read that already used them. Measured after: 2,880 input
+# tokens per call, $0.0030 a call, ~$2.66 across a draft.
+#
+# `prefix.MIN_CACHEABLE_BY_MODEL` is what stops this recurring, and
+# `session.banner()` now names the floor it checked against.
 #
 # The Room's *open* read is the one to weaken last: it synthesises recorded
 # testimony against tonight's arithmetic while a decision is still open.

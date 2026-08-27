@@ -32,7 +32,26 @@ from typing import Any
 # the line, so a prefix only caches at all once the managers are in it. A league
 # with no dossiers and no history can therefore fail to cache while looking
 # completely healthy — exactly the kind of silence `cache_hit_rate` exists to break.
-MIN_CACHEABLE_TOKENS = 1024
+# **The floor is per model, and it is not monotonic across generations.** A
+# 3,400-token prefix caches on Opus 5 and silently will not on Haiku 4.5, which
+# wants 4,096. Nothing says so at runtime: no error, no warning, just
+# `cache_creation_input_tokens: 0` and ten times the price forever.
+#
+# This was a single constant when there was a single model, and it went wrong
+# the moment there were two — the banner cheerfully reported the prefix as
+# cacheable while every tick paid full freight for it. The number now travels
+# with the model it belongs to.
+MIN_CACHEABLE_BY_MODEL: dict[str, int] = {
+    "claude-opus-5": 512,
+    "claude-opus-4-8": 1024,
+    "claude-sonnet-5": 1024,
+    "claude-haiku-4-5": 4096,
+}
+
+# For a model not in the table. The highest floor rather than the lowest: an
+# unknown model that turns out to cache is a pleasant surprise, and one that
+# does not is an invoice nobody reads until afterwards.
+MIN_CACHEABLE_TOKENS = 4096
 
 # Characters per token, measured against `count_tokens` rather than guessed. The
 # familiar "divide by four" is a rule of thumb for ordinary prose and reads this
@@ -202,11 +221,16 @@ def estimate_tokens(text: str) -> int:
     return int(len(text) / CHARS_PER_TOKEN)
 
 
-def likely_cacheable(prefix: str) -> bool:
-    """Is this long enough for the API to cache it at all?
+def min_cacheable(model: str) -> int:
+    """The shortest prefix this model will cache at all."""
+    return MIN_CACHEABLE_BY_MODEL.get(model, MIN_CACHEABLE_TOKENS)
+
+
+def likely_cacheable(prefix: str, model: str = "claude-opus-5") -> bool:
+    """Is this long enough for the API to cache it at all, *on this model*?
 
     The failure it catches is silent — everything works and costs ten times as
     much — and the fix, recording some dossiers, is not something anyone wants
     to discover from an invoice.
     """
-    return estimate_tokens(prefix) >= MIN_CACHEABLE_TOKENS
+    return estimate_tokens(prefix) >= min_cacheable(model)

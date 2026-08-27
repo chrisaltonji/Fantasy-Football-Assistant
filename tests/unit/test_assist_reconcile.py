@@ -65,10 +65,34 @@ def test_an_unknown_model_is_priced_as_the_default_rather_than_free():
 def test_the_cap_is_per_draft_and_mutes_rather_than_throttles():
     guard = SpendGuard(cap_dollars=1.0)
     assert not guard.exceeded
-    guard.record(99)
+    guard.record(990_000)                 # 99c, in micros
     assert not guard.exceeded
-    guard.record(2)
+    guard.record(20_000)                  # 2c more, over the dollar
     assert guard.exceeded and "muted" in guard.reason()
+
+
+def test_the_cap_counts_in_micros_so_a_third_of_a_cent_is_a_third_of_a_cent():
+    """The tick costs ~0.29c and is the most numerous call by far. Counted in
+    whole cents it billed a full penny each — 3.4x over — and the cap is a safety
+    rail, so a rail that reads high fires early and wastes budget that was
+    deliberately granted."""
+    guard = SpendGuard(cap_dollars=1.0)
+    for _ in range(100):
+        guard.record(2_900)               # 0.29c apiece
+
+    assert guard.spent_dollars == 0.29
+    assert not guard.exceeded
+
+
+def test_a_one_hour_ttl_write_is_priced_at_double_not_a_quarter_over():
+    """`prompts.CACHE_TTL` asks for an hour. The premium is 1.25x at the default
+    five minutes and 2x at an hour, and this priced the wrong one — under-
+    reporting every write by 37%, which is the unsafe direction."""
+    from ffa.assist.budget import CACHE_WRITE, cost_dollars
+
+    assert CACHE_WRITE == 2.0
+    # 1M cache-write tokens on Opus 5 at $5/MTok input = $10 at 2x.
+    assert cost_dollars({"cache_creation": 1_000_000}, "claude-opus-5") == 10.0
 
 
 def test_every_priced_model_has_both_rates():

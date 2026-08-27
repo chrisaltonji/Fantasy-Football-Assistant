@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ffa.assist.budget import SpendGuard
+from ffa.assist.client import MODEL
 from ffa.assist.context import SIDECAR_NAME, ReadLog
 from ffa.assist.prefix import build_prefix, estimate_tokens, likely_cacheable
 from ffa.assist.runner import AssistRunner
@@ -34,6 +35,10 @@ class AssistSession:
     labels: dict[int, str] = field(default_factory=dict)
     prefix_tokens: int = 0
     cacheable: bool = True
+    # The model this prefix is cached against, so the warning can name the
+    # floor it was actually checked against. The floor is per model and is
+    # not monotonic across generations; a general number would be wrong.
+    prefix_model: str = ""
     # The last plan state the Strategist was told about, so its trigger can fire
     # on the transition rather than on every sale. Main thread only, like the
     # rest of the loop state; the runner never sees it.
@@ -57,9 +62,14 @@ class AssistSession:
         line = (f"assistant on — reads are judgement, never a number. "
                 f"~{self.prefix_tokens} cached tokens, {cap_text} cap.")
         if not self.cacheable:
+            from ffa.assist.prefix import min_cacheable
+
+            floor = min_cacheable(self.prefix_model)
             line += (
-                "\n! the shared prefix is too short to cache, so every call pays "
-                "full price for it. Recording dossiers would fix it."
+                f"\n! the shared prefix is ~{self.prefix_tokens} tokens and "
+                f"{self.prefix_model or 'this model'} does not cache under "
+                f"{floor}, so every call pays full price for it. Recording "
+                "dossiers would fix it."
             )
         return line
 
@@ -70,7 +80,7 @@ class AssistSession:
             return "assistant: no reads."
         parts = ", ".join(f"{n} {status}" for status, n in sorted(counts.items()))
         return (
-            f"assistant: {parts}. ${self.log.spend_cents() / 100:.2f} spent, "
+            f"assistant: {parts}. ${self.log.spend_dollars():.2f} spent, "
             f"{self.log.cache_hit_rate():.0%} of input tokens came from cache."
         )
 
@@ -100,5 +110,8 @@ def build_session(
         build_view=build_view,
         labels=labels,
         prefix_tokens=estimate_tokens(prefix),
-        cacheable=likely_cacheable(prefix),
+        # Checked against the model that actually reads this prefix. The tick
+        # runs on another one and carries its own; see `prompts.STANDALONE`.
+        cacheable=likely_cacheable(prefix, MODEL),
+        prefix_model=MODEL,
     )

@@ -34,7 +34,7 @@ import threading
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
-from ffa.assist.budget import SpendGuard, cost_cents
+from ffa.assist.budget import SpendGuard, cost_cents, cost_micros
 from ffa.assist.context import ReadRecord
 from ffa.assist.errors import AssistError
 
@@ -247,6 +247,10 @@ class AssistRunner:
             )
 
         usage = dict(reply.usage or {})
+        # Both, and they are not redundant: `micros` is what accumulates and
+        # what the cap reads, `cents` is what a person reads on one line. Summing
+        # `cents` over a sub-cent agent over-reports by more than 3x.
+        usage["micros"] = cost_micros(reply.usage or {}, reply.model)
         usage["cents"] = cost_cents(reply.usage or {}, reply.model)
 
         parsed = dict(reply.payload or {})
@@ -283,7 +287,7 @@ class AssistRunner:
         """
         record = outcome.record
         usage = record.usage or {}
-        self.spend.record(int(usage.get("cents", 0) or 0))
+        self.spend.record(int(usage.get("micros", 0) or 0))
 
         if record.status == "ok":
             self._consecutive_failures = 0

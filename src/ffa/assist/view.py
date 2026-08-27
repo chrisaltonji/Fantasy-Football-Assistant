@@ -70,6 +70,7 @@ def assist_view(log: Any, *, runner: Any = None, player_key: str = "",
         "current": current,
         "recent": [_entry(r) for r in records[-recent:]],
         "spend_cents": log.spend_cents(),
+        "spend_dollars": round(log.spend_dollars(), 4),
         "cache_hit_rate": round(log.cache_hit_rate(), 3),
         "counts": counts,
         # Surfaced rather than hidden. A muted assistant that looks identical to

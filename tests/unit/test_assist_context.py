@@ -98,12 +98,30 @@ def test_spend_and_counts_are_summed_from_the_records():
     reader against itself; the constant ties it to the writer.
     `test_assist_runner.py` closes the loop against the real output."""
     log = ReadLog()
-    log.append(read(usage={ReadLog.COST_KEY: 3}))
-    log.append(read(usage={ReadLog.COST_KEY: 4}, status="late"))
+    log.append(read(usage={ReadLog.COST_KEY: 30_000}))
+    log.append(read(usage={ReadLog.COST_KEY: 40_000}, status="late"))
     log.append(read(status="failed"))
 
+    assert log.spend_micros() == 70_000
+    assert log.spend_dollars() == 0.07
     assert log.spend_cents() == 7
     assert log.counts() == {"ok": 1, "late": 1, "failed": 1}
+
+
+def test_a_sub_cent_call_is_not_lost_and_is_not_rounded_to_a_cent():
+    """**The bug a live rehearsal found.** The ledger summed whole cents, which
+    is fine while the cheapest agent costs 4c and wrong the moment one costs a
+    third of a cent — and that agent is also the most numerous. Measured over a
+    real run: $0.37 spent, $0.51 reported, muting at two thirds of the budget."""
+    log = ReadLog()
+    for _ in range(10):
+        log.append(read(usage={ReadLog.COST_KEY: 2_900}))    # 0.29c apiece
+
+    assert log.spend_micros() == 29_000
+    assert log.spend_dollars() == 0.029
+    # Ten of them are under a penny in total, and the ledger says so rather than
+    # reporting ten pennies.
+    assert log.spend_cents() == 2
 
 
 def test_cache_hit_rate_is_worth_surfacing():

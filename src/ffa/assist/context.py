@@ -172,10 +172,20 @@ class ReadLog:
     # spend *cap* is fed separately by `settle()` and kept working. Only the
     # reported total was wrong. `test_the_ledger_reads_the_key_the_runner_writes`
     # pins the two together.
-    COST_KEY = "cents"
+    # Micros, not cents, and for the same reason `SpendGuard` counts them: the
+    # tick costs a third of a cent and is the most numerous call, so a ledger
+    # summed in whole cents reported half again as much as was actually spent.
+    COST_KEY = "micros"
+
+    def spend_micros(self) -> int:
+        return sum(int(r.usage.get(self.COST_KEY, 0) or 0) for r in self._records)
+
+    def spend_dollars(self) -> float:
+        return self.spend_micros() / 1_000_000
 
     def spend_cents(self) -> int:
-        return sum(int(r.usage.get(self.COST_KEY, 0) or 0) for r in self._records)
+        """Whole cents, for display. Never sum this — see `COST_KEY`."""
+        return int(self.spend_micros() / 10_000)
 
     def counts(self) -> dict[str, int]:
         out: dict[str, int] = {}

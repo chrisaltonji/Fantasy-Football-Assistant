@@ -239,9 +239,12 @@ def test_a_fatal_failure_mutes_at_once_without_waiting_for_three():
 
 
 def test_the_spend_cap_mutes_and_says_how_to_raise_it():
+    # One fake call prices at 2,750 micros ($0.00275) on Opus 5, so this cap is
+    # under a single read. It used to be 0.01 and passed only because whole-cent
+    # rounding turned 0.275c into a full penny.
     run, inbox = runner(
         ok(),
-        spend=SpendGuard(cap_dollars=0.01),
+        spend=SpendGuard(cap_dollars=0.002),
     )
     run.submit("room", {}, moment="m")
     run.settle(wait(inbox))
@@ -257,7 +260,7 @@ def test_spend_accumulates_from_real_usage():
         run.submit("room", {}, moment="m")
         run.settle(wait(inbox))
 
-    assert run.spend.spent_cents > 0
+    assert run.spend.spent_micros > 0
 
 
 # --- the ledger -------------------------------------------------------------
@@ -345,5 +348,8 @@ def test_the_ledger_reads_the_key_the_runner_writes():
 
     written = log.all()[-1].usage
     assert ReadLog.COST_KEY in written
-    assert log.spend_cents() == written[ReadLog.COST_KEY] > 0
-    assert log.spend_cents() == run.spend.spent_cents
+    assert log.spend_micros() == written[ReadLog.COST_KEY] > 0
+    assert log.spend_micros() == run.spend.spent_micros
+    # Both units are written, and they are not the same number. `cents` is for
+    # the one line a person reads; summing it is how the cap read 1.4x high.
+    assert "cents" in written

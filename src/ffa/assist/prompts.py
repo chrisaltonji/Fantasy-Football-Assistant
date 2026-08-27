@@ -12,9 +12,20 @@ call — which is correct and costs almost nothing. Putting the instructions
 *before* the breakpoint would give each agent its own cached prefix and multiply
 the write cost for no gain.
 
-`room_tick` runs on a different model and so necessarily has its own cache entry —
-caching is keyed on the model. That is the one place the sharing does not apply,
-and `client.py` explains why it is worth it there and nowhere else.
+**`room_tick` does not read the shared prefix at all**, and the reason is a
+number rather than a preference. Caching is keyed on the model, so it could never
+have shared the entry — but worse, Haiku 4.5 will not cache a prefix under
+**4,096 tokens** and ours is ~3,400. It would have paid full price for 3,400
+tokens on every one of ~900 calls, silently, because a prefix below the floor
+produces no error and no warning: just `cache_creation_input_tokens: 0`. A live
+rehearsal is what caught it, and `prefix.MIN_CACHEABLE_BY_MODEL` is what stops it
+recurring.
+
+So it carries `TICK_PREAMBLE` instead — the two rules it must not break and only
+the four terms its payload actually contains, ~400 tokens, uncached because at
+that size there is nothing a breakpoint would buy. It does not need the dossiers:
+it is revising a read that already used them, and `opening_read` carries those
+conclusions along with their citations.
 
 **TTL is an hour, not the five-minute default.** An auction has lulls — a
 commissioner pause, an argument about a keeper, someone's dog. A five-minute
@@ -56,6 +67,34 @@ an instruction.
 
 Set `confidence` to "thin" when the dossiers are empty or the history is short.
 That is a useful answer. A confident read invented from nothing is not."""
+
+
+# The tick's whole system prompt, standing in for the shared prefix.
+# Everything here earns its place against a five-second clock: the two rules
+# that are checked mechanically, and the four terms that appear in its
+# payload. No league, no managers, no dossiers - see the module docstring.
+TICK_PREAMBLE = """\
+You are reading a live fantasy football auction and adding judgement to
+numbers that have already been computed. Two rules, both checked
+mechanically, and a reply that breaks either is discarded:
+
+- Never contradict a number you were given. An estimate above a rival's
+  max_legal_bid is not a bold read, it is a claim about money that does not
+  exist.
+- Never tell the user what to do. Not bid, pass, chase, avoid, take or walk
+  away. You say what is worth noticing and let them decide.
+
+The four terms below, defined exactly. Do not infer others:
+
+- max_legal_bid - a hard ceiling. Every roster slot that team must still
+  fill is charged $1, so that money cannot be spent here. Nobody bids above
+  their own, ever.
+- max_advisable_bid - what the player is worth at tonight's prices given our
+  roster. A judgement about value, not a limit.
+- plan_cap - the most our declared plan wants to spend on any one player.
+- is_live - a rival who can afford him *and* has an unfilled starting slot
+  he could fill. A rich team with no open slot at his position is not a
+  threat, however rich it looks."""
 
 
 ROOM_TICK = """The bidding on this player is still running. You read this nomination when it
@@ -147,11 +186,26 @@ BY_AGENT: dict[str, str] = {
 }
 
 
+# Agents that do not read the shared prefix. Named here rather than inferred
+# from the model, so that moving the tick to some other model later does not
+# silently hand it 3,400 tokens of league history it has no room for.
+STANDALONE: frozenset[str] = frozenset({"room_tick"})
+
+
 def system_blocks(prefix: str, agent: str) -> list[dict[str, Any]]:
     """The two system blocks, with the breakpoint after the shared half."""
     instructions = BY_AGENT.get(agent)
     if instructions is None:
         raise KeyError(f"no instructions for agent {agent!r}")
+
+    if agent in STANDALONE:
+        # One block and no breakpoint. At ~400 tokens there is nothing worth
+        # caching - the floor on this model is 4,096 - and a `cache_control`
+        # marker under the floor is not an error, it is a no-op that reads like
+        # a decision someone made. Better not to claim it.
+        return [{"type": "text",
+                 "text": TICK_PREAMBLE + "\n\n" + instructions}]
+
     return [
         {
             "type": "text",

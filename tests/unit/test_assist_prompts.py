@@ -179,14 +179,69 @@ def test_a_seat_with_no_dossier_is_told_to_say_so():
     assert "nothing recorded" in build_prefix(league=FakeLeague())
 
 
-def test_the_fixed_half_alone_is_too_short_to_cache():
-    """Measured with `count_tokens`: the contract and glossary come to 995
-    against a 1,024 floor. A league with no managers, no dossiers and no history
-    therefore caches nothing at all while looking completely healthy — the one
-    failure in this layer that never surfaces on its own."""
+def test_the_floor_is_per_model_and_is_not_monotonic():
+    """**The bug a live rehearsal found, pinned.**
+
+    This was one constant while there was one model, and it went wrong the moment
+    there were two. Haiku 4.5 will not cache a prefix under 4,096 tokens where
+    Opus 5 caches from 512 — so a ~3,400-token prefix that caches perfectly on
+    one silently caches nothing at all on the other. No error, no warning, just
+    `cache_creation_input_tokens: 0` and full price on every call forever.
+
+    The default for an unknown model is the *highest* floor, not the lowest: a
+    model that turns out to cache is a pleasant surprise, one that does not is an
+    invoice nobody reads until afterwards."""
+    from ffa.assist.prefix import min_cacheable
+
+    assert min_cacheable("claude-opus-5") == 512
+    assert min_cacheable("claude-haiku-4-5") == 4096
+    assert min_cacheable("some-model-shipped-next-year") == 4096
+
+    prefix = build_prefix(league=FakeLeague())
+    assert likely_cacheable(prefix, "claude-opus-5")
+    assert not likely_cacheable(prefix, "claude-haiku-4-5")
+
+
+def test_the_fixed_half_alone_barely_clears_the_lowest_floor():
+    """Measured with `count_tokens`: the contract and glossary come to 995.
+
+    That clears Opus 5's 512 and would not have cleared the 1,024 this once
+    assumed — the old constant was Opus 4.8's floor applied to a model that
+    halved it. A league with no managers, no dossiers and no history still caches
+    almost nothing worth having, which is what the next test is about."""
     from ffa.assist.prefix import CONTRACT, GLOSSARY
 
-    assert not likely_cacheable(CONTRACT + GLOSSARY)
+    assert likely_cacheable(CONTRACT + GLOSSARY, "claude-opus-5")
+    assert not likely_cacheable(CONTRACT + GLOSSARY, "claude-haiku-4-5")
+
+
+def test_the_tick_carries_its_own_system_and_claims_no_cache():
+    """It cannot cache on Haiku 4.5 at any size it would plausibly be, so it does
+    not pretend to. A `cache_control` marker under the floor is not an error — it
+    is a no-op that reads like a decision somebody made and verified."""
+    from ffa.assist.prefix import estimate_tokens
+    from ffa.assist.prompts import STANDALONE, system_blocks
+
+    assert "room_tick" in STANDALONE
+    blocks = system_blocks(build_prefix(league=FakeLeague()), "room_tick")
+
+    assert len(blocks) == 1
+    assert "cache_control" not in blocks[0]
+    # Small enough that the uncached prefix is not worth caring about, and small
+    # enough to answer inside a five-second cadence.
+    assert estimate_tokens(blocks[0]["text"]) < 1200
+
+
+def test_the_tick_is_never_handed_the_league_it_has_no_room_for():
+    """The whole point of the standalone path: ~3,400 tokens of managers,
+    dossiers and history on every one of ~900 calls, none of it cacheable."""
+    from ffa.assist.prompts import system_blocks
+
+    prefix = build_prefix(league=FakeLeague())
+    text = system_blocks(prefix, "room_tick")[0]["text"]
+
+    assert prefix not in text
+    assert "nothing recorded" not in text
 
 
 def test_a_real_prefix_clears_the_floor():
