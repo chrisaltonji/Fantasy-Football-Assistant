@@ -168,6 +168,11 @@ class Reply:
     usage: dict[str, int] = field(default_factory=dict)
     model: str = MODEL
     stop_reason: str = ""
+    # Wall clock for the API call alone, in milliseconds. Measured rather than
+    # inferred: the tick is the one agent with a deadline it can actually miss,
+    # and "does Haiku answer 2,880 tokens inside five seconds" is not a question
+    # a token count can answer.
+    latency_ms: int = 0
 
     @property
     def cache_hit(self) -> bool:
@@ -336,10 +341,11 @@ class ClaudeClient:
         except anthropic.APIConnectionError as exc:
             raise AssistError("could not reach the API") from exc
 
-        return self._parse(agent, message, schema, model)
+        return self._parse(agent, message, schema, model,
+                           latency_ms=int((time.monotonic() - started) * 1000))
 
     def _parse(self, agent: str, message: Any, schema: dict | None,
-               model: str) -> Reply:
+               model: str, *, latency_ms: int = 0) -> Reply:
         """Reply object to `Reply`. Refusals and truncation are named, not guessed."""
         stop = getattr(message, "stop_reason", "") or ""
         usage = _usage_dict(getattr(message, "usage", None))
@@ -354,8 +360,8 @@ class ClaudeClient:
             raise AssistError(f"the {agent} call returned nothing")
 
         if not schema:
-            return Reply(payload={"text": text}, usage=usage,
-                         model=model, stop_reason=stop)
+            return Reply(payload={"text": text}, usage=usage, model=model,
+                         stop_reason=stop, latency_ms=latency_ms)
 
         try:
             payload = json.loads(text)
@@ -371,4 +377,5 @@ class ClaudeClient:
         if not isinstance(payload, dict):
             raise AssistError(f"the {agent} reply was not an object")
 
-        return Reply(payload=payload, usage=usage, model=model, stop_reason=stop)
+        return Reply(payload=payload, usage=usage, model=model,
+                     stop_reason=stop, latency_ms=latency_ms)

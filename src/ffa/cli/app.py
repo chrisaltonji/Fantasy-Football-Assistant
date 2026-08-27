@@ -681,6 +681,10 @@ def cmd_sim(args: argparse.Namespace) -> int:
     if assist is not None:
         print()
         print(assist.session.summary())
+        report = assist.session.timing_report()
+        if report:
+            print()
+            print(report)
 
     print(f"\n{source.status().detail}")
     print(f"journal  {directory / 'events.jsonl'}")

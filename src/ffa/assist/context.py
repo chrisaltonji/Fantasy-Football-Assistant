@@ -55,6 +55,13 @@ class ReadRecord:
     detail: str = ""
     usage: dict[str, Any] = field(default_factory=dict)
     model: str = ""
+    # How long the API call took, and how long from asking to having something
+    # on screen. **The second is the one that matters** and it is always the
+    # larger: it includes waiting for a slot and the hop back to the main
+    # thread. A read that answers in 3s but lands at 9s because it queued behind
+    # another is a read that missed the auction, and only `elapsed_ms` says so.
+    latency_ms: int = 0
+    elapsed_ms: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -63,6 +70,7 @@ class ReadRecord:
             "player_key": self.player_key, "status": self.status,
             "payload": self.payload, "detail": self.detail,
             "usage": self.usage, "model": self.model,
+            "latency_ms": self.latency_ms, "elapsed_ms": self.elapsed_ms,
         }
 
     @classmethod
@@ -85,6 +93,8 @@ class ReadRecord:
             detail=str(raw.get("detail", "")),
             usage=raw.get("usage") or {},
             model=str(raw.get("model", "")),
+            latency_ms=int(raw.get("latency_ms", 0) or 0),
+            elapsed_ms=int(raw.get("elapsed_ms", 0) or 0),
         )
 
     @property
@@ -192,6 +202,47 @@ class ReadLog:
         for record in self._records:
             out[record.status] = out.get(record.status, 0) + 1
         return out
+
+    def timings(self, agent: str = "") -> dict[str, int]:
+        """Wall clock for the reads that landed, in milliseconds.
+
+        Only `ok` and `late` records: a call that failed or was rate-limited
+        says nothing about how fast the model is, and including its timeout
+        would make the tail look like latency rather than like an outage.
+
+        `late` is deliberately *kept*. A read that arrived after the player sold
+        is exactly the evidence you want when asking whether the cadence works.
+        """
+        rows = [
+            r for r in self._records
+            if r.status in ("ok", "late") and (not agent or r.agent == agent)
+            and r.elapsed_ms > 0
+        ]
+        if not rows:
+            return {}
+
+        api = sorted(r.latency_ms for r in rows)
+        total = sorted(r.elapsed_ms for r in rows)
+
+        def pick(values: list[int], q: float) -> int:
+            # Nearest-rank. With twenty samples an interpolating percentile
+            # invents numbers that were never measured, and these are measured
+            # numbers or they are nothing.
+            return values[min(len(values) - 1, int(q * len(values)))]
+
+        return {
+            "n": len(rows),
+            "api_p50": pick(api, 0.50), "api_p90": pick(api, 0.90),
+            "p50": pick(total, 0.50), "p90": pick(total, 0.90),
+            "max": total[-1],
+        }
+
+    def agents(self) -> tuple[str, ...]:
+        """Every agent that produced a record, in first-seen order."""
+        seen: dict[str, None] = {}
+        for record in self._records:
+            seen.setdefault(record.agent, None)
+        return tuple(seen)
 
     def cache_hit_rate(self) -> float:
         """Share of input tokens served from cache.

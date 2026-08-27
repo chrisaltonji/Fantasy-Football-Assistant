@@ -24,6 +24,11 @@ from ffa.assist.context import SIDECAR_NAME, ReadLog
 from ffa.assist.prefix import build_prefix, estimate_tokens, likely_cacheable
 from ffa.assist.runner import AssistRunner
 
+# What the tick is measured against. Not a timeout — the profile's 8s ceiling is
+# that — but the cadence it is offered a turn on, and therefore the number that
+# decides whether a read describes the board it was asked about.
+TICK_BUDGET_MS = 5000
+
 
 @dataclass
 class AssistSession:
@@ -83,6 +88,49 @@ class AssistSession:
             f"assistant: {parts}. ${self.log.spend_dollars():.2f} spent, "
             f"{self.log.cache_hit_rate():.0%} of input tokens came from cache."
         )
+
+    def timing_report(self) -> str:
+        """How long each agent took, measured, per agent.
+
+        Separate from `summary` because it is a table and because it answers a
+        different question. The summary asks what this cost; this asks whether
+        it arrived in time, which is the only question the tick can fail.
+
+        **`total` is the column to read**, not `api`. It starts when the read was
+        asked for and ends when there is something to print, so it includes
+        waiting for a slot. A read that answers in 3s but lands at 9s because it
+        queued behind another still missed the auction.
+        """
+        rows = []
+        for agent in self.log.agents():
+            t = self.log.timings(agent)
+            if t:
+                rows.append((agent, t))
+        if not rows:
+            return ""
+
+        out = [f"  {'agent':<12}{'n':>4}{'api p50':>10}{'total p50':>11}"
+               f"{'total p90':>11}{'max':>9}"]
+        for agent, t in rows:
+            out.append(
+                f"  {agent:<12}{t['n']:>4}{t['api_p50'] / 1000:>9.1f}s"
+                f"{t['p50'] / 1000:>10.1f}s{t['p90'] / 1000:>10.1f}s"
+                f"{t['max'] / 1000:>8.1f}s"
+            )
+
+        # The one line that is a verdict rather than a measurement. The tick has
+        # a deadline the others do not: it is offered a turn every five seconds,
+        # and one that habitually answers slower than that is not following the
+        # auction, it is describing a price that has already moved.
+        tick = dict(rows).get("room_tick")
+        if tick:
+            budget = TICK_BUDGET_MS
+            verdict = "inside" if tick["p90"] <= budget else "OVER"
+            out.append(
+                f"  tick vs the {budget / 1000:.0f}s cadence: p90 "
+                f"{tick['p90'] / 1000:.1f}s — {verdict}"
+            )
+        return "\n".join(out)
 
 
 def build_session(

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
@@ -186,10 +187,15 @@ class AssistRunner:
         generation = self._generation
         with self._in_flight_lock:
             self._in_flight += 1
+        # **Started here, not inside the worker.** The question the tick has to
+        # answer is "was there something on screen within five seconds of asking",
+        # and thread start-up and slot contention are part of that answer. A
+        # clock started in `_work` would time the API and call it the latency.
+        started = time.monotonic()
         thread = threading.Thread(
             target=self._work,
             args=(agent, payload, moment, event_id, player_key, schema,
-                  instructions, check, show, generation, slots),
+                  instructions, check, show, generation, slots, started),
             daemon=True,
             name=f"assist-{agent}-{generation}",
         )
@@ -199,7 +205,7 @@ class AssistRunner:
     # --- the worker ---------------------------------------------------------
 
     def _work(self, agent, payload, moment, event_id, player_key, schema,
-              instructions, check, show, generation, slots) -> None:
+              instructions, check, show, generation, slots, started=None) -> None:
         """Runs off the main thread. Must never raise, and never touch the store."""
         try:
             outcome = self._call(agent, payload, moment, event_id, player_key,
@@ -222,6 +228,17 @@ class AssistRunner:
         # `in_flight` is zero cannot see zero while a result is still in the air.
         with self._in_flight_lock:
             self._in_flight -= 1
+
+        # Stamped last, on the way out, so it covers everything the caller
+        # actually waited through: the slot, the thread, the call, the parse and
+        # the guard. Only the hop to the main thread is outside it, and that is
+        # a queue put.
+        if started is not None:
+            outcome = replace(
+                outcome,
+                record=replace(outcome.record,
+                               elapsed_ms=int((time.monotonic() - started) * 1000)),
+            )
         self._inbox.put((ASSIST, outcome))
 
     def _call(self, agent, payload, moment, event_id, player_key, schema,
@@ -246,6 +263,7 @@ class AssistRunner:
                 note=exc.message if exc.fatal_to_assist else "",
             )
 
+        latency_ms = int(getattr(reply, "latency_ms", 0) or 0)
         usage = dict(reply.usage or {})
         # Both, and they are not redundant: `micros` is what accumulates and
         # what the cap reads, `cents` is what a person reads on one line. Summing
@@ -265,13 +283,13 @@ class AssistRunner:
             return AssistOutcome(
                 record=record("rejected", payload=dict(reply.payload or {}),
                               detail="; ".join(violations), usage=usage,
-                              model=reply.model),
+                              model=reply.model, latency_ms=latency_ms),
                 generation=generation, violations=violations,
             )
 
         return AssistOutcome(
             record=record("ok", payload=parsed, usage=usage, model=reply.model,
-                          detail="; ".join(violations)),
+                          detail="; ".join(violations), latency_ms=latency_ms),
             generation=generation,
             text=show(parsed) if show else "",
             violations=violations,
