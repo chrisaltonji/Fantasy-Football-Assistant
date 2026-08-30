@@ -143,10 +143,14 @@ def render_tick(parsed: dict[str, Any], *, last: dict[str, Any] | None = None,
     - it changed its mind but says what it last said, which happens whenever the
       price moves inside a band it has already given.
 
-    `crossed` overrides the last gate. It is computed from arithmetic on the main
-    thread — the price passing our own ceiling or plan cap — and when that
-    happens the read is worth repeating even verbatim, because the same sentence
-    means something different on the other side of that number.
+    `crossed` overrides the last gate, and it means *just crossed*. The price
+    passing our own ceiling is worth saying again even verbatim, because the same
+    sentence means something different on the other side of that number.
+
+    **It is the transition, not the state.** A live rehearsal printed this three
+    times in one auction, twice near-identically, because the price stayed above
+    the ceiling and so every remaining tick claimed to be news. Once past, it is
+    past; the caller only passes a label the first time. See `_maybe_tick`.
     """
     if not parsed.get("changed"):
         return ""
@@ -180,13 +184,18 @@ def render_tick(parsed: dict[str, Any], *, last: dict[str, Any] | None = None,
 
 
 def crossing(live_bid: dict[str, Any] | None, view: dict[str, Any]) -> str:
-    """Which of our own computed ceilings the price has just passed, if any.
+    """Which of our own computed ceilings the price is above, if any.
 
     Arithmetic, done here on the main thread and handed to the renderer as a
     finding. The model is never asked whether the price passed a number — it is
     shown the numbers and the price, and this decides. Same division as
     everywhere else in the package: the model says what something means, never
     whether it happened.
+
+    **This reports a state, not an event.** It keeps answering "your plan cap"
+    for every tick while the price stays above it. Turning that into "has just
+    crossed" needs memory of what was already reported, which lives on the live
+    board — see `_Bidding.newly_crossed`.
     """
     price = (live_bid or {}).get("price")
     if not isinstance(price, int):
@@ -231,7 +240,7 @@ def build(view: dict[str, Any], *, prior_reads: list | None = None,
 
 def build_tick(view: dict[str, Any], *, live_bid: dict[str, Any] | None = None,
                opening_read: dict[str, Any] | None = None,
-               last_tick: dict[str, Any] | None = None,
+               last_tick: dict[str, Any] | None = None, crossed: str = "",
                digest: str = "", labels: dict[int, str] | None = None
                ) -> dict[str, Any]:
     """The same, for one tick of live bidding.
@@ -241,11 +250,14 @@ def build_tick(view: dict[str, Any], *, live_bid: dict[str, Any] | None = None,
     rather than reading it when the reply lands is the same argument as the rest
     of this file: two ticks can be in flight across a slow API, and a renderer
     that read live state would compare against whichever happened to land first.
+
+    `crossed` is passed in rather than computed here, and it is a *transition*:
+    the caller owns the memory of which ceilings have already been reported, so
+    this stays a pure function of its arguments like everything else in the file.
     """
     nomination = view.get("nomination") or {}
     player_key = nomination.get("player_key") or nomination.get("key") or ""
     threats = threats_of(view)
-    crossed = crossing(live_bid, view)
 
     return {
         "agent": TICK_AGENT,

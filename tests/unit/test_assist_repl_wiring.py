@@ -266,6 +266,57 @@ def test_a_read_about_the_previous_player_never_lands_on_the_new_board():
     assert bidding.opening_read is None
 
 
+def test_a_crossing_is_announced_once_and_not_for_the_rest_of_the_auction():
+    """**The defect a live practice room found.**
+
+    `crossing` reports a state: the price is above our ceiling, and it stays
+    above for the rest of the bidding. A crossing also overrides the repeat
+    guard, so reporting the state every tick disabled suppression entirely from
+    the moment the price passed - one auction printed the same sentence three
+    times, twice differing only by the word "are".
+
+    Latching, not comparing: a bid that dips back under and climbs again has not
+    discovered anything new about the same number."""
+    bidding = _Bidding()
+    bidding.reset("bijan-robinson", 12)
+
+    assert bidding.newly_crossed("") == ""
+    assert bidding.newly_crossed("the advisable bid") == "the advisable bid"
+    assert bidding.newly_crossed("the advisable bid") == ""
+    assert bidding.newly_crossed("the advisable bid") == ""
+    # A different, more serious ceiling is genuinely new.
+    assert bidding.newly_crossed("your plan cap") == "your plan cap"
+    assert bidding.newly_crossed("your plan cap") == ""
+
+
+def test_a_crossing_does_not_survive_the_next_nomination():
+    """Every player has his own ceilings. Carrying the latch would silence the
+    first genuine crossing on the next one."""
+    bidding = _Bidding()
+    bidding.reset("bijan-robinson", 12)
+    bidding.newly_crossed("your plan cap")
+
+    bidding.reset("puka-nacua", 44)
+    assert bidding.newly_crossed("your plan cap") == "your plan cap"
+
+
+def test_the_tick_only_wears_the_crossing_it_was_handed():
+    """`build_tick` no longer computes it. The caller owns the memory of what
+    has already been announced, which keeps the builder a pure function of its
+    arguments like everything else in that module."""
+    from ffa.assist.agents import room
+
+    view = {"nomination": {"player_key": "bijan", "guidance":
+            {"max_advisable_bid": 40, "plan_cap": 45, "threats": []}}}
+    # The price is well past both, so `crossing` would report one - but nothing
+    # was passed in, so nothing is shown.
+    spec = room.build_tick(view, live_bid={"price": 90})
+    shown = spec["show"]({"changed": True, "note": "climbing"})
+
+    assert "past" not in shown
+    assert room.crossing({"price": 90}, view) == "your plan cap"
+
+
 # --- the Strategist fires on a transition, not on a sale ---------------------
 
 

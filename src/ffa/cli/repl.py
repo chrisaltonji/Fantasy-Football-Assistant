@@ -107,7 +107,7 @@ class _Bidding:
     """
 
     __slots__ = ("player_key", "price", "holder_team_id", "opening_read",
-                 "last_tick", "event_id")
+                 "last_tick", "event_id", "crossed")
 
     def __init__(self) -> None:
         self.reset()
@@ -126,6 +126,23 @@ class _Bidding:
         # becomes the thing to compare with; otherwise silence would make the
         # next genuine change look like a repeat.
         self.last_tick: dict | None = None
+        # Which of our ceilings the price has already been reported as passing.
+        # Without this, `crossing` keeps answering for every tick while the price
+        # stays above the number, and since a crossing overrides the repeat
+        # guard, one auction printed the same sentence three times.
+        self.crossed: str = ""
+
+    def newly_crossed(self, now: str) -> str:
+        """The crossing to announce, or "" if it has already been announced.
+
+        Latching, not comparing: once a price is past the plan cap it is past,
+        and a bid that dips back under and climbs again has not discovered
+        anything new about the same number.
+        """
+        if not now or now == self.crossed:
+            return ""
+        self.crossed = now
+        return now
 
     def observe(self, observation) -> bool:
         """Fold in one price move. Returns whether it was about this player."""
@@ -764,11 +781,17 @@ def _maybe_tick(assist, store: DraftStore, bidding) -> None:
         from ffa.assist.agents import room
 
         view = assist.build_view()
+        # Arithmetic on the main thread, and only the *transition* travels: the
+        # price being above a ceiling is a state that persists for the rest of
+        # the auction, and letting that state override the repeat guard is what
+        # made one rehearsal print the same sentence three times.
+        crossed = bidding.newly_crossed(room.crossing(bidding.as_payload(), view))
         spec = room.build_tick(
             view,
             live_bid=bidding.as_payload(),
             opening_read=bidding.opening_read,
             last_tick=bidding.last_tick,
+            crossed=crossed,
             digest=_digest(assist),
             labels=assist.labels,
         )
