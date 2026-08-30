@@ -8,11 +8,20 @@ considered and declined, see `docs/declined/`.
 
 | Agent | Fires on | Model | Produces | Calls/draft |
 |---|---|---|---|---|
-| **The Room** (open) | a player is nominated | Opus 5, low effort | rival bid bands + a read on the nomination | ~180 |
+| **The Room** (open) | a player is nominated | Sonnet 5, low effort | rival bid bands + a read on the nomination | ~180 |
 | **The Room** (tick) | every ~5s while on the block | Haiku 4.5, no thinking | a revision of its own opening read | ~900 |
-| **The Strategist** | a pick lands, gated on a plan-state transition | Opus 5, medium | assessment of the declared plan, and the digest | ~25 |
-| **The Narrator** | a notable feed event | Opus 5, low | one or two sentences on why it matters | ~33 |
+| **The Strategist** | a plan-state transition | Sonnet 5, medium | assessment of the declared plan, and the digest | ~25 |
+| **The Narrator** | a notable feed event | Sonnet 5, low | one or two sentences on why it matters | ~33 |
 | **The Analyst** | on demand (`ask`) | Opus 5, high | free prose answer | ad hoc |
+
+**Three tiers, and every boundary is a measurement.** Latency here is output size:
+15.9 ms per output token on Sonnet 5, 18.0 on Opus 5, near-constant on both. The
+three agents that run against the draft clock share the middle tier *and one warm
+cache entry* — caching is keyed on the model, so splitting them buys a second
+prefix write for nothing. The Analyst stays on Opus because it is invoked on
+purpose, with a person waiting and no clock to race; it is alone there, so its
+entry goes cold between questions and it pays a prefix write on most calls, which
+is the right trade for an agent asked a handful of times.
 
 The Grader (post-draft grading of the roster and of the assistant's own calls) is out
 of scope. Its prompt, schema and `grader_payload` remain in the tree, unused.

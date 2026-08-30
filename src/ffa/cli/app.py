@@ -1165,6 +1165,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="spending scripts from prior drafts; absent is fine")
     draft.set_defaults(func=cmd_draft)
 
+    from ffa.cli.night import add_parser as _night_parser
+    _night_parser(sub, default_config=DEFAULT_CONFIG_PATH, default_runs=RUNS_DIR)
+
     sim = sub.add_parser("sim", help="run a simulated auction (no ESPN needed)")
     sim.add_argument("--seed", type=int, default=0, help="reproduces a run exactly")
     sim.add_argument("--drop-prices", type=float, default=0.0, metavar="RATE",

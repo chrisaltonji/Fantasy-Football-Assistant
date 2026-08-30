@@ -217,8 +217,13 @@ ffa dossier status                          # confirm coverage
 ffa strategy init                           # a plan off the market, for you to edit
 ffa strategy show                           # the plan, and adherence to it
 ffa config check                            # last gate before the day
-ffa draft --new --source espn               # draft
+ffa night                                   # draft: preflight + dashboard + REPL
 ```
+
+`ffa night` replaces the last line and folds `config check` into itself. It runs
+every cheap gate, refuses on a hard failure, spawns the dashboard against the run
+it is about to create, and hands the terminal to the REPL. `ffa night
+--check-only` is the version to run an hour early.
 
 `ffa config init` is what puts the nomination order in place; `ffa config check`
 prints it back as names you recognise, and says so plainly if it is missing. It

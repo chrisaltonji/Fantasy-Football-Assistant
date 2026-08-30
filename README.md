@@ -117,6 +117,33 @@ These expire. If you start seeing `401 Unauthorized`, re-copy them.
 
 ### Live, against the ESPN draft room
 
+One command on the night itself:
+
+```bash
+ffa night                    # preflight, dashboard, and the draft
+ffa night --check-only       # just the gates — run this an hour early
+ffa night --launch-chrome    # also start the debug Chrome and wait for the room
+```
+
+It refuses to start if a gate fails, because a draft begun without the reference
+sheet is worse than one begun two minutes later:
+
+```
+  [ok  ] config                     Trash House Fantasy Football — 12 teams, $200 each
+  [ok  ] your team                  3 christopher
+  [ok  ] auction values             352 players
+  [ok  ] draft plan                 declared
+  [ok  ] dossiers                   12 manager(s)
+  [ok  ] api key                    loaded
+  [FAIL] draft room                 Chrome is up, no draft room open
+```
+
+The dashboard is spawned pointed at **the run the draft just created** — it waits
+for it rather than resolving "latest", which is how a board ends up showing last
+week — and is stopped when you quit.
+
+The pieces still work on their own:
+
 ```bash
 python tools/draft_room_probe.py --launch   # one-time: a Chrome with a debug port
 # log into ESPN in that window and open your draft room, then:
