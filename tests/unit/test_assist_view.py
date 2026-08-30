@@ -204,3 +204,71 @@ def test_a_missing_sidecar_is_a_shrug(tmp_path):
     reader, run = reader_over(tmp_path, [])
     (run / "assist.jsonl").unlink()
     assert "assist" not in reader.view()
+
+
+# --- the live revision ------------------------------------------------------
+
+
+def _bidding_log():
+    log = ReadLog()
+    log.append(ReadRecord(agent="room", moment="m", player_key="bijan",
+                          payload={"read": "Dave is the one to beat",
+                                   "rivals": [{"team_id": 3, "lo": 40, "hi": 50}]}))
+    log.append(ReadRecord(agent="strategist", moment="s", payload={"digest": "hot"}))
+    for price in (34, 38, 46):
+        log.append(ReadRecord(agent="room_tick", moment=f"t{price}",
+                              player_key="bijan",
+                              payload={"changed": True,
+                                       "note": f"still in at ${price}",
+                                       "rivals": [{"team_id": 3, "lo": price,
+                                                   "hi": price + 8}]}))
+    return log
+
+
+def test_the_newest_revision_travels_beside_the_opening_read():
+    """A board showing the opening $40-50 band while the price walks past $46 is
+    worse than one showing nothing, because it looks current."""
+    view = assist_view(_bidding_log(), player_key="bijan")
+
+    assert view["current"]["agent"] == "room"
+    assert view["revision"]["agent"] == "room_tick"
+    assert view["revision"]["payload"]["rivals"][0]["lo"] == 46
+
+
+def test_the_revision_is_never_merged_into_the_read_that_it_revises():
+    """Merging would publish a composite no agent ever said, under the opening
+    read's byline — the same objection as rewriting an estimate rather than
+    dropping it. Both travel; the surface decides how to show them."""
+    view = assist_view(_bidding_log(), player_key="bijan")
+
+    assert view["current"]["payload"]["rivals"][0]["lo"] == 40
+    assert view["current"]["payload"]["read"] == "Dave is the one to beat"
+
+
+def test_ticks_do_not_crowd_the_running_column():
+    """Roughly five ticks per nomination against one of everything else, so a
+    straight tail of the log is all ticks — the opening reads, the Strategist
+    and the Narrator would never appear in the one column meant to show what the
+    assistant has been saying."""
+    view = assist_view(_bidding_log(), player_key="bijan")
+
+    assert [e["agent"] for e in view["recent"]] == ["room", "strategist"]
+
+
+def test_no_revision_before_the_bidding_starts():
+    """Absent, not an empty object — the page renders a state, not a zero."""
+    log = ReadLog()
+    log.append(ReadRecord(agent="room", moment="m", player_key="bijan",
+                          payload={"read": "x"}))
+    assert assist_view(log, player_key="bijan")["revision"] is None
+
+
+def test_a_revision_about_another_player_never_lands_on_this_one():
+    """The same rule `current` already follows, and for the same reason."""
+    log = _bidding_log()
+    log.append(ReadRecord(agent="room_tick", moment="other", player_key="puka",
+                          payload={"changed": True, "note": "elsewhere"}))
+    view = assist_view(log, player_key="bijan")
+
+    assert view["revision"]["payload"]["note"] == "still in at $46"
+

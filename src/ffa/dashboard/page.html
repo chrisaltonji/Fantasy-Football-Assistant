@@ -513,6 +513,17 @@ function renderRisk(v, g){
   const read = (v.assist && v.assist.current) ? v.assist.current.payload : null;
   const bands = new Map(((read && read.rivals) || []).map(r=>[r.team_id, r]));
 
+  // The opening read is what the Room said when the player went up. While the
+  // bidding runs it re-reads itself every few seconds, and where it has revised
+  // a band that revision is the freshest thing it actually said - so it wins.
+  // Marked, not merged silently: a band that has moved since the nomination is
+  // a different claim from one that has not, and the row says which.
+  const rev = (v.assist && v.assist.revision) ? v.assist.revision.payload : null;
+  ((rev && rev.rivals) || []).forEach(r=>{
+    bands.set(r.team_id, Object.assign({}, bands.get(r.team_id) || {}, r,
+                                       {revised:true}));
+  });
+
   const live = g.threats.filter(t=>t.is_live);
   $("risk-sub").textContent = live.length
     ? "who can actually pay" : "nobody who needs the position can pay";
@@ -533,7 +544,7 @@ function renderRisk(v, g){
     const band = bands.get(t.team_id);
     if(band){
       const b = el("div","est");
-      b.appendChild(el("span","esttag","est"));
+      b.appendChild(el("span","esttag", band.revised ? "est \u21bb" : "est"));
       b.appendChild(el("span","estband",
         band.lo === band.hi ? `$${band.lo}` : `$${band.lo}–${band.hi}`));
       r.appendChild(b);
@@ -547,12 +558,26 @@ function renderRisk(v, g){
     rows.appendChild(r);
   });
 
+  // What the latest re-read made of the price, when it had something to say.
+  // Its own line, above the standing caveat, because it is about right now.
+  if(rev && rev.note){
+    const n = el("div","estnote");
+    n.appendChild(el("b",null,"Latest read: "));
+    n.appendChild(document.createTextNode(rev.note));
+    note.appendChild(n);
+  }
+
   if(bands.size){
     note.appendChild(el("b",null,"Dollar figures are ceilings. Bands are guesses."));
     note.appendChild(document.createTextNode(
       " What a rival could pay is arithmetic and is exact. A band marked est is" +
       " a model reading the dossiers and four seasons of precedent, and it can be" +
       " wrong. Any band above its own ceiling was dropped rather than corrected."));
+    if(rev){
+      note.appendChild(document.createTextNode(
+        " A band marked \u21bb was revised during the bidding; the rest are as" +
+        " they were when he went up."));
+    }
     if(read && read.confidence === "thin"){
       note.appendChild(el("b",null," Confidence: thin."));
       note.appendChild(document.createTextNode(
