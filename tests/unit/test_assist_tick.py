@@ -90,6 +90,32 @@ def test_the_tick_carries_what_it_is_revising():
     assert payload["opening_read"]["read"] == "Dave is the one to beat"
 
 
+def test_the_tick_is_told_what_an_empty_opening_read_means():
+    """**Measured live: 44% of ticks fire before the open read lands.**
+
+    The open read takes ~10s and the first bid arrives well inside that, so the
+    earliest ticks of every auction have nothing to revise. The prompt used to
+    say "`opening_read` is what you said", which for those calls is a false
+    premise — and telling a model it said something it did not is how a read
+    starts citing an estimate nobody made.
+    """
+    from ffa.assist.prompts import ROOM_TICK
+
+    assert "empty" in ROOM_TICK
+    assert "not an error" in ROOM_TICK
+
+
+def test_a_tick_with_no_opening_read_still_carries_what_it_needs():
+    """It is not blind, only un-anchored: the price, our ceilings and the live
+    rivals are all still there, which is what those early reads actually used."""
+    payload = room.build_tick(VIEW, live_bid={"price": 30})["payload"]
+
+    assert payload["opening_read"] == {}
+    assert payload["live_bid"]["price"] == 30
+    assert payload["our_ceiling"]["max_advisable_bid"] == 41
+    assert payload["rivals"], "the live rivals are the anchor when the read is not"
+
+
 # --- silence -----------------------------------------------------------------
 
 

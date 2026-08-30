@@ -251,6 +251,13 @@ def build_tick(view: dict[str, Any], *, live_bid: dict[str, Any] | None = None,
     of this file: two ticks can be in flight across a slow API, and a renderer
     that read live state would compare against whichever happened to land first.
 
+    **`opening_read` is routinely absent and that is not a failure.** The open
+    read takes ~10s and the first bid lands well inside that, so the earliest
+    ticks of every auction have nothing to revise — 44% of them, measured live.
+    They still have the price, the live rivals and their ceilings, which is
+    enough to be useful; the prompt says so explicitly rather than leaving the
+    model to explain away a field that is empty.
+
     `crossed` is passed in rather than computed here, and it is a *transition*:
     the caller owns the memory of which ceilings have already been reported, so
     this stays a pure function of its arguments like everything else in the file.

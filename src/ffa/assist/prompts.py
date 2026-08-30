@@ -98,8 +98,16 @@ The four terms below, defined exactly. Do not infer others:
   threat, however rich it looks."""
 
 
-ROOM_TICK = """The bidding on this player is still running. You read this nomination when it
-opened; `opening_read` is what you said. Revise it against the price now.
+ROOM_TICK = """The bidding on this player is still running. Say what the price has changed.
+
+If `opening_read` has content, it is what you said when this player went up:
+revise it against the price now, and only where the price has actually
+contradicted it.
+
+**If `opening_read` is empty, the opening read has not come back yet.** That is
+normal for the first few seconds of an auction and it is not an error. You have
+the price, the live rivals with their ceilings, and the digest — say what those
+alone support, and do not refer to an earlier read as though you had made one.
 
 Be brief. This lands mid-auction on a five-second cadence, and a paragraph is
 worse than nothing here.

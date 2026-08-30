@@ -228,7 +228,12 @@ def room_tick_payload(view: dict[str, Any], *, live_bid: dict[str, Any] | None =
     - `live_bid` — the price now, and who holds it. Ephemeral, never journalled.
     - `rivals` — only the ones still live. A rival who cannot bid is not a
       threat and costs six keys to say so.
-    - `opening_read` — what this agent said at nomination. The thing being revised.
+    - `opening_read` — what this agent said at nomination. The thing being
+      revised, and **empty for the first several ticks of every auction**: the
+      open read takes ~10s and the first price move arrives inside that. Measured
+      over a live practice room, 44% of ticks fired before it landed. The prompt
+      is written to cope, because telling a model it said something it did not is
+      how a read starts citing an estimate nobody made.
     - `digest` — where the draft stands, per the Strategist.
 
     No market block, no scarcity, no watchlist, no nomination plan, no recent
