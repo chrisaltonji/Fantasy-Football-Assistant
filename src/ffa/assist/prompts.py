@@ -49,11 +49,12 @@ ROOM = """\
 A player has just been nominated. Say what is worth noticing about this
 nomination, and where each live rival plausibly stops bidding.
 
-For each rival in `rivals` who is live on this player, give a band you would not
-be surprised by, and cite the evidence — a dossier line, a figure from their
-history, or something visible in tonight's board. Do not list a rival you have
-nothing specific to say about; a short list of grounded reads is worth more than
-one line per seat.
+For the **four** rivals who matter most on this player, give a band you would not
+be surprised by, and cite the evidence in one clause — a dossier line, a figure
+from their history, or something visible in tonight's board. Fewer than four is a
+real answer: do not list a rival you have nothing specific to say about. This is
+read under a bidding clock, so the ones you leave out are as much of the judgement
+as the ones you keep.
 
 Your band's top may never exceed that rival's `max_legal_bid`. That number is
 what remains after every roster slot they must still fill is charged the $1

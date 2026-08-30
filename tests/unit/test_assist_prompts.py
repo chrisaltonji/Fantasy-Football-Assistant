@@ -364,10 +364,15 @@ def test_no_schema_carries_a_keyword_the_api_rejects(agent):
 
 
 def test_the_bounds_that_were_dropped_are_stated_in_words_instead():
-    """A cap the model cannot see is not a cap. Removing `maxItems` without
-    saying "at most six" anywhere would quietly buy a list of twelve."""
+    """A cap the model cannot see is not a cap.
+
+    `maxItems` is a 400 from the API and a rejected schema is fatal, so the only
+    place these bounds can live is the description. Removing one without saying
+    the number in words would quietly buy a list of twelve — and the caps are now
+    a latency budget, not a preference: at 15.9 ms per output token, two extra
+    rivals is two extra seconds against a live auction."""
     rivals = ROOM_SCHEMA["properties"]["rivals"]
     watch = ROOM_SCHEMA["properties"]["watch_for"]
 
-    assert "six" in rivals["description"]
-    assert "three" in watch["description"]
+    assert "four" in rivals["description"]
+    assert "two" in watch["description"]

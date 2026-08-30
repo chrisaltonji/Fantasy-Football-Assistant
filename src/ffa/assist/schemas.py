@@ -45,13 +45,26 @@ ROOM_SCHEMA: dict[str, Any] = {
             "type": "string",
             "description": "The key of the player this is about, echoed back.",
         },
+        # **Four, and the number is a latency budget rather than a taste.**
+        #
+        # Latency here is output size: 15.9 ms per output token measured on
+        # Sonnet 5, near-constant, so a 700-token reply takes eleven seconds and
+        # races the auction it is describing. This block was 56% of that reply —
+        # six rivals at ~120 characters of evidence apiece — and it is the only
+        # part big enough to be worth cutting.
+        #
+        # It also makes the schema agree with the instructions for the first
+        # time. The prompt has always said a short list of grounded reads beats
+        # one line per seat, and then offered six slots, which a model reads as
+        # a target. It returned six or seven on every one of ten live calls.
         "rivals": {
             "type": "array",
             "description": (
-                "Where each live rival plausibly stops bidding. At most six. "
-                "Only rivals who can both afford him and start him. Omit anyone "
-                "you have nothing to say about — a shorter list is better than a "
-                "padded one."
+                "Where each live rival plausibly stops bidding. **At most four.** "
+                "Only rivals who can both afford him and start him, and only the "
+                "ones that matter most — the reader has seconds. Omit anyone you "
+                "have nothing specific to say about; four grounded reads beat a "
+                "padded list, and a short one is a real answer."
             ),
             "items": {
                 "type": "object",
@@ -66,10 +79,14 @@ ROOM_SCHEMA: dict[str, Any] = {
                     "hi": {"type": "integer", "description": "dollars, at least lo"},
                     "rationale": {
                         "type": "string",
-                        "maxLength": 160,
+                        # 100, from 160. The evidence is a citation, not an
+                        # argument — the live replies that ran to 160 were
+                        # spending the tail on a second clause the reader does
+                        # not have time for.
+                        "maxLength": 100,
                         "description": (
-                            "The dossier line or precedent figure this rests on. "
-                            "Cite the evidence, not a feeling."
+                            "The dossier line or precedent figure this rests on, "
+                            "in one clause. Cite the evidence, not a feeling."
                         ),
                     },
                 },
@@ -78,17 +95,22 @@ ROOM_SCHEMA: dict[str, Any] = {
         # `read`, not `recommendation`. The name is the first line of defence.
         "read": {
             "type": "string",
-            "maxLength": 400,
+            # 280, from 400. This lands beside a bid ceiling while someone is
+            # deciding whether to raise; the last third of a 400-character
+            # paragraph is not read under that clock, and it costs a second.
+            "maxLength": 280,
             "description": (
-                "What is worth noticing about this nomination. Never an "
-                "instruction: do not tell the user to bid, pass, chase or avoid."
+                "What is worth noticing about this nomination, in two or three "
+                "sentences. Never an instruction: do not tell the user to bid, "
+                "pass, chase or avoid."
             ),
         },
         "watch_for": {
             "type": "array",
             "items": {"type": "string", "maxLength": 100},
             "description": (
-                "At most three specific things that would change the picture."
+                "At most two specific things that would change the picture. The "
+                "third was always the weakest."
             ),
         },
         # "thin" must be reachable and the prompt must say so. A model handed an
