@@ -158,6 +158,76 @@ def test_a_read_about_a_player_who_already_sold_is_recorded_but_not_shown():
     assert log.all()[-1].status == "late"
 
 
+def test_an_agent_that_is_not_about_the_current_player_is_never_superseded():
+    """**The bug a live practice room found, and it silenced an agent outright.**
+
+    Supersede judged every read against the current nomination. That is right for
+    the Room, whose whole subject is the player on the block. The Strategist
+    comments on a sale that has *already happened*, and ESPN nominates the next
+    player within seconds of one — so a 14-20s Strategist read was structurally
+    guaranteed to be marked late and never printed. Live: it fired once, was
+    marked late, showed nothing. It was not slow; it was being asked the wrong
+    question about whether it still mattered.
+    """
+    run, inbox = runner(ok())
+    log = ReadLog()
+
+    run.submit("strategist", {}, moment="sale", show=lambda p: "SHOWN")
+    outcome = wait(inbox)
+    run.advance()                      # the next player goes up, as it always does
+
+    text = run.settle(outcome, log=log)
+
+    assert text == "SHOWN"
+    assert log.all()[-1].status == "ok"
+
+
+def test_the_narrator_survives_the_nomination_that_follows_the_sale():
+    """Same argument. It narrates an event that is already in the journal."""
+    run, inbox = runner(ok())
+    run.submit("narrator", {}, moment="sale", show=lambda p: "NOTE")
+    outcome = wait(inbox)
+    run.advance()
+
+    assert run.settle(outcome) == "NOTE"
+
+
+def test_the_answer_to_a_question_is_not_thrown_away_by_a_nomination():
+    """The Analyst is the one agent a person invoked on purpose. Discarding its
+    answer because the board moved would look like the tool ignoring them."""
+    run, inbox = runner(ok())
+    run.submit("analyst", {}, moment="q", show=lambda p: "ANSWER")
+    outcome = wait(inbox)
+    run.advance()
+
+    assert run.settle(outcome) == "ANSWER"
+
+
+def test_the_tick_is_still_superseded_because_it_is_about_the_block():
+    """The other half of the rule. A revision of a price nobody is bidding any
+    more is exactly the noise the whole mechanism exists to keep off the screen."""
+    run, inbox = runner(ok())
+    log = ReadLog()
+
+    run.submit("room_tick", {}, moment="t", show=lambda p: "STALE")
+    outcome = wait(inbox)
+    run.advance()
+
+    assert run.settle(outcome, log=log) == ""
+    assert log.all()[-1].status == "late"
+
+
+def test_the_superseding_set_names_only_agents_that_have_a_profile():
+    """Two lists of agent names that must not drift apart: one decides what goes
+    stale, the other what model is called. A typo here fails open — the agent
+    would simply never be superseded, silently."""
+    from ffa.assist.client import PROFILES
+    from ffa.assist.runner import SUPERSEDING
+
+    assert SUPERSEDING <= set(PROFILES)
+    assert SUPERSEDING == {"room", "room_tick"}
+
+
 def test_a_current_read_is_shown():
     run, inbox = runner(ok())
     run.submit("room", {}, moment="bijan", show=lambda p: "SHOWN")

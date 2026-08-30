@@ -21,7 +21,14 @@ import types
 
 import pytest
 
-from ffa.assist.client import MODEL, PROFILES, ClaudeClient, Reply, FAST_MODEL
+from ffa.assist.client import (
+    FAST_MODEL,
+    LIVE_MODEL,
+    MODEL,
+    PROFILES,
+    ClaudeClient,
+    Reply,
+)
 from ffa.assist.errors import AssistError
 
 
@@ -165,18 +172,55 @@ def test_each_agent_is_dialled_without_being_told(sdk):
     assert grader["timeout"] == 300.0
 
 
-def test_every_agent_but_the_tick_shares_one_model(sdk):
-    """Caching is keyed on the model. A second model cannot read the prefix the
-    others are paying to keep warm, and moving the small agents to Sonnet saves
-    about $0.29 a draft against a $25 cap — not worth a second cache entry or a
-    second set of behaviour to rehearse.
+def test_the_three_tiers_are_exactly_three(sdk):
+    """Pinned so a fourth model cannot arrive without someone arguing for it.
 
-    `room_tick` is the deliberate exception and the same argument reversed: at a
-    call every five seconds it keeps its own entry warm continuously, and Opus is
-    disqualified on latency rather than cost. Pinned here so a *third* model
-    cannot arrive without someone making that argument again."""
-    assert {p.model for p in PROFILES.values()} == {MODEL, FAST_MODEL}
-    assert PROFILES["room_tick"].model == FAST_MODEL
+    Each boundary was drawn by a measurement. Opus 5 held 17-19 ms per output
+    token over a live practice room and the Room emits 700-880 of them, so it ran
+    12-17s and one read landed after the player had sold. Haiku did the same
+    arithmetic at 4 ms/token. A new tier means a new cache entry — caching is
+    keyed on the model — so it is a decision, not a tweak."""
+    assert {p.model for p in PROFILES.values()} == {MODEL, LIVE_MODEL, FAST_MODEL}
+
+
+def test_the_agents_that_race_the_clock_share_one_tier_and_one_cache_entry(sdk):
+    """They move together or not at all. Caching is keyed on the model, so
+    splitting the Room from the Strategist buys a second prefix write for no
+    gain — the reason they are one tier rather than three decisions."""
+    live = {a for a, p in PROFILES.items() if p.model == LIVE_MODEL}
+    assert live == {"room", "strategist", "narrator"}
+
+
+def test_the_analyst_stays_on_the_top_tier(sdk):
+    """The one agent invoked on purpose, with a person waiting on the answer and
+    no clock to race. The argument that moved the others does not reach it."""
+    assert PROFILES["analyst"].model == MODEL
+
+
+def test_only_the_tick_runs_on_the_fast_tier(sdk):
+    """Opus was disqualified there on latency rather than cost: an 11-14s read
+    cannot follow a live auction, and no effort setting closes that."""
+    fast = {a for a, p in PROFILES.items() if p.model == FAST_MODEL}
+    assert fast == {"room_tick"}
+
+
+def test_the_shared_prefix_is_checked_against_every_tier_that_reads_it(sdk):
+    """**The check that silently passed once already.**
+
+    The floor is per model and is not monotonic: Sonnet 5 wants 1,024 and Opus 5
+    wants 512, so the prefix has to clear the worst of them. Reading that list off
+    the profile table rather than hardcoding it is what stops an agent moving
+    tiers and leaving the check behind."""
+    from ffa.assist.client import prefix_models
+    from ffa.assist.prefix import strictest
+
+    readers = set(prefix_models())
+    assert readers == {LIVE_MODEL, MODEL}
+    # The tick reads no shared prefix, so it must not drag the floor to 4,096.
+    assert FAST_MODEL not in readers
+
+    model, floor = strictest(readers)
+    assert (model, floor) == (LIVE_MODEL, 1024)
 
 
 def test_the_fast_tier_sends_neither_effort_nor_thinking(sdk):

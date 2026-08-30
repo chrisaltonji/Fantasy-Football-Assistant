@@ -25,6 +25,11 @@ rest of the loop lock-free, and it is why there is no mutex in this file.
 a player who sold ninety seconds ago is noise on screen and evidence in the
 ledger. The Grader wants "we said $39, he went $47" — so it is written down with
 `status="late"` and never shown.
+
+**Superseded means “about a player who is no longer up”, not “arrived late”.**
+The rule applies to `SUPERSEDING` and to nothing else. An agent commenting on a
+sale is not made wrong by the next nomination, and judging it against one
+silenced it every single time — which is what happened before that set existed.
 """
 
 from __future__ import annotations
@@ -63,6 +68,20 @@ TICK_IN_FLIGHT = 1
 
 # Which agents draw on the tick slot rather than the shared pool.
 TICK_AGENTS = frozenset({"room_tick"})
+
+# **Whose subject is the player currently on the block.** Only these go stale when
+# a new one is nominated, and getting that scope wrong silences an agent
+# completely rather than occasionally.
+#
+# The Room is about the player up right now, so a read that lands after he sold
+# describes a board nobody is looking at - suppressing it is the whole point. The
+# Strategist and Narrator are not about him. They comment on a sale that has
+# already happened, and ESPN nominates the next player within seconds of one, so
+# judging them against the current nomination made a 14-20s read **structurally**
+# late. Measured over a live practice room: the Strategist fired once, was marked
+# late, and printed nothing. It was not slow. It was being asked the wrong
+# question about whether it still mattered.
+SUPERSEDING = frozenset({"room", "room_tick"})
 
 # Consecutive failures before muting. Three is enough to ride out a blip and few
 # enough that a genuinely broken setup stops costing time.
@@ -320,7 +339,10 @@ class AssistRunner:
                     "is unaffected."
                 )
 
-        stale = outcome.generation != self._generation
+        # Superseded only if this agent was talking about the player who has been
+        # replaced. Everything else is as current as it was when it was asked.
+        stale = (record.agent in SUPERSEDING
+                 and outcome.generation != self._generation)
         if stale and record.status == "ok":
             # Recorded as evidence, never shown. See the module docstring.
             record = replace(record, status="late")

@@ -19,9 +19,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ffa.assist.budget import SpendGuard
-from ffa.assist.client import MODEL
+from ffa.assist.client import prefix_models
 from ffa.assist.context import SIDECAR_NAME, ReadLog
-from ffa.assist.prefix import build_prefix, estimate_tokens, likely_cacheable
+from ffa.assist.prefix import (
+    build_prefix,
+    estimate_tokens,
+    likely_cacheable,
+    strictest,
+)
 from ffa.assist.runner import AssistRunner
 
 # What the tick is measured against. Not a timeout — the profile's 8s ceiling is
@@ -40,9 +45,10 @@ class AssistSession:
     labels: dict[int, str] = field(default_factory=dict)
     prefix_tokens: int = 0
     cacheable: bool = True
-    # The model this prefix is cached against, so the warning can name the
-    # floor it was actually checked against. The floor is per model and is
-    # not monotonic across generations; a general number would be wrong.
+    # The *strictest* model that reads this prefix, so the warning names the
+    # floor that actually binds. More than one tier reads this block and the
+    # floor is per model — checking any single one of them is how a whole tier
+    # caches nothing while the banner says it is fine.
     prefix_model: str = ""
     # The last plan state the Strategist was told about, so its trigger can fire
     # on the transition rather than on every sale. Main thread only, like the
@@ -149,6 +155,11 @@ def build_session(
     # or corrupt one is a shrug; see context.py.
     log = ReadLog(path=(run_dir / SIDECAR_NAME) if run_dir else None)
 
+    # The prefix is read by more than one tier now, and the cache floor is per
+    # model. It has to clear the worst of them: checking any single reader is
+    # how an entire tier caches nothing while the banner reports it as fine.
+    strict_model, _ = strictest(prefix_models())
+
     return AssistSession(
         runner=AssistRunner(
             complete, inbox=inbox, prefix=prefix,
@@ -160,6 +171,6 @@ def build_session(
         prefix_tokens=estimate_tokens(prefix),
         # Checked against the model that actually reads this prefix. The tick
         # runs on another one and carries its own; see `prompts.STANDALONE`.
-        cacheable=likely_cacheable(prefix, MODEL),
-        prefix_model=MODEL,
+        cacheable=likely_cacheable(prefix, strict_model),
+        prefix_model=strict_model,
     )

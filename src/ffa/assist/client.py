@@ -69,62 +69,50 @@ class AgentProfile:
     thinking: bool = True
 
 
-# **Almost every agent runs the same model, and that is a measured decision.**
+# **Which agent runs where, and every boundary is a measured number.**
 #
-# The obvious economy is to put the small agents on a cheaper model — the
-# Narrator writes two sentences 33 times, which looks like an extravagant use of
-# Opus. Priced against this league's real numbers it is not: moving the
-# Strategist and Narrator to Sonnet saves about $0.29 across an entire draft,
-# against a $25 cap.
+# Latency here is almost purely output size. Measured over a live practice room,
+# Opus 5 at `low` effort held **17-19 ms per output token**, near-constant across
+# ten calls, and the Room emits 700-880 tokens - so it took 12-17s and one read
+# arrived after the player had already sold. Haiku 4.5 ran the same arithmetic at
+# **4 ms per output token**. The tier is the lever; effort was already at `low`.
 #
-# It saves so little because of the cache. **Caching is keyed on the model**, so
-# a second model cannot share the prefix the others are reading — it pays its own
-# ~2,500-token write, more than once across a three-hour auction as the TTL
-# lapses. Most of what a small agent would save on rates, it gives back on cache
-# writes it now has to pay alone.
+# **The middle tier — the three that run against the clock.** The Room, the
+# Strategist and the Narrator all fire while a draft is moving. Sonnet 5 is
+# faster per token than Opus and its cache floor is 1,024, so the ~3,400-token
+# shared prefix still caches and all three read **one warm entry**. That last
+# part is why they move together: caching is keyed on the model, and splitting
+# them across tiers would buy a second prefix write for no gain.
 #
-# **`room_tick` is the one exception, and not for the reason first written here.**
+# **The top tier — the Analyst, alone.** It is the one agent invoked on purpose,
+# with a person sitting there waiting for the answer and a 60s ceiling. There is
+# no clock to race, so the argument that moved the others does not reach it.
+# Being alone on Opus does mean its cache entry goes cold between questions and
+# it pays a ~3.4c prefix write on most calls. For an agent asked a handful of
+# times that is the right trade, and it is written down here so it does not read
+# like an oversight later.
 #
-# Opus is disqualified there on latency rather than cost: an 11-14s read cannot
-# follow a live auction and no effort setting closes that gap. So the tick gets
-# Haiku. The first draft of this comment then reasoned that it would keep its own
-# cache entry warm across ~900 calls and so amortise its own prefix write.
+# **The fast tier — the tick.** Opus was disqualified on latency, not cost: an
+# 11-14s read cannot follow a live auction. See the note on `room_tick` below for
+# why it reads no shared prefix at all.
 #
-# **That was wrong, and a live rehearsal is what said so.** The minimum cacheable
-# prefix is per model and is not monotonic across generations: Opus 5 caches from
-# 512 tokens, Haiku 4.5 from 4,096. The shared prefix is ~3,400. It sat under the
-# floor, so it cached nothing at all — no error, no warning, just
-# `cache_creation_input_tokens: 0` on every call and full price for 3,400 tokens
-# it could never reuse. Measured: 15 ticks, 82,593 uncached input tokens.
-#
-# So the tick does not read the shared prefix. It carries `prompts.TICK_PREAMBLE`
-# — the two rules and the four terms its payload contains, ~400 tokens, uncached
-# because at that size a breakpoint buys nothing. It does not need the dossiers:
-# it is revising a read that already used them. Measured after: 2,880 input
-# tokens per call, $0.0030 a call, ~$2.66 across a draft.
-#
-# `prefix.MIN_CACHEABLE_BY_MODEL` is what stops this recurring, and
-# `session.banner()` now names the floor it checked against.
-#
-# The Room's *open* read is the one to weaken last: it synthesises recorded
-# testimony against tonight's arithmetic while a decision is still open.
-#
-# Effort and timeout are where the agents genuinely differ, and the numbers are
-# measured rather than guessed. A Room call at `low` effort takes **11-14s**
-# against the real prefix; at `medium` it takes 18-24s and returns twice the
-# output. The first Room ceiling here was 12s, which killed about half the reads
-# on the first live run — right on the median is the worst place to put a
-# timeout.
-#
-# So the Room gets 25s and `supersede` does the job the short timeout was trying
-# to do: a read that arrives after the player sold is marked `late` and never
-# printed, which is the correct outcome and does not also discard the reads that
-# would have been in time.
-# The fast tier. Only the tick runs here.
+# Effort and timeout are where the agents differ within a tier, and those numbers
+# are measured too. The Room's first ceiling was 12s, right on its own median,
+# which killed about half the reads on the first live run. It gets 25s and
+# `supersede` does the job the short timeout was trying to do: a read that arrives
+# after the player sold is marked `late` and never printed, which is correct and
+# does not also discard the reads that would have been in time. Those ceilings
+# stay where they are after the move to Sonnet - being faster is a reason to keep
+# headroom, not to remove it.
+# The middle tier carries every agent that runs against the draft clock; the top
+# tier is the one agent a person waits on deliberately; the fast tier is the tick,
+# which has five seconds and a small question. See the note above for the
+# measurements behind each boundary.
+LIVE_MODEL = "claude-sonnet-5"
 FAST_MODEL = "claude-haiku-4-5"
 
 PROFILES: dict[str, AgentProfile] = {
-    "room": AgentProfile(MODEL, "low", 25.0, 2000),
+    "room": AgentProfile(LIVE_MODEL, "low", 25.0, 2000),
     # **8s, which is longer than the 5s cadence on purpose.** The ticker skips
     # rather than queues while one is in flight, so a slow tick costs the next
     # slot and nothing else. A ceiling *below* the cadence would instead kill
@@ -133,10 +121,13 @@ PROFILES: dict[str, AgentProfile] = {
     # No effort and no thinking: Haiku 4.5 rejects the first and does not offer
     # the second. 600 tokens because the whole reply is a line and a few bands.
     "room_tick": AgentProfile(FAST_MODEL, None, 8.0, 600, thinking=False),
-    "strategist": AgentProfile(MODEL, "medium", 30.0, 2000),
+    "strategist": AgentProfile(LIVE_MODEL, "medium", 30.0, 2000),
     # One or two sentences. A thousand is already generous, and a ceiling is the
     # cheapest defence against an agent that decides to summarise the draft.
-    "narrator": AgentProfile(MODEL, "low", 20.0, 1000),
+    "narrator": AgentProfile(LIVE_MODEL, "low", 20.0, 1000),
+    # The only agent still on the top tier, and the only one with a person
+    # waiting on it rather than a clock. It therefore owns its cache entry alone
+    # and pays a prefix write on most calls; see the note above.
     "analyst": AgentProfile(MODEL, "high", 60.0, 4000),
     # **8,000, and measured rather than chosen.** At the shared 2,000 the Grader
     # truncated every time: its schema asks for a summary, a roster read, up to
@@ -152,6 +143,28 @@ DEFAULT_PROFILE = AgentProfile(MODEL, "medium", 30.0)
 
 def profile_for(agent: str) -> AgentProfile:
     return PROFILES.get(agent, DEFAULT_PROFILE)
+
+
+def prefix_models() -> tuple[str, ...]:
+    """Every model that reads the shared prefix, in table order.
+
+    Derived from the table rather than listed separately, so an agent moved
+    between tiers cannot leave a hardcoded list behind. `prompts.STANDALONE`
+    names the agents that read no prefix at all and they are excluded here —
+    the tick carries its own system prompt precisely because it could not cache
+    this one.
+
+    The caller wants this to decide whether the prefix is long enough to cache,
+    and the floor is per model, so "which models" is the question that has to be
+    answered before "is it long enough".
+    """
+    from ffa.assist.prompts import STANDALONE
+
+    seen: dict[str, None] = {}
+    for agent, profile in PROFILES.items():
+        if agent not in STANDALONE:
+            seen.setdefault(profile.model, None)
+    return tuple(seen)
 
 
 @dataclass(frozen=True)

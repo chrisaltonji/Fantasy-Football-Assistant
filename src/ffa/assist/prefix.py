@@ -25,7 +25,7 @@ breakpoint is where structure earns its keep.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterable
 
 # Below roughly this many tokens the API caches nothing at all, and says nothing
 # about it. The fixed half — contract plus glossary — measures 995, just under
@@ -234,3 +234,23 @@ def likely_cacheable(prefix: str, model: str = "claude-opus-5") -> bool:
     to discover from an invoice.
     """
     return estimate_tokens(prefix) >= min_cacheable(model)
+
+
+def strictest(models: "Iterable[str]") -> tuple[str, int]:
+    """The model with the highest cache floor, and that floor.
+
+    **The prefix has to clear the worst of them, not the average or the first.**
+    When one model read it a single name was enough; the moment two tiers read
+    the same block, checking the wrong one reports "cacheable" while an entire
+    tier silently caches nothing — which is exactly the failure that shipped once
+    already and was found by an invoice rather than by this function.
+
+    Empty input answers for nothing rather than guessing a default: a session
+    with no agents has no prefix problem.
+    """
+    worst_model, worst_floor = "", 0
+    for model in models:
+        floor = min_cacheable(model)
+        if floor > worst_floor:
+            worst_model, worst_floor = model, floor
+    return worst_model, worst_floor
