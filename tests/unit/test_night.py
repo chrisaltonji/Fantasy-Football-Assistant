@@ -214,6 +214,65 @@ def test_the_dashboard_is_given_the_run_dir_explicitly(monkeypatch, tmp_path):
     assert str(tmp_path / "run-x") in cmds[0]
 
 
+def test_the_url_is_only_printed_once_the_port_is_actually_open(monkeypatch, tmp_path):
+    """**A Popen that returns is not a process that is running.**
+
+    The first version printed the URL on a successful spawn and the server was
+    never there. The line on screen has to mean the thing it says, or the next
+    person spends five minutes wondering why the page will not load."""
+    class P:
+        def terminate(self): pass
+
+    monkeypatch.setattr(night.subprocess, "Popen", lambda cmd, **kw: P())
+    monkeypatch.setattr(night, "_serving", lambda port, **kw: False)
+
+    said = []
+    night._spawn_dashboard(tmp_path, args(), emit=said.append)
+
+    assert not any("http://" in s and "dashboard  " in s for s in said)
+    assert any("did not come up" in s for s in said)
+    # And it says how to start one by hand, because the draft is still running.
+    assert any("ffa dashboard --run-dir" in s for s in said)
+
+
+def test_a_dashboard_that_died_is_still_returned_so_teardown_kills_it(monkeypatch, tmp_path):
+    """It may be a process that bound nothing and is still alive. Dropping the
+    handle would leak it for the length of the draft."""
+    class P:
+        def terminate(self): pass
+
+    monkeypatch.setattr(night.subprocess, "Popen", lambda cmd, **kw: P())
+    monkeypatch.setattr(night, "_serving", lambda port, **kw: False)
+
+    assert night._spawn_dashboard(tmp_path, args(), emit=lambda *a: None) is not None
+
+
+def test_the_dashboard_leaves_evidence_beside_the_journal(monkeypatch, tmp_path):
+    """stderr went to DEVNULL, so when it died there was nothing to read and the
+    cause could not be established at all."""
+    class P:
+        def terminate(self): pass
+
+    monkeypatch.setattr(night.subprocess, "Popen", lambda cmd, **kw: P())
+    monkeypatch.setattr(night, "_serving", lambda port, **kw: True)
+
+    night._spawn_dashboard(tmp_path, args(), emit=lambda *a: None)
+    assert (tmp_path / "dashboard.log").exists()
+
+
+def test_a_failed_dashboard_never_stops_the_draft(monkeypatch):
+    """It is a separate process precisely so a render bug cannot take the draft
+    with it. That has to hold for a dashboard that will not even start."""
+    monkeypatch.setattr(night, "preflight",
+                        lambda a, emit=print: [night.Gate("config", True)])
+    monkeypatch.setattr(night, "_spawn_dashboard", lambda *a, **k: None)
+    ran = []
+    monkeypatch.setattr("ffa.cli.app.cmd_draft", lambda a: ran.append(1) or 0)
+
+    assert night.cmd_night(args()) == 0
+    assert ran == [1]
+
+
 # --- teardown ---------------------------------------------------------------
 
 

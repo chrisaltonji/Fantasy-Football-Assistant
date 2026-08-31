@@ -236,19 +236,73 @@ def preflight(args, *, emit=print) -> list[Gate]:
 
 
 def _spawn_dashboard(run_dir: Path, args, *, emit=print) -> subprocess.Popen | None:
+    """Start the dashboard, then check that it is actually up.
+
+    **A `Popen` that returns is not a process that is running**, and the first
+    version of this said so anyway. On the first live run it printed its URL and
+    the server was never there — with `stderr` going to `DEVNULL` there was
+    nothing to read afterwards, so the cause could not be established at all. Two
+    changes, and the second is the one that matters:
+
+    - output goes to `dashboard.log` in the run directory, beside the journal it
+      is rendering, so a crash leaves evidence;
+    - the port is probed before the URL is printed, so the line on screen means
+      the thing it says rather than "a process was launched".
+    """
+    log_path = run_dir / "dashboard.log"
     cmd = [sys.executable, "-m", "ffa.cli.app", "dashboard",
            "--run-dir", str(run_dir), "--port", str(args.dashboard_port),
            "--config", str(args.config)]
     if not args.no_open:
         cmd.append("--open")
+
     try:
-        process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL)
+        handle = log_path.open("wb")
+    except OSError:
+        handle = None                      # a log we cannot write is not fatal
+
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=handle or subprocess.DEVNULL,
+            stderr=subprocess.STDOUT if handle else subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+        )
     except OSError as exc:                 # noqa: BLE001
         emit(f"! dashboard did not start: {exc}")
+        if handle is not None:
+            handle.close()
         return None
+
+    if not _serving(args.dashboard_port):
+        emit(f"! the dashboard did not come up on {args.dashboard_port}. "
+             f"The draft is unaffected. See {log_path}")
+        emit(f"  start it yourself with: ffa dashboard --run-dir {run_dir}")
+        return process                     # still returned, so teardown kills it
+
     emit(f"dashboard  http://127.0.0.1:{args.dashboard_port}  ({run_dir.name})")
     return process
+
+
+def _serving(port: int, *, timeout: float = 12.0) -> bool:
+    """Is something accepting connections on this port yet?
+
+    A plain socket probe rather than an HTTP request: the question is whether the
+    server bound, and a page that renders slowly is not a failure.
+    """
+    import socket
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        sock = socket.socket()
+        sock.settimeout(1.0)
+        try:
+            if sock.connect_ex(("127.0.0.1", port)) == 0:
+                return True
+        finally:
+            sock.close()
+        time.sleep(0.5)
+    return False
 
 
 def watch_for_run(before: Path | None, args, spawned: list, *, emit=print) -> None:

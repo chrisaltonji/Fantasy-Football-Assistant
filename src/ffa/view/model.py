@@ -71,6 +71,14 @@ def build_view(
     league = state.league
     advisory = _advisory(state, book, precedent=precedent, seats=seats,
                          strategy=strategy)
+    # Built before the payload because the per-slot plan needs the roster, and
+    # deriving which player is your RB2 twice would be two answers to one
+    # question. See `_slot_view`.
+    me = (
+        _team_view(state, league.my_team_id, book, dossiers, precedent, seats)
+        if league.my_team_id in state.teams
+        else None
+    )
     payload = {
         "schema_version": VIEW_SCHEMA_VERSION,
         "draft_id": state.draft_id,
@@ -85,11 +93,7 @@ def build_view(
             "roster_slots": {slot.value: n for slot, n in league.roster.items()},
             "flex_positions": [p.value for p in league.flex_positions],
         },
-        "me": (
-            _team_view(state, league.my_team_id, book, dossiers, precedent, seats)
-            if league.my_team_id in state.teams
-            else None
-        ),
+        "me": me,
         "teams": [
             _team_view(state, team_id, book, dossiers, precedent, seats)
             for team_id in sorted(state.teams)
@@ -109,7 +113,7 @@ def build_view(
         "watchlist": _watchlist_view(advisory),
         # Capability 12. `null` when no plan is declared — which a surface must
         # render as "no plan", never as a row of zeroes.
-        "strategy": _strategy_view(advisory),
+        "strategy": _strategy_view(advisory, (me or {}).get("roster") or []),
         "market": _market_view(state, advisory),
         "recent_sales": _recent_sales(state, book, recent),
         "scarcity": _scarcity_view(advisory),
@@ -274,7 +278,64 @@ def _feed_view(state, book, strategy, events) -> list[dict[str, Any]] | None:
     ]
 
 
-def _strategy_view(advisory) -> dict[str, Any] | None:
+def _slot_view(read, roster: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The plan one starting slot at a time, with what actually landed in each.
+
+    **The assignment is made here, once, rather than on every surface.** A
+    dashboard would otherwise re-derive which player is your RB2 from the roster
+    list, and a second implementation of that is a second answer:
+    `projections.slot_fill` counts slots but discards which player filled which,
+    so there is no existing answer to copy and every caller would invent its own.
+
+    Within a position, buys are sorted **by price descending** and fill the
+    native slots first; the overflow goes to FLEX when there is room. That
+    mirrors the shape of `slot_fill` (native before flex) without claiming to
+    reproduce its order, which walks the roster rather than the money. It is a
+    display convention, and it is the one a person means by "my RB1".
+
+    A slot with no player carries `spent: 0` and `player: None`. An empty
+    starting spot is a state to render, not a zero to hide.
+    """
+    from ffa.config.strategy import position_of_slot
+
+    keys = list(read.budget_by_slot)
+    if not keys:
+        return []
+
+    by_position: dict[str, list] = {}
+    for player in sorted(roster, key=lambda p: -(p.get("price") or 0)):
+        by_position.setdefault(player.get("position") or "", []).append(player)
+
+    out: list[dict[str, Any]] = []
+    for key in keys:
+        position = position_of_slot(key)
+        player = None
+        if position is not None:
+            queue = by_position.get(position.value)
+            if queue:
+                player = queue.pop(0)
+        out.append({
+            "slot": key,
+            "position": position.value if position is not None else None,
+            "planned": int(read.budget_by_slot.get(key, 0)),
+            "spent": int((player or {}).get("price") or 0),
+            "player": (player or {}).get("name"),
+        })
+
+    # Whatever could not reach a native slot is flex-bound, richest first.
+    leftovers = [p for queue in by_position.values() for p in queue]
+    flex = next((row for row in out if row["slot"] == "FLEX"), None)
+    if flex is not None and leftovers and not flex["player"]:
+        best = max(leftovers, key=lambda p: p.get("price") or 0)
+        flex["player"] = best.get("name")
+        flex["spent"] = int(best.get("price") or 0)
+        flex["position"] = best.get("position")
+
+    return out
+
+
+def _strategy_view(advisory, roster: list[dict[str, Any]] | None = None
+                   ) -> dict[str, Any] | None:
     """The declared plan, and how far tonight has drifted from it.
 
     The one thing a surface must not do with this block is present it beside the
@@ -293,6 +354,10 @@ def _strategy_view(advisory) -> dict[str, Any] | None:
 
     return {
         "archetype": read.archetype,
+        # The plan as declared: one entry per starting slot, with what landed in
+        # it. Empty for a plan written before slots existed, in which case
+        # `positions` below is all there is.
+        "slots": _slot_view(read, roster or []),
         "budget": read.budget,
         "planned_total": read.planned_total,
         "bench_reserve": read.bench_reserve,
