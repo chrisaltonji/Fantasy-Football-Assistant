@@ -341,8 +341,8 @@ body{
   <div id="matrix">
     <div class="mxhead">
       <span class="eyebrow">threat matrix</span>
-      <span class="cap">starters filled / starters required · colour is what they could pay <b>against your ceiling</b></span>
-      <span class="legend"><span>$1</span><span class="rampbar"></span><span id="mx-top">$186</span><span class="youcap">your ceiling</span></span>
+      <span class="cap">starters filled / starters required · colour is what they could commit <b>at that position</b>, against what you could</span>
+      <span class="legend"><span>$0</span><span class="rampbar"></span><span id="mx-top">$23</span><span class="youcap">could commit there</span></span>
     </div>
     <div id="mx-body"></div>
     <div class="mxlegend">
@@ -640,8 +640,26 @@ function renderMatrix(v, me, g){
   // team can outbid me here" — the question the panel exists to answer — and it
   // only moves when your ceiling or theirs does.
   const mine = (teams.find(t=>t.is_me)||{}).max_legal_bid || 0;
-  const top = Math.max(1, mine);
-  $("mx-top").textContent = `$${top}`;
+  // **One board-wide number, and two wrong ones were tried on a live board
+  // before it.**
+  //
+  //   our whole ceiling    - exposure is capped by what one position's best
+  //                          player is worth, so the top half of the ramp was
+  //                          unreachable. Measured across a real draft the
+  //                          hottest cell never passed 43%, and at pick one -
+  //                          when every rival can outbid you everywhere - the
+  //                          whole grid rendered cool.
+  //   our reach per column - uses the full ramp but throws away the thing this
+  //                          panel is for. "Can they outbid me at kicker" is
+  //                          yes, so the kicker went bright red again.
+  //
+  // The hottest column we could reach keeps both properties: the ramp is fully
+  // used, and a kicker stays cooler than a back because $7 against $23 is what a
+  // kicker is worth. It moves when the *board* empties, never when one rival
+  // spends - which is the jitter that made the original wallet scale unreadable.
+  const scale = (v.league||{}).exposure_scale || {};
+  const den = Math.max(1, ...Object.values(scale));
+  $("mx-top").textContent = `$${den}`;
 
   // Rich is not the same as dangerous: a team with $180 and no open slot at his
   // position cannot take him. This is the arithmetic that already knows.
@@ -664,12 +682,20 @@ function renderMatrix(v, me, g){
 
     // Clamped: outbidding you by any margin is already the top of the scale.
     // There is nothing above "can beat you".
-    const colour = ramp(Math.min(1, t.max_legal_bid / top));
+    // Per team, kept only as the fallback for a payload without exposure.
+    const wallet = ramp(Math.min(1, t.max_legal_bid / Math.max(1, mine)));
     POSITIONS.forEach(pos=>{
       const req = required[pos] || 0;
       const gap = (t.starter_gaps||{})[pos] || 0;
       const filled = Math.max(0, req - gap);
       const c = el("div","cell",`${filled}/${req}`);
+      // **Per cell, not per row.** Exposure is what this team could commit at
+      // *this* position — their ceiling capped by what the best player left
+      // there is worth, scaled by how many of these slots are still open. A row
+      // painted with one number said a rival's kicker was as dangerous as his
+      // receiver, which is how this panel came to be distrusted.
+      const ex = (t.exposure||{})[pos];
+      const colour = (ex === undefined) ? wallet : ramp(Math.min(1, ex / den));
       if(req===0){ c.classList.add("sat"); c.textContent="—"; }
       else if(gap===0) c.classList.add("sat");         // no gap, no threat
       else if(t.is_me) c.classList.add("mine");
@@ -681,6 +707,7 @@ function renderMatrix(v, me, g){
       }
       c.title = `${t.label} · ${pos}: ${filled} of ${req} starters filled · ` +
                 `${money(t.remaining,t.remaining_is_floor)} in hand, max $${t.max_legal_bid}` +
+                (ex !== undefined ? ` · could commit $${ex} here` : "") +
                 (mine ? ` · your ceiling $${mine}` : "");
       row.appendChild(c);
     });
@@ -838,6 +865,12 @@ async function poll(){
     fails += 1;
     // Keep the last good board on screen. A number you can see and distrust
     // beats an empty panel while a clock is running.
+    //
+    // But say which failure this is. A render bug and a dead server both used to
+    // read "reconnecting", so a panel that silently stopped drawing looked like
+    // a network blip - and on a live board that is twenty minutes of trusting a
+    // stale grid. The console line is the only place the difference shows.
+    console.error("dashboard poll failed:", e);
     conn(fails>3?"dead":"stale", fails>3?"disconnected":"reconnecting");
   }
 }

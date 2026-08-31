@@ -74,8 +74,14 @@ def build_view(
     # Built before the payload because the per-slot plan needs the roster, and
     # deriving which player is your RB2 twice would be two answers to one
     # question. See `_slot_view`.
+    # One pass for every team, because every surface that wants this wants the
+    # whole grid — and `starter_gaps` walks a roster, so asking per cell would
+    # walk each one once per position.
+    exposure = _exposure_grid(state, book, advisory)
+
     me = (
-        _team_view(state, league.my_team_id, book, dossiers, precedent, seats)
+        _team_view(state, league.my_team_id, book, dossiers, precedent, seats,
+                   exposure.get(league.my_team_id))
         if league.my_team_id in state.teams
         else None
     )
@@ -92,10 +98,14 @@ def build_view(
             "draftable_slots": league.draftable_slots,
             "roster_slots": {slot.value: n for slot, n in league.roster.items()},
             "flex_positions": [p.value for p in league.flex_positions],
+            # What we could commit per column, ignoring our own need. The scale
+            # `teams[].exposure` is read against — see `advice/exposure.py`.
+            "exposure_scale": _exposure_scale(state, book, advisory),
         },
         "me": me,
         "teams": [
-            _team_view(state, team_id, book, dossiers, precedent, seats)
+            _team_view(state, team_id, book, dossiers, precedent, seats,
+                       exposure.get(team_id))
             for team_id in sorted(state.teams)
         ],
         "nomination": _nomination_view(state, book, advisory, dossiers),
@@ -168,9 +178,50 @@ def _scarcity_view(advisory) -> dict[str, Any]:
     }
 
 
+def _exposure_scale(state: DraftState, book: Any, advisory: Any) -> dict:
+    """What *we* could commit per column, which is what exposure is read against.
+
+    Computed here rather than in a surface because it is the same arithmetic the
+    grid uses, and two implementations of a denominator is how a ratio quietly
+    stops meaning what it says.
+    """
+    league = state.league
+    if league is None or book is None or not len(book):
+        return {}
+    from ffa.advice.exposure import reach_by_position
+
+    row = reach_by_position(
+        state, book, league.my_team_id,
+        scarcity=getattr(advisory, "scarcity", None),
+        market=getattr(advisory, "market", None),
+    )
+    return {
+        (p if isinstance(p, str) else p.value): dollars
+        for p, dollars in row.items()
+    }
+
+
+def _exposure_grid(state: DraftState, book: Any, advisory: Any) -> dict:
+    """Per-team, per-position exposure, or `{}` when there is nothing to read.
+
+    Reuses the advisory layer's scarcity and market reads rather than
+    recomputing them — they are already on `advisory` for this same board, and a
+    second computation is a second answer waiting to disagree with the first.
+    """
+    if book is None or not len(book):
+        return {}
+    from ffa.advice.exposure import exposure_by_team
+
+    return dict(exposure_by_team(
+        state, book,
+        scarcity=getattr(advisory, "scarcity", None),
+        market=getattr(advisory, "market", None),
+    ))
+
+
 def _team_view(
     state: DraftState, team_id: int, book: Any = None, dossiers: Any = None,
-    precedent: Any = None, seats: Any = None,
+    precedent: Any = None, seats: Any = None, exposure: Any = None,
 ) -> dict[str, Any]:
     team = state.teams.get(team_id)
     unknowns = proj.unknown_price_count(state, team_id)
@@ -205,6 +256,21 @@ def _team_view(
         },
         "starter_gaps": {
             slot.value: n for slot, n in proj.starter_gaps(state, team_id).items()
+        },
+        # **Dollars this team could commit at each position** — the lesser of
+        # their legal ceiling and what the best player left there is worth,
+        # weighted by how much of their starting lineup is still open at it.
+        #
+        # It sits beside `max_legal_bid` rather than replacing it, and the two
+        # answer different questions: the ceiling is what they could spend at
+        # all, this is what they could spend *here*. A surface colouring by the
+        # ceiling alone says a rival's kicker is as dangerous as his receiver.
+        #
+        # Arithmetic, not a forecast. See `advice/exposure.py` for why the name
+        # matters and what it is deliberately not called.
+        "exposure": {
+            (position if isinstance(position, str) else position.value): dollars
+            for position, dollars in (exposure or {}).items()
         },
         "roster": [_player_view(p, book) for p in state.players_for_team(team_id)],
     }

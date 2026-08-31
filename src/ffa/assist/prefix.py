@@ -107,6 +107,12 @@ What the numbers mean. These definitions are exact; do not infer others.
   could occupy. A team with $90 and no open running-back slot is not a threat on
   a running back, however rich they look. This is the single most important flag
   on the board.
+- exposure — dollars a rival could commit *at one position*: the lesser of their
+  legal ceiling and what the best player left there is worth, scaled by how much
+  of their starting lineup is still open at it. Zero once those slots are full.
+  It is arithmetic about capacity, not a claim about what they will do, and it is
+  the reason a kicker column reads cool while a running-back column runs hot for
+  the same wallet.
 - starter_gaps — unfilled *starting* slots. open_slots_by_pos includes the bench
   and is almost always non-zero, so it is not evidence of need.
 - shortfall (plan) — dollars the declared plan still wants beyond what we hold.
