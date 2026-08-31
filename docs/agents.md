@@ -8,7 +8,7 @@ considered and declined, see `docs/declined/`.
 
 | Agent | Fires on | Model | Produces | Calls/draft |
 |---|---|---|---|---|
-| **The Room** (open) | a player is nominated | Sonnet 5, low effort | rival bid bands + a read on the nomination | ~180 |
+| **The Room** (open) | a player is nominated | Sonnet 5, low effort, no thinking | rival bid bands + a read on the nomination | ~180 |
 | **The Room** (tick) | every ~5s while on the block | Haiku 4.5, no thinking | a revision of its own opening read | ~900 |
 | **The Strategist** | a plan-state transition | Sonnet 5, medium | assessment of the declared plan, and the digest | ~25 |
 | **The Narrator** | a notable feed event | Sonnet 5, low | one or two sentences on why it matters | ~33 |
@@ -110,12 +110,17 @@ them when unset.
 
 Measured over `ffa sim --assist`, not estimated:
 
-| | per call | per draft |
-|---|---|---|
-| The Room, open | $0.0398 | ~$7.17 @ 180 |
-| The Room, tick | $0.0030 | ~$2.66 @ ~900 |
-| Strategist + Narrator | $0.0399 | ~$2.30 |
-| | | **~$12** against a $25 cap |
+| | per call | latency p50 | per draft |
+|---|---|---|---|
+| The Room, open | $0.0227 | 7.6s | ~$4.09 @ 180 |
+| The Room, tick | $0.0028 | 0.9s | ~$2.52 @ ~900 |
+| Strategist + Narrator | ~$0.047 | ~10s | ~$2.75 |
+| | | | **~$9.34** against a $20 cap |
+
+Every number measured over `ffa sim --assist`, not estimated. The Room came down
+from $0.0398 and 12.7s on Opus 5 with adaptive thinking, in three steps: the tier
+(-$0.013, -1.7s), four rivals instead of six (-0.6s), and thinking off (-2.8s and
+the variance with it).
 
 **The ledger counts micro-dollars, not cents.** Whole cents are right while the
 cheapest agent costs 4c and wrong the moment one costs 0.29c - and that agent is

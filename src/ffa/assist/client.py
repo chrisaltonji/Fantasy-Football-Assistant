@@ -61,12 +61,18 @@ class AgentProfile:
     effort: str | None
     timeout: float
     max_tokens: int = MAX_TOKENS
-    # Same shape of problem, separately, because the two are not always set
-    # together: adaptive thinking is not a Haiku 4.5 mode. An agent chosen for
-    # speed does not want thinking anyway, so `False` omits the key rather than
-    # sending `{"type": "disabled"}` — the request that is not made cannot be
-    # rejected by a model that has never heard of the parameter.
-    thinking: bool = True
+    # **Three states, not two, and the difference is not cosmetic.**
+    #
+    #   "adaptive"  -> {"type": "adaptive"}
+    #   "disabled"  -> {"type": "disabled"}
+    #   None        -> the key is not sent at all
+    #
+    # `None` is for Haiku 4.5, which has never heard of adaptive thinking: the
+    # request that is not made cannot be rejected. It is **not** a way to turn
+    # thinking off on a current model — omitting the field on Sonnet 5 runs
+    # adaptive anyway, so a bool that omitted the key would have looked like it
+    # disabled thinking and changed nothing at all. Off has to be said out loud.
+    thinking: str | None = "adaptive"
 
 
 # **Which agent runs where, and every boundary is a measured number.**
@@ -112,7 +118,27 @@ LIVE_MODEL = "claude-sonnet-5"
 FAST_MODEL = "claude-haiku-4-5"
 
 PROFILES: dict[str, AgentProfile] = {
-    "room": AgentProfile(LIVE_MODEL, "low", 25.0, 2000),
+    # **Thinking off, and it is the single largest latency lever here.**
+    #
+    # With adaptive thinking on, the visible reply was identical every time -
+    # four rivals, two watch lines, a ~330-character read - while output ranged
+    # 423 to 965 tokens and latency tracked it exactly, 7.0s to 13.9s. That
+    # spread was thinking, which bills and times as output.
+    #
+    # Off: 398-496 tokens, p50 10.4s -> 7.6s, p90 13.8s -> 8.8s. The spread
+    # collapsed from 542 tokens to 98, which matters more than the median: a read
+    # that is reliably eight seconds is usable under a clock in a way that one
+    # averaging ten and sometimes taking fourteen is not.
+    #
+    # Checked rather than assumed, because disabled thinking is what makes a
+    # model write its reasoning into the visible response: zero leaks across 13
+    # replies, structure intact, evidence still cited from the dossiers. The
+    # documented failure modes for this are specific to Opus 5; this is Sonnet.
+    #
+    # `"disabled"` is said out loud rather than omitted. Omitting the field runs
+    # adaptive on Sonnet 5 - a profile that left it off would have looked like it
+    # disabled thinking and changed nothing.
+    "room": AgentProfile(LIVE_MODEL, "low", 25.0, 2000, thinking="disabled"),
     # **8s, which is longer than the 5s cadence on purpose.** The ticker skips
     # rather than queues while one is in flight, so a slow tick costs the next
     # slot and nothing else. A ceiling *below* the cadence would instead kill
@@ -120,7 +146,7 @@ PROFILES: dict[str, AgentProfile] = {
     # ceiling made, at a tenth of the scale but ten times as often.
     # No effort and no thinking: Haiku 4.5 rejects the first and does not offer
     # the second. 600 tokens because the whole reply is a line and a few bands.
-    "room_tick": AgentProfile(FAST_MODEL, None, 8.0, 600, thinking=False),
+    "room_tick": AgentProfile(FAST_MODEL, None, 8.0, 600, thinking=None),
     "strategist": AgentProfile(LIVE_MODEL, "medium", 30.0, 2000),
     # One or two sentences. A thousand is already generous, and a ceiling is the
     # cheapest defence against an agent that decides to summarise the draft.
@@ -298,8 +324,8 @@ class ClaudeClient:
         resolved_effort = effort or profile.effort
         if resolved_effort:
             request["output_config"]["effort"] = resolved_effort
-        if profile.thinking:
-            request["thinking"] = {"type": "adaptive"}
+        if profile.thinking is not None:
+            request["thinking"] = {"type": profile.thinking}
 
         if schema:
             request["output_config"]["format"] = {

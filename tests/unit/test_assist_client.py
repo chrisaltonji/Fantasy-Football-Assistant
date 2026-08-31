@@ -116,15 +116,44 @@ def call(sdk, agent="room", schema=None, **kw):
 # --- the request shape ------------------------------------------------------
 
 
-def test_thinking_is_adaptive_and_carries_no_budget(sdk):
-    """`budget_tokens` is the pre-4.6 shape and is a 400 on Opus 5. It is the
-    single most likely thing to be wrong here, because it is what a model
-    trained before the change reaches for."""
-    call(sdk)
-    request = sdk.calls[0]
+def test_thinking_never_carries_a_budget(sdk):
+    """`budget_tokens` is the pre-4.6 shape and is a 400 on every current model.
+    It is the single most likely thing to be wrong here, because it is what a
+    model trained before the change reaches for."""
+    for agent in PROFILES:
+        sdk.calls.clear()
+        call(sdk, agent=agent)
+        assert "budget_tokens" not in json.dumps(sdk.calls[0])
 
-    assert request["thinking"] == {"type": "adaptive"}
-    assert "budget_tokens" not in json.dumps(request["thinking"])
+
+def test_thinking_has_three_states_and_off_is_said_out_loud(sdk):
+    """**Omitting the field is not the same as disabling it.**
+
+    On Sonnet 5 a request with no `thinking` key runs adaptive anyway, so a
+    profile that expressed "off" by leaving it out would have looked like it
+    disabled thinking and changed nothing at all. Absent is for Haiku 4.5, which
+    has never heard of the parameter."""
+    call(sdk, agent="analyst")                       # adaptive
+    assert sdk.calls[0]["thinking"] == {"type": "adaptive"}
+
+    sdk.calls.clear()
+    call(sdk, agent="room")                          # explicitly off
+    assert sdk.calls[0]["thinking"] == {"type": "disabled"}
+
+    sdk.calls.clear()
+    call(sdk, agent="room_tick")                     # not sent at all
+    assert "thinking" not in sdk.calls[0]
+
+
+def test_the_room_runs_without_thinking_because_it_has_a_clock(sdk):
+    """Measured: adaptive thinking put the Room at 423-965 output tokens for an
+    identical visible reply, and latency tracked it 7.0s to 13.9s. Off, it is
+    398-496 tokens and p90 8.8s. The collapsed variance is the point — a read
+    that is reliably eight seconds is usable under a bidding clock in a way that
+    one averaging ten and sometimes taking fourteen is not."""
+    assert PROFILES["room"].thinking == "disabled"
+    # The agents with no clock keep it: the Analyst is waited on deliberately.
+    assert PROFILES["analyst"].thinking == "adaptive"
 
 
 def test_the_schema_travels_in_output_config(sdk):
