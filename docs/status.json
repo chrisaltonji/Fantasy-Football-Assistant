@@ -60,8 +60,9 @@
       "n": 2,
       "name": "Bid forecasting",
       "tier": "v1",
-      "status": "partial",
-      "where": "capacity ships; intent needs the LLM layer"
+      "status": "done",
+      "where": "capacity ships; intent needs the LLM layer",
+      "note": "capacity is arithmetic; intent is the Room, built and guarded, not yet rehearsed live"
     },
     {
       "n": 3,
@@ -259,8 +260,8 @@
         },
         {
           "name": "Chat / LLM layer",
-          "status": "todo",
-          "note": "every input now in place"
+          "status": "done",
+          "note": "four agents; not yet rehearsed live"
         }
       ]
     },
@@ -287,6 +288,54 @@
         {
           "name": "Manager aliases, precedent, pace",
           "status": "done"
+        }
+      ]
+    },
+    {
+      "name": "Inference",
+      "blurb": "The half that can be wrong. Reads what the advisory layer computed and adds judgement; never the other way round.",
+      "items": [
+        {
+          "name": "client.py — one door to the API, every failure translated",
+          "status": "done"
+        },
+        {
+          "name": "runner.py — daemon threads, supersede, mute, spend cap",
+          "status": "done"
+        },
+        {
+          "name": "guard.py — no verdicts, no contradicting arithmetic",
+          "status": "done"
+        },
+        {
+          "name": "context.py — the sidecar the agents read each other through",
+          "status": "done"
+        },
+        {
+          "name": "The Room — on nomination, and again every ~5s while bidding",
+          "status": "done",
+          "note": "two model tiers; Haiku for the tick"
+        },
+        {
+          "name": "The Strategist — on a plan-state transition; writes the digest",
+          "status": "done"
+        },
+        {
+          "name": "The Narrator — on a notable feed event",
+          "status": "done"
+        },
+        {
+          "name": "The Analyst — on `ask`",
+          "status": "done"
+        },
+        {
+          "name": "The Grader — post-draft",
+          "status": "not started",
+          "note": "out of scope; prompt and schema exist unused"
+        },
+        {
+          "name": "Live rehearsal",
+          "status": "not started"
         }
       ]
     }
@@ -337,11 +386,10 @@
   ],
   "next": [
     {
-      "title": "LLM layer",
+      "title": "Rehearse the assistant against a practice room",
       "owner": "build",
-      "urgency": "after the dashboard",
-      "detail": "Completes capability 2's intent half. Must sit beside the hot path, never inside it — advice is instant and cannot fail, and a network call in that loop would add latency and a failure mode while a clock runs.",
-      "command": ""
+      "urgency": "before trusting it",
+      "detail": "Four agents are built and unit-tested against a fake API, and the journal-identity invariant is pinned by test. What has not happened is a live run: real latency on the tick, a real cache hit rate on the second model tier, and a real invoice. `ffa sim --assist` is the acceptance test."
     },
     {
       "title": "Join the plan to nomination strategy",
@@ -433,6 +481,187 @@
     {
       "title": "Capability 9 counts demand the way a roster actually works",
       "body": "A position is dangerous when the teams who can still act on it outnumber what is left. Two counting decisions carry it. Demand is counted against the position's own starting slot, never the flex: has_starter_gap folds the flex in, which is right for 'could they start this player' and would otherwise add twelve phantom contenders to RB, WR and TE at once and make every position look squeezed from pick one. And a contender must be able to pay — needing one and being able to buy one are different things. The list is empty for most of a draft by construction, which is the point."
+    },
+    {
+      "title": "LangGraph, declined",
+      "body": "The migration plan and its topology brief are archived under docs/declined/. It proposed replacing ~359 lines of rehearsed orchestration with LangGraph and LangSmith, never cleared its own Python 3.14 blocker, and would have put twelve managers' dossiers on a third party's cloud for a diagram. The four agents are plain modules over the transport that already worked; see docs/agents.md."
+    },
+    {
+      "title": "Two model tiers",
+      "body": "Every agent shares one model and therefore one cache entry, except the Room's tick. Caching is keyed on the model, so that argument holds for an agent firing 33 times and collapses for one firing every five seconds: the tick keeps its own entry warm continuously and pays the prefix write a handful of times against ~900 reads. Opus is also disqualified there on latency rather than cost — an 11-14s read cannot follow a live auction."
     }
-  ]
+  ],
+  "build": {
+    "name": "The inference layer",
+    "blurb": "Capability 2's intent half — five agents on the existing event seam, no orchestration framework. Plan: ~/.claude/plans/push-and-then-lets-synthetic-chipmunk.md",
+    "steps": [
+      {
+        "n": 1,
+        "name": "Foundation — offline, no SDK",
+        "status": "done",
+        "detail": "Every module here is pure and testable with no key and no network.",
+        "items": [
+          {
+            "name": "errors.py — the one exception this package lets out",
+            "status": "done"
+          },
+          {
+            "name": "context.py — ReadLog, the shared memory five agents read each other through",
+            "status": "done"
+          },
+          {
+            "name": "guard.py — 'a read, not a verdict', enforced rather than requested",
+            "status": "done"
+          },
+          {
+            "name": "reconcile.py — read against outcome, computed not asked",
+            "status": "done"
+          },
+          {
+            "name": "budget.py — per-draft cap, priced per call",
+            "status": "done"
+          },
+          {
+            "name": "schemas.py — structured output; field names decline to invite a verdict",
+            "status": "done"
+          },
+          {
+            "name": "projection.py — per-agent payloads, 6,900 tokens down to 1,763",
+            "status": "done"
+          },
+          {
+            "name": "prefix.py — the cached half, byte-stable, with the glossary",
+            "status": "done"
+          },
+          {
+            "name": "prompts.py — block assembly, cache breakpoint, 1h TTL",
+            "status": "done"
+          },
+          {
+            "name": "test_assist_boundary.py — advice/ can never import assist/",
+            "status": "done"
+          }
+        ]
+      },
+      {
+        "n": 2,
+        "name": "The client",
+        "status": "done",
+        "detail": "The first step that spends. Verified live against the real API: adaptive thinking accepted, the JSON schema honoured, and the cached prefix hit on a second call — 1c per warm Narrator call.",
+        "items": [
+          {
+            "name": "AnthropicCredentials + loader (redacting __repr__)",
+            "status": "done"
+          },
+          {
+            "name": "client.py — the only module importing the SDK, lazily",
+            "status": "done"
+          },
+          {
+            "name": "failure translation — every typed exception to one message",
+            "status": "done"
+          },
+          {
+            "name": "pyproject extra: assist = [anthropic]",
+            "status": "done"
+          },
+          {
+            "name": "live smoke test — passing, cache hit confirmed",
+            "status": "done"
+          }
+        ]
+      },
+      {
+        "n": 3,
+        "name": "The Room",
+        "status": "done",
+        "detail": "Verified against the real API over a full simulated draft: reads land in 12-14s, cache hits 100%, 4.0c per call = ~$7.20 for 180 nominations.",
+        "items": [
+          {
+            "name": "runner.py — daemon threads, ASSIST tag, supersede, mute",
+            "status": "done"
+          },
+          {
+            "name": "agents/room.py",
+            "status": "done"
+          },
+          {
+            "name": "--assist flag, off by default",
+            "status": "done"
+          },
+          {
+            "name": "terminal readout",
+            "status": "done"
+          },
+          {
+            "name": "ffa sim --assist — the real invoice, not an estimate",
+            "status": "done"
+          }
+        ]
+      },
+      {
+        "n": 4,
+        "name": "Surfaces",
+        "status": "done",
+        "detail": "One top-level `assist` key, absent entirely when off so the payload stays byte-identical. The dashboard reads the sidecar and still makes no API calls.",
+        "items": [
+          {
+            "name": "assist key in build_view()",
+            "status": "done"
+          },
+          {
+            "name": "dashboard reads the sidecar (still makes no API calls)",
+            "status": "done"
+          },
+          {
+            "name": "highest-risk panel un-pends",
+            "status": "done"
+          }
+        ]
+      },
+      {
+        "n": 5,
+        "name": "The remaining agents",
+        "status": "todo",
+        "items": [
+          {
+            "name": "agents/strategist.py — post-pick, gated on a transition",
+            "status": "todo"
+          },
+          {
+            "name": "agents/narrator.py — reads the Room's earlier estimate",
+            "status": "todo"
+          },
+          {
+            "name": "agents/analyst.py + terminal `ask`",
+            "status": "todo"
+          },
+          {
+            "name": "agents/grader.py + `ffa grade` (capability 11)",
+            "status": "todo"
+          }
+        ]
+      },
+      {
+        "n": 6,
+        "name": "Rehearsal and freeze",
+        "status": "todo",
+        "detail": "Practice room with and without the flag. Anything shaky, draft without it — that is what the flag is for.",
+        "items": [
+          {
+            "name": "live rehearsal, both paths",
+            "status": "todo"
+          },
+          {
+            "name": "cache hit rate confirmed non-zero",
+            "status": "todo"
+          },
+          {
+            "name": "freeze",
+            "status": "todo"
+          }
+        ]
+      }
+    ]
+  }
 }

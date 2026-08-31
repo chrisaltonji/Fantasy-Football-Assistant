@@ -109,6 +109,18 @@ body{
 .riskrow .e{font:600 14px/1 var(--mono);text-align:right}
 .riskrow .why{font:400 11px/1.4 var(--ui);color:var(--label)}
 .riskrow .of{font:400 10.5px/1 var(--mono);color:var(--caption);text-align:right;white-space:nowrap}
+/* The estimate takes its own full-width row rather than a cell: the row is a
+   two-column grid and squeezing a fifth element in would push .why and .of out
+   of place. Right-aligned so it sits under the ceiling it relates to, and
+   styled to be unmistakably not that ceiling — lighter weight, a tag, and a
+   dashed rule marking where arithmetic stops. */
+.riskrow .est{grid-column:1/-1;text-align:right;margin-top:1px}
+.riskrow .esttag{
+  font:600 9px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--caption);border:1px dashed var(--card-line);border-radius:3px;
+  padding:2px 4px;margin-right:6px;vertical-align:1px;
+}
+.riskrow .estband{font:500 12px/1 var(--mono);color:var(--ink2)}
 .riskrow.dim .n{font-weight:500;font-size:12.5px;color:var(--ink2)}
 .riskrow.dim .why{color:var(--caption)}
 .note{
@@ -234,10 +246,50 @@ body{
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
 .chip{font:500 11px/1 var(--ui);color:var(--label);border:1px solid var(--card-line);
       border-radius:14px;padding:6px 10px}
-.askinput{display:flex;align-items:center;gap:8px;background:var(--inset);
-          border:1px solid var(--card-line);border-radius:9px;padding:10px 12px}
-.askinput .ph{font:400 12.5px/1 var(--ui);color:var(--faint);flex:1}
-.askinput .ent{font:600 10.5px/1 var(--mono);color:var(--caption)}
+.askhow{font:400 11px/1.5 var(--ui);color:var(--caption);margin-top:10px}
+.askhow code{font:500 11px/1 var(--mono);color:var(--label);background:var(--inset);
+             border-radius:3px;padding:2px 5px}
+
+/* One row per starting spot. The track is the bubble, the tick inside it is what
+   the plan budgeted for that spot, and the fill is what was actually paid. */
+.slot{display:grid;grid-template-columns:42px 1fr 78px;gap:9px;align-items:center;
+      margin-bottom:5px}
+.slot .sl{font:600 11px/1 var(--mono);color:var(--label)}
+.slot.vacant .sl{color:var(--caption);font-weight:500}
+.slot .strack{position:relative;height:14px;background:var(--track);border-radius:7px;
+              overflow:hidden}
+.slot .sfill{position:absolute;left:0;top:2px;bottom:2px;border-radius:6px}
+.slot .stick{position:absolute;top:0;bottom:0;width:2px;background:var(--centre);z-index:2}
+.slot .sr{font:500 11px/1 var(--mono);text-align:right;color:var(--caption)}
+.slot.under .sr, .slot.under .sl{color:var(--good)}
+.slot.warn  .sr, .slot.warn  .sl{color:var(--t-mid)}
+.slot.over  .sr, .slot.over  .sl{color:var(--t-max)}
+.who{grid-column:2/4;font:400 10.5px/1.3 var(--ui);color:var(--caption);margin:-1px 0 5px}
+.slotfoot{font:400 10.5px/1.5 var(--ui);color:var(--caption);
+          border-top:1px solid var(--card-line);margin-top:11px;padding-top:8px}
+.slotfoot b{color:var(--label);font-weight:500}
+.slotkey{display:flex;gap:12px;margin-top:11px;font:500 10px/1 var(--ui)}
+.slotkey .kk{display:flex;align-items:center;gap:5px;color:var(--caption)}
+.slotkey .kk::before{content:"";width:9px;height:9px;border-radius:2px}
+.slotkey .good::before{background:var(--good)}
+.slotkey .warn::before{background:var(--t-mid)}
+.slotkey .bad::before{background:var(--t-max)}
+
+/* remaining players: counts, and names once a tier is nearly out */
+.remrow{display:grid;grid-template-columns:34px 62px 62px 1fr auto;gap:8px;
+        align-items:baseline;margin-top:7px;font:500 11px/1.4 var(--mono)}
+.remrow .rp{font-weight:600;color:var(--label)}
+.remrow .rc{color:var(--caption)}
+.remrow .rt{color:var(--ink2)}
+.remrow .rd{color:var(--faint);font-size:10.5px}
+.remrow.dry .rp{color:var(--t-mid)}
+.remrow.dead .rp, .remrow.dead .rt{color:var(--t-max)}
+.rnames{font:400 10.5px/1.4 var(--ui);color:var(--caption);margin:2px 0 0 42px}
+.rnames.deadnote{color:var(--t-max)}
+.legend .youcap{font:400 9.5px/1 var(--ui);color:var(--caption);margin-left:6px}
+/* Live on the player up right now: a ring, so it reads on top of whatever
+   intensity the money already put in the cell. */
+.cell.islive{box-shadow:inset 0 0 0 2px var(--you)}
 
 /* Inert regions. Muted rather than hidden: the shape of what is coming is
    information, and a missing panel reads as a broken one. */
@@ -299,8 +351,8 @@ body{
   <div id="matrix">
     <div class="mxhead">
       <span class="eyebrow">threat matrix</span>
-      <span class="cap">starters filled / starters required · colour is what that team could pay</span>
-      <span class="legend"><span>$1</span><span class="rampbar"></span><span id="mx-top">$186</span></span>
+      <span class="cap">starters filled / starters required · colour is what they could commit <b>at that position</b>, against what you could</span>
+      <span class="legend"><span>$0</span><span class="rampbar"></span><span id="mx-top">$23</span><span class="youcap">could commit there</span></span>
     </div>
     <div id="mx-body"></div>
     <div class="mxlegend">
@@ -326,23 +378,23 @@ body{
     <div id="plan-body"></div>
   </div>
   <div class="tile" id="runway">
-    <div class="tilehead"><span class="eyebrow">runway — startable against starting slots</span></div>
+    <div class="tilehead"><span class="eyebrow">remaining players</span><span class="sub">still on the board, by tier</span></div>
     <div id="runway-body"></div>
     <div class="rwfoot" id="runway-foot"></div>
   </div>
   <div class="tile pending" id="ask">
     <div class="tilehead"><span class="eyebrow">ask the assistant</span><span class="sub">anything on this board, or the draft as a whole</span></div>
-    <div class="empty">Not connected.</div>
-    <div class="why"><b>Needs the inference layer.</b> Every input is in place —
-      the dossiers, four seasons of precedent, and this board's own payload — but
-      nothing reads them yet. It will run beside the engine, never inside it: a
-      slow answer here can never delay a bid readout.</div>
+    <div class="empty">Not connected. This page reads; it never asks.</div>
+    <div class="why"><b>Ask from the terminal.</b> The inference layer is live —
+      reads appear under “highest risk to me” as they land. Asking from here would
+      make this page the first thing that writes and spends, and it is deliberately
+      a reader: it shows what the agents already said and calls nothing itself.</div>
     <div class="chips">
       <span class="chip">who can still afford Chase?</span>
       <span class="chip">am I short at WR?</span>
       <span class="chip">what should I nominate?</span>
     </div>
-    <div class="askinput"><span class="ph">Ask about the board…</span><span class="ent">⏎</span></div>
+    <div class="askhow"><b>In the terminal:</b> <code>ask who can still afford him</code></div>
   </div>
 </div>
 
@@ -496,6 +548,22 @@ function renderRisk(v, g){
 
   if(!g){ rows.appendChild(el("div","empty","Nothing on the block.")); note.textContent=""; return; }
 
+  // Estimates, if the assistant is on and has read *this* player. Keyed by
+  // team so a band can only ever land beside the rival it was said about.
+  const read = (v.assist && v.assist.current) ? v.assist.current.payload : null;
+  const bands = new Map(((read && read.rivals) || []).map(r=>[r.team_id, r]));
+
+  // The opening read is what the Room said when the player went up. While the
+  // bidding runs it re-reads itself every few seconds, and where it has revised
+  // a band that revision is the freshest thing it actually said - so it wins.
+  // Marked, not merged silently: a band that has moved since the nomination is
+  // a different claim from one that has not, and the row says which.
+  const rev = (v.assist && v.assist.revision) ? v.assist.revision.payload : null;
+  ((rev && rev.rivals) || []).forEach(r=>{
+    bands.set(r.team_id, Object.assign({}, bands.get(r.team_id) || {}, r,
+                                       {revised:true}));
+  });
+
   const live = g.threats.filter(t=>t.is_live);
   $("risk-sub").textContent = live.length
     ? "who can actually pay" : "nobody who needs the position can pay";
@@ -510,22 +578,59 @@ function renderRisk(v, g){
     e.style.color = tiers[Math.min(i,3)];
     r.appendChild(e);
 
-    // No estimate exists, so the second line says something true instead: what
-    // the record shows about how this person drafts, when it discriminates.
+    // The estimate, when there is one — and never in the ceiling's slot. The
+    // ceiling above is arithmetic; this is a guess about a person, so it says
+    // "est" and carries the evidence it rests on.
+    const band = bands.get(t.team_id);
+    if(band){
+      const b = el("div","est");
+      b.appendChild(el("span","esttag", band.revised ? "est \u21bb" : "est"));
+      b.appendChild(el("span","estband",
+        band.lo === band.hi ? `$${band.lo}` : `$${band.lo}–${band.hi}`));
+      r.appendChild(b);
+    }
+
     const p = pace.get(t.team_id);
-    r.appendChild(el("div","why", p
+    r.appendChild(el("div","why", band && band.rationale ? band.rationale : (p
       ? `${Math.round(p.actual_share*100)}% of budget out, usually ${Math.round(p.expected_share*100)}% by now · ${p.dollars_vs_script<0?"holding":"ahead"} ~$${Math.abs(p.dollars_vs_script)}`
-      : `${t.open_at_position} starting slot(s) open · ${money(t.remaining,t.remaining_is_floor)} in hand`));
+      : `${t.open_at_position} starting slot(s) open · ${money(t.remaining,t.remaining_is_floor)} in hand`)));
     r.appendChild(el("div","of m", t.is_live ? "can start him" : "no slot"));
     rows.appendChild(r);
   });
 
-  const b = el("b",null,"These are ceilings, not estimates.");
-  note.appendChild(b);
-  note.appendChild(document.createTextNode(
-    " What a rival could pay is arithmetic and is shown. What they will actually" +
-    " bid is inference — capability 2's intent half, which reads the dossiers and" +
-    " four seasons of precedent. It does not exist yet, so nothing here guesses."));
+  // What the latest re-read made of the price, when it had something to say.
+  // Its own line, above the standing caveat, because it is about right now.
+  if(rev && rev.note){
+    const n = el("div","estnote");
+    n.appendChild(el("b",null,"Latest read: "));
+    n.appendChild(document.createTextNode(rev.note));
+    note.appendChild(n);
+  }
+
+  if(bands.size){
+    note.appendChild(el("b",null,"Dollar figures are ceilings. Bands are guesses."));
+    note.appendChild(document.createTextNode(
+      " What a rival could pay is arithmetic and is exact. A band marked est is" +
+      " a model reading the dossiers and four seasons of precedent, and it can be" +
+      " wrong. Any band above its own ceiling was dropped rather than corrected."));
+    if(rev){
+      note.appendChild(document.createTextNode(
+        " A band marked \u21bb was revised during the bidding; the rest are as" +
+        " they were when he went up."));
+    }
+    if(read && read.confidence === "thin"){
+      note.appendChild(el("b",null," Confidence: thin."));
+      note.appendChild(document.createTextNode(
+        " The evidence behind these is weak — treat them as prompts to watch," +
+        " not as numbers."));
+    }
+  } else {
+    note.appendChild(el("b",null,"These are ceilings, not estimates."));
+    note.appendChild(document.createTextNode(
+      " What a rival could pay is arithmetic and is shown. What they will actually" +
+      " bid is inference; the assistant is off, or has not read this player yet," +
+      " so nothing here guesses."));
+  }
 }
 
 function renderMatrix(v, me, g){
@@ -538,8 +643,37 @@ function renderMatrix(v, me, g){
     if(a.is_me!==b.is_me) return a.is_me?-1:1;          // you first
     return b.max_legal_bid - a.max_legal_bid;            // then by reach
   });
-  const top = Math.max(1, ...teams.map(t=>t.max_legal_bid));
-  $("mx-top").textContent = `$${top}`;
+  // **Scaled against your own ceiling, not the richest team's.** The old
+  // denominator was recomputed from whoever happened to be richest, so a cell
+  // changed colour when a *third* team spent, and when you were the richest
+  // every rival looked harmless. Against your ceiling, a full cell means "this
+  // team can outbid me here" — the question the panel exists to answer — and it
+  // only moves when your ceiling or theirs does.
+  const mine = (teams.find(t=>t.is_me)||{}).max_legal_bid || 0;
+  // **One board-wide number, and two wrong ones were tried on a live board
+  // before it.**
+  //
+  //   our whole ceiling    - exposure is capped by what one position's best
+  //                          player is worth, so the top half of the ramp was
+  //                          unreachable. Measured across a real draft the
+  //                          hottest cell never passed 43%, and at pick one -
+  //                          when every rival can outbid you everywhere - the
+  //                          whole grid rendered cool.
+  //   our reach per column - uses the full ramp but throws away the thing this
+  //                          panel is for. "Can they outbid me at kicker" is
+  //                          yes, so the kicker went bright red again.
+  //
+  // The hottest column we could reach keeps both properties: the ramp is fully
+  // used, and a kicker stays cooler than a back because $7 against $23 is what a
+  // kicker is worth. It moves when the *board* empties, never when one rival
+  // spends - which is the jitter that made the original wallet scale unreadable.
+  const scale = (v.league||{}).exposure_scale || {};
+  const den = Math.max(1, ...Object.values(scale));
+  $("mx-top").textContent = `$${den}`;
+
+  // Rich is not the same as dangerous: a team with $180 and no open slot at his
+  // position cannot take him. This is the arithmetic that already knows.
+  const liveNow = new Set(((g&&g.threats)||[]).filter(t=>t.is_live).map(t=>t.team_id));
 
   const cols = `64px repeat(${POSITIONS.length},minmax(0,1fr)) 54px`;
 
@@ -556,20 +690,35 @@ function renderMatrix(v, me, g){
     row.style.gridTemplateColumns = cols;
     row.appendChild(el("div","rl", t.is_me ? "you" : t.label));
 
-    const colour = ramp(top ? t.max_legal_bid/top : 0);
+    // Clamped: outbidding you by any margin is already the top of the scale.
+    // There is nothing above "can beat you".
+    // Per team, kept only as the fallback for a payload without exposure.
+    const wallet = ramp(Math.min(1, t.max_legal_bid / Math.max(1, mine)));
     POSITIONS.forEach(pos=>{
       const req = required[pos] || 0;
       const gap = (t.starter_gaps||{})[pos] || 0;
       const filled = Math.max(0, req - gap);
       const c = el("div","cell",`${filled}/${req}`);
+      // **Per cell, not per row.** Exposure is what this team could commit at
+      // *this* position — their ceiling capped by what the best player left
+      // there is worth, scaled by how many of these slots are still open. A row
+      // painted with one number said a rival's kicker was as dangerous as his
+      // receiver, which is how this panel came to be distrusted.
+      const ex = (t.exposure||{})[pos];
+      const colour = (ex === undefined) ? wallet : ramp(Math.min(1, ex / den));
       if(req===0){ c.classList.add("sat"); c.textContent="—"; }
       else if(gap===0) c.classList.add("sat");         // no gap, no threat
       else if(t.is_me) c.classList.add("mine");
       else { c.style.background = rgb(colour); c.style.color = onFill(colour);
              c.style.fontWeight = "700"; }
-      if(pos===onBlock) c.classList.add("onblock");
+      if(pos===onBlock){
+        c.classList.add("onblock");
+        if(!t.is_me && liveNow.has(t.team_id)) c.classList.add("islive");
+      }
       c.title = `${t.label} · ${pos}: ${filled} of ${req} starters filled · ` +
-                `${money(t.remaining,t.remaining_is_floor)} in hand, max $${t.max_legal_bid}`;
+                `${money(t.remaining,t.remaining_is_floor)} in hand, max $${t.max_legal_bid}` +
+                (ex !== undefined ? ` · could commit $${ex} here` : "") +
+                (mine ? ` · your ceiling $${mine}` : "");
       row.appendChild(c);
     });
     row.appendChild(el("div","mx m",`$${t.max_legal_bid}`));
@@ -585,110 +734,139 @@ function renderPlan(v){
     host.appendChild(el("div","empty","No plan declared. `ffa strategy init` builds one."));
     return;
   }
-  $("plan-sub").textContent = `${p.archetype||"custom"} · declared, not computed`;
+  const slots = p.slots || [];
+  $("plan-sub").textContent = slots.length
+    ? `${p.archetype||"custom"} · $${p.planned_total} across ${slots.length} starting spot(s)`
+    : `${p.archetype||"custom"} · declared per position`;
 
-  const worst = Math.max(20, ...(p.positions||[]).map(r=>Math.abs(r.variance)));
-  (p.positions||[]).slice(0,5).forEach(r=>{
-    const over = r.variance>0;
-    const bar = el("div","pbar "+(r.is_material?(over?"over":"under"):""));
-    bar.style.gridTemplateColumns = "38px 1fr 92px";
-    bar.appendChild(el("div","pl",r.position));
-    const track = el("div","ptrack");
-    track.appendChild(el("div","mid"));
-    const f = el("div","f");
-    const pct = Math.min(50, Math.abs(r.variance)/worst*50);
-    if(over){ f.style.left="50%"; f.style.width=pct+"%"; f.style.background="var(--rec)"; }
-    else { f.style.right="50%"; f.style.width=pct+"%"; f.style.background="var(--fill)"; }
-    track.appendChild(f);
-    bar.appendChild(track);
-    bar.appendChild(el("div","pr",
-      `${over?"+":""}${r.variance} · ${r.open_slots===0?"done":(r.still_calls_for?"still to buy":"in play")}`));
-    host.appendChild(bar);
+  if(!slots.length){
+    // A plan written before per-slot budgets existed. Say which it is, rather
+    // than rendering an empty tile that reads as a load failure.
+    host.appendChild(el("div","empty","This plan is per position, not per spot."));
+    const w = el("div","slotfoot");
+    w.appendChild(el("b",null,"Re-run `ffa strategy init --force` "));
+    w.appendChild(document.createTextNode("to budget each starting spot separately."));
+    host.appendChild(w);
+    return;
+  }
+
+  // One scale for every row — the largest number on the tile, budget or
+  // overspend — so the shape of the plan is comparable down the column without
+  // reading the figures beside it.
+  const widest = Math.max(1, ...slots.map(r => Math.max(r.planned||0, r.spent||0)));
+
+  // Three states, and the middle one is the point: a few dollars over a spot's
+  // budget is a normal auction, not a broken plan. 10% is the line between
+  // "paid up" and "this needs an answer somewhere else".
+  const OVERPAY = 0.10;
+
+  slots.forEach(r => {
+    const planned = r.planned||0, spent = r.spent||0;
+    const over = planned > 0 && spent > planned * (1 + OVERPAY);
+    const warn = planned > 0 && spent > planned && !over;
+    const row = el("div","slot" + (over?" over":warn?" warn":spent>0?" under":"")
+                  + (r.player?"":" vacant"));
+    row.appendChild(el("div","sl", r.slot));
+
+    const track = el("div","strack");
+    if(spent > 0){
+      const fill = el("div","sfill");
+      fill.style.width = Math.min(100, spent/widest*100) + "%";
+      fill.style.background = over ? "var(--t-max)"
+                            : warn ? "var(--t-mid)" : "var(--good)";
+      track.appendChild(fill);
+    }
+    if(planned > 0){
+      // Drawn after the fill so it stays visible once the fill has run past it,
+      // which is the case you most need to see.
+      const tick = el("div","stick");
+      tick.style.left = Math.min(100, planned/widest*100) + "%";
+      track.appendChild(tick);
+    }
+    row.appendChild(track);
+    row.appendChild(el("div","sr", planned>0 ? `$${spent} / $${planned}` : `$${spent} / —`));
+    host.appendChild(row);
+
+    if(r.player){
+      // Name the overspend in dollars either way - the colour says how much it
+      // matters, the number says how much it is.
+      const gap = spent - planned;
+      host.appendChild(el("div","who",
+        r.player + (gap > 0 ? ` · $${gap} over` : gap < 0 ? ` · $${-gap} under` : "")));
+    }
   });
 
-  // Budget bar: spent, uncommitted, and where the plan wants to be.
-  const spentPct = p.budget ? p.spent_total/p.budget*100 : 0;
-  const wantPct  = p.budget ? Math.min(100,(p.spent_total+p.still_calls_for)/p.budget*100) : 0;
-  const bud = el("div","budget");
-  const s = el("div","spent"); s.style.width = spentPct+"%"; bud.appendChild(s);
-  const u = el("div","unc"); u.style.left = spentPct+"%"; u.style.right="0"; bud.appendChild(u);
-  const mk = el("div","mark"); mk.style.left = wantPct+"%"; bud.appendChild(mk);
-  const l1 = el("div","lbl m",`$${p.spent_total} spent`); l1.style.left="0"; l1.style.color="var(--ink2)";
-  const l2 = el("div","lbl m",`$${p.remaining} in hand`); l2.style.right="0"; l2.style.color="var(--label)";
-  bud.appendChild(l1); bud.appendChild(l2);
-  host.appendChild(bud);
+  const key = el("div","slotkey");
+  key.appendChild(el("span","kk good","at or under"));
+  key.appendChild(el("span","kk warn","up to 10% over"));
+  key.appendChild(el("span","kk bad","more than 10% over"));
+  host.appendChild(key);
 
-  // Three states, all arithmetic. The threshold is the bench reserve, not a
-  // percentage of budget, and that matters: a plan allocates everything it is
-  // not holding back, so at pick zero `slack` equals the reserve exactly. A
-  // percentage rule reads that healthy starting state as AT RISK — which is
-  // what it did, on the first render against a real board.
-  const floor = p.bench_reserve || 0;
-  const state = p.shortfall>0 ? "bad" : (p.slack < floor ? "" : "ok");
-  const word  = p.shortfall>0 ? "TIME TO MOVE" : (state==="" ? "AT RISK" : "ON TRACK");
-  const body  = p.shortfall>0
-    ? `The plan still wants $${p.still_calls_for} and you hold $${p.remaining}. It is $${p.shortfall} short — something in it has to give.`
-    : (state==="" ? `The plan wants $${p.still_calls_for} of your $${p.remaining}, which eats into the $${floor} you set aside for the bench.`
-                  : `The plan wants $${p.still_calls_for} of your $${p.remaining}. $${p.slack} spare.`);
-  const co = el("div","callout "+state);
-  co.appendChild(el("div","word",word));
-  co.appendChild(el("div","rule"));
-  co.appendChild(el("div","body",body));
-  host.appendChild(co);
-
-  const sc = el("div","scale");
-  ["on track","at risk","time to move"].forEach((w,i)=>{
-    const active = (i===0&&state==="ok")||(i===1&&state==="")||(i===2&&state==="bad");
-    sc.appendChild(el("span",active?"on":"",w));
-  });
-  sc.appendChild(el("span","rt","recomputed every poll"));
-  host.appendChild(sc);
+  const foot = el("div","slotfoot");
+  foot.appendChild(el("b",null,"The tick inside each bar is that spot's budget. "));
+  foot.appendChild(document.createTextNode(
+    "Spots fill richest-first within a position, so your most expensive back is" +
+    " RB1 — a way of reading your own roster, not a claim about where ESPN put" +
+    " him. FLEX carries its own budget, taken from the RB/WR/TE money that was" +
+    " always quietly funding it."));
+  host.appendChild(foot);
 }
-
 function renderRunway(v, plan){
   const host = $("runway-body"); clear(host);
-  const s = v.scarcity||{};
-  // Squeezes are keyed by position so a row can carry its own reading.
+  const sc = v.scarcity||{};
   const squeeze = new Map((v.watchlist||[]).map(w=>[w.position,w]));
-  const keys = Object.keys(s);
+  const short = new Set(((v.strategy||{}).beyond_supply)||[]);
+  const keys = Object.keys(sc);
   if(!keys.length){ host.appendChild(el("div","empty","No reference file loaded.")); }
 
   keys.forEach(pos=>{
-    const d = s[pos];
-    const demand = d.starting_demand||1;
-    const ratio = demand ? d.startable/demand : 0;
-    const scarce = d.is_drying_up || ratio < .5;
+    const d = sc[pos];
+    const elite = d.elite||0, other = d.startable||0, starters = elite + other;
+    // **Still open, not what the league starts.** "12 needed" never moved all
+    // draft; once every team has a quarterback the honest number is 0.
+    const demand = d.open_demand||0;
+
+    // A position we still owe a starter and cannot fill. It drives the plan's
+    // verdict, so it is the one thing on this panel that is not just a count.
+    const dead = short.has(pos);
+    const row = el("div","remrow" + (dead?" dead":"") + (d.is_drying_up?" dry":""));
+    row.appendChild(el("div","rp",pos));
+    // **The two tiers are disjoint**, so their sum is what answers "how many
+    // starters are left" and neither half does alone.
+    row.appendChild(el("div","rc", `${elite} elite`));
+    row.appendChild(el("div","rc", `${other} other`));
+    row.appendChild(el("div","rt", `${starters} startable`));
+    row.appendChild(el("div","rd",
+      demand ? `${demand} still needed` : "everyone has one"));
+    host.appendChild(row);
+
+    if(d.names && d.names.length){
+      // Once a tier is nearly out the count stops being the useful thing.
+      host.appendChild(el("div","rnames", d.names.join(" · ")));
+    }
+    if(dead){
+      host.appendChild(el("div","rnames deadnote",
+        "nothing here you can still afford — the plan cannot fill this slot"));
+    }
     const sq = squeeze.get(pos);
-    let cls = "rw" + (scarce?" scarce":"");
-    if(sq) cls += " squeeze" + (sq.priced_out || sq.shortfall>=3 ? " acute" : "");
-    const row = el("div",cls);
-    const line = el("div","rwline");
-    line.appendChild(el("span",null,pos));
-    const r = el("span","r",`${d.startable} / ${demand} · ${d.elite} elite left`);
-    if(scarce) r.style.color = "var(--t-mid)";
-    line.appendChild(r);
-    row.appendChild(line);
-    const track = el("div","rwtrack");
-    const f = el("div","f");
-    f.style.width = Math.min(100, ratio*100) + "%";
-    const c = ramp(1 - Math.min(1, ratio));
-    f.style.background = ratio>=1 ? "var(--you)" : rgb(c);
-    track.appendChild(f);
-    const dm = el("div","demand"); dm.style.left = "100%"; track.appendChild(dm);
-    row.appendChild(track);
-    if(sq){
-      // "Somebody misses out" is the reading; whether that somebody is you is
-      // the part that changes what you do next.
-      row.appendChild(el("div","squeezenote",
+    if(sq && !dead){
+      host.appendChild(el("div","rnames",
         sq.priced_out
           ? `${sq.contenders} still need one and none of the ${sq.supply} left is inside your $${sq.my_ceiling}.`
           : `${sq.supply} left, ${sq.contenders} still need one — ${sq.shortfall} go without${sq.mine?", and you are one of them":""}.`));
     }
-    host.appendChild(row);
   });
 
+  host.appendChild(el("div","slotfoot",
+    "Elite is the top third of what this league starts at that position; the " +
+    "rest of that top block is the other startable tier. They do not overlap, " +
+    "so add them. Tiers rank over the whole pool — drafted or not — so a " +
+    "player's class never inflates as better ones come off the board, and the " +
+    "last man at a position is not promoted into it."));
+
+  // The footer stays what it was: who is on the clock.
   const foot = $("runway-foot"); clear(foot);
-  if(plan.order_known && plan.on_the_clock){
+  if(plan && plan.order_known && plan.on_the_clock){
     foot.appendChild(el("b",null,"on the clock "));
     foot.appendChild(document.createTextNode(
       `${plan.on_the_clock.is_me?"you":plan.on_the_clock.label} · round ${plan.on_the_clock.round}`));
@@ -699,6 +877,8 @@ function renderRunway(v, plan){
   }
 }
 
+// Consecutive failed polls. Lived here before and still does — it is the
+// connection's state, not any panel's.
 let fails = 0;
 function conn(state, text){
   const d = $("s-dot"); d.className = "dot " + state;
@@ -715,6 +895,12 @@ async function poll(){
     fails += 1;
     // Keep the last good board on screen. A number you can see and distrust
     // beats an empty panel while a clock is running.
+    //
+    // But say which failure this is. A render bug and a dead server both used to
+    // read "reconnecting", so a panel that silently stopped drawing looked like
+    // a network blip - and on a live board that is twenty minutes of trusting a
+    // stale grid. The console line is the only place the difference shows.
+    console.error("dashboard poll failed:", e);
     conn(fails>3?"dead":"stale", fails>3?"disconnected":"reconnecting");
   }
 }

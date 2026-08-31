@@ -126,9 +126,19 @@ def test_archetypes_differ_in_concentration_not_in_positional_taste(snapshot, bo
 
     assert stars.max_on_one_player > hoarder.max_on_one_player
     assert stars.bench_reserve < hoarder.bench_reserve
-    # Same shape underneath: RB still outranks TE for both of them.
+    # Same shape underneath: RB still outranks TE for both of them. Read through
+    # `by_position`, which sums the slots - the plan is declared per slot now and
+    # the positional totals are not stored at all.
     for preset in (stars, hoarder):
-        assert preset.budget_by_position[Position.RB] > preset.budget_by_position[Position.TE]
+        assert preset.by_position[Position.RB] > preset.by_position[Position.TE]
+
+    # And the concentration reaches inside a position, which is the whole reason
+    # slots exist: stars-and-scrubs wants its back money in one large piece and a
+    # small one, a hoarder wants two nearly equal ones.
+    def spread(preset):
+        return preset.budget_by_slot["RB1"] / max(1, preset.budget_by_slot["RB2"])
+
+    assert spread(stars) > spread(hoarder)
 
 
 def test_an_unknown_archetype_is_refused(snapshot, book):
@@ -182,8 +192,8 @@ def test_freeing_the_reserve_puts_the_money_back_into_positions(snapshot, book):
             == default.planned_total + default.bench_reserve
             == snapshot.budget)
     # And it lands where the market says, so the richest position gains most.
-    richest = max(default.budget_by_position, key=lambda p: default.budget_by_position[p])
-    assert lean.budget_by_position[richest] > default.budget_by_position[richest]
+    richest = max(default.by_position, key=lambda p: default.by_position[p])
+    assert lean.by_position[richest] > default.by_position[richest]
 
 
 def test_a_plan_with_no_positions_is_not_held_to_the_floor(snapshot):

@@ -17,9 +17,16 @@ into a team, so a surface can never mistake one for another:
   the number of seasons behind it travels with every value.
 - **Nothing computed at all**, under the `dossier` key. Recorded testimony about
   a person, in the words somebody chose.
+- **Nothing measured and nothing recorded**, under the `assist` key. What a
+  language model made of the other three. It is judgement, it is the only thing
+  in here that could simply be wrong, and it is the reason the key is top-level
+  and never merged into `teams`, `nomination` or `market` — a read sitting inside
+  a team object would inherit that object's authority. With the assistant off the
+  key is **absent entirely**, so today's payload is byte-identical.
 
-Soft signals — who is *likely* to bid, notability, grades — are none of the
-three. They belong to the advisory layer and are deliberately absent.
+Soft signals — who is *likely* to bid, notability, grades — are none of the first
+three. They belong to the advisory layer, and where they exist at all they live
+under `assist` where their provenance is unmistakable.
 
 Keeping draft state in a file rather than only in a conversation is also what
 lets a 3+ hour draft stay workable: the thread can be summarized or restarted
@@ -52,6 +59,7 @@ def build_view(
     seats: Any = None,
     strategy: Any = None,
     events: Any = None,
+    assist: Any = None,
 ) -> dict[str, Any]:
     if not state.is_initialized:
         return {
@@ -63,7 +71,21 @@ def build_view(
     league = state.league
     advisory = _advisory(state, book, precedent=precedent, seats=seats,
                          strategy=strategy)
-    return {
+    # Built before the payload because the per-slot plan needs the roster, and
+    # deriving which player is your RB2 twice would be two answers to one
+    # question. See `_slot_view`.
+    # One pass for every team, because every surface that wants this wants the
+    # whole grid — and `starter_gaps` walks a roster, so asking per cell would
+    # walk each one once per position.
+    exposure = _exposure_grid(state, book, advisory)
+
+    me = (
+        _team_view(state, league.my_team_id, book, dossiers, precedent, seats,
+                   exposure.get(league.my_team_id))
+        if league.my_team_id in state.teams
+        else None
+    )
+    payload = {
         "schema_version": VIEW_SCHEMA_VERSION,
         "draft_id": state.draft_id,
         "generated_at": to_iso(now_utc()),
@@ -76,14 +98,14 @@ def build_view(
             "draftable_slots": league.draftable_slots,
             "roster_slots": {slot.value: n for slot, n in league.roster.items()},
             "flex_positions": [p.value for p in league.flex_positions],
+            # What we could commit per column, ignoring our own need. The scale
+            # `teams[].exposure` is read against — see `advice/exposure.py`.
+            "exposure_scale": _exposure_scale(state, book, advisory),
         },
-        "me": (
-            _team_view(state, league.my_team_id, book, dossiers, precedent, seats)
-            if league.my_team_id in state.teams
-            else None
-        ),
+        "me": me,
         "teams": [
-            _team_view(state, team_id, book, dossiers, precedent, seats)
+            _team_view(state, team_id, book, dossiers, precedent, seats,
+                       exposure.get(team_id))
             for team_id in sorted(state.teams)
         ],
         "nomination": _nomination_view(state, book, advisory, dossiers),
@@ -101,12 +123,19 @@ def build_view(
         "watchlist": _watchlist_view(advisory),
         # Capability 12. `null` when no plan is declared — which a surface must
         # render as "no plan", never as a row of zeroes.
-        "strategy": _strategy_view(advisory),
+        "strategy": _strategy_view(advisory, (me or {}).get("roster") or []),
         "market": _market_view(state, advisory),
         "recent_sales": _recent_sales(state, book, recent),
-        "scarcity": _scarcity_view(advisory),
+        "scarcity": _scarcity_view(advisory, state, book),
         "warnings": list(state.warnings) + list(getattr(book, "warnings", ())),
     }
+    # Absent, not empty, when the assistant is off. An `"assist": {}` would make
+    # every existing consumer's payload change the day this shipped, and would
+    # read as "the assistant had nothing to say" rather than "there is no
+    # assistant" — two different things, and a surface should not have to guess.
+    if assist:
+        payload["assist"] = assist
+    return payload
 
 
 def _advisory(state: DraftState, book: Any, *, precedent=None, seats=None,
@@ -132,26 +161,100 @@ def _reference_meta(book: Any) -> dict[str, Any] | None:
     }
 
 
-def _scarcity_view(advisory) -> dict[str, Any]:
+# How thin a tier gets before the count stops being the useful thing and the
+# names start being it. "RB: 2 startable" is worse than knowing which two.
+NAME_WHEN_UNDER = 6
+NAMES_SHOWN = 5
+
+
+def _remaining_names(state, book, position, limit: int) -> list[str]:
+    """The startable players left at a position, best first.
+
+    Only called when a tier is nearly out, because a list of twenty is a wall
+    and a list of two is the answer.
+    """
+    if book is None or not len(book) or limit <= 0:
+        return []
+    taken = {p.ref.key for p in state.sold_players()}
+    rows = sorted(
+        (r for r in book.by_position(position) if r.key not in taken),
+        key=lambda r: -(book.value(r.key) or 0),
+    )[:limit]
+    return [r.name for r in rows]
+
+
+def _scarcity_view(advisory, state=None, book=None) -> dict[str, Any]:
     if advisory is None:
         return {}
-    return {
-        position.value: {
+    out: dict[str, Any] = {}
+    for position, s in advisory.scarcity.items():
+        starters = s.elite + s.startable
+        row = {
             "elite": s.elite,
             "startable": s.startable,
             "bench": s.bench,
             "total_remaining": s.total_remaining,
             "starting_demand": s.starting_demand,
+            # The moving half: starting slots still unfilled league-wide.
+            # 0 once everybody has one, however many the league starts.
+            "open_demand": s.open_demand,
             "top_value_remaining": s.top_value_remaining,
             "is_drying_up": s.is_drying_up,
         }
-        for position, s in advisory.scarcity.items()
+        # Names only once the tier is nearly out. A count answers "is there
+        # depth here"; once there is not, the question becomes "who" and a
+        # number cannot answer it.
+        if state is not None and 0 < starters < NAME_WHEN_UNDER:
+            row["names"] = _remaining_names(
+                state, book, position, min(starters, NAMES_SHOWN))
+        out[position.value] = row
+    return out
+
+
+def _exposure_scale(state: DraftState, book: Any, advisory: Any) -> dict:
+    """What *we* could commit per column, which is what exposure is read against.
+
+    Computed here rather than in a surface because it is the same arithmetic the
+    grid uses, and two implementations of a denominator is how a ratio quietly
+    stops meaning what it says.
+    """
+    league = state.league
+    if league is None or book is None or not len(book):
+        return {}
+    from ffa.advice.exposure import reach_by_position
+
+    row = reach_by_position(
+        state, book, league.my_team_id,
+        scarcity=getattr(advisory, "scarcity", None),
+        market=getattr(advisory, "market", None),
+    )
+    return {
+        (p if isinstance(p, str) else p.value): dollars
+        for p, dollars in row.items()
     }
+
+
+def _exposure_grid(state: DraftState, book: Any, advisory: Any) -> dict:
+    """Per-team, per-position exposure, or `{}` when there is nothing to read.
+
+    Reuses the advisory layer's scarcity and market reads rather than
+    recomputing them — they are already on `advisory` for this same board, and a
+    second computation is a second answer waiting to disagree with the first.
+    """
+    if book is None or not len(book):
+        return {}
+    from ffa.advice.exposure import exposure_by_team
+
+    return dict(exposure_by_team(
+        state, book,
+        scarcity=getattr(advisory, "scarcity", None),
+        market=getattr(advisory, "market", None),
+    ))
 
 
 def _team_view(
     state: DraftState, team_id: int, book: Any = None, dossiers: Any = None,
-    precedent: Any = None, seats: Any = None,
+    precedent: Any = None, seats: Any = None, exposure: Any = None,
 ) -> dict[str, Any]:
     team = state.teams.get(team_id)
     unknowns = proj.unknown_price_count(state, team_id)
@@ -186,6 +289,21 @@ def _team_view(
         },
         "starter_gaps": {
             slot.value: n for slot, n in proj.starter_gaps(state, team_id).items()
+        },
+        # **Dollars this team could commit at each position** — the lesser of
+        # their legal ceiling and what the best player left there is worth,
+        # weighted by how much of their starting lineup is still open at it.
+        #
+        # It sits beside `max_legal_bid` rather than replacing it, and the two
+        # answer different questions: the ceiling is what they could spend at
+        # all, this is what they could spend *here*. A surface colouring by the
+        # ceiling alone says a rival's kicker is as dangerous as his receiver.
+        #
+        # Arithmetic, not a forecast. See `advice/exposure.py` for why the name
+        # matters and what it is deliberately not called.
+        "exposure": {
+            (position if isinstance(position, str) else position.value): dollars
+            for position, dollars in (exposure or {}).items()
         },
         "roster": [_player_view(p, book) for p in state.players_for_team(team_id)],
     }
@@ -259,7 +377,64 @@ def _feed_view(state, book, strategy, events) -> list[dict[str, Any]] | None:
     ]
 
 
-def _strategy_view(advisory) -> dict[str, Any] | None:
+def _slot_view(read, roster: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The plan one starting slot at a time, with what actually landed in each.
+
+    **The assignment is made here, once, rather than on every surface.** A
+    dashboard would otherwise re-derive which player is your RB2 from the roster
+    list, and a second implementation of that is a second answer:
+    `projections.slot_fill` counts slots but discards which player filled which,
+    so there is no existing answer to copy and every caller would invent its own.
+
+    Within a position, buys are sorted **by price descending** and fill the
+    native slots first; the overflow goes to FLEX when there is room. That
+    mirrors the shape of `slot_fill` (native before flex) without claiming to
+    reproduce its order, which walks the roster rather than the money. It is a
+    display convention, and it is the one a person means by "my RB1".
+
+    A slot with no player carries `spent: 0` and `player: None`. An empty
+    starting spot is a state to render, not a zero to hide.
+    """
+    from ffa.config.strategy import position_of_slot
+
+    keys = list(read.budget_by_slot)
+    if not keys:
+        return []
+
+    by_position: dict[str, list] = {}
+    for player in sorted(roster, key=lambda p: -(p.get("price") or 0)):
+        by_position.setdefault(player.get("position") or "", []).append(player)
+
+    out: list[dict[str, Any]] = []
+    for key in keys:
+        position = position_of_slot(key)
+        player = None
+        if position is not None:
+            queue = by_position.get(position.value)
+            if queue:
+                player = queue.pop(0)
+        out.append({
+            "slot": key,
+            "position": position.value if position is not None else None,
+            "planned": int(read.budget_by_slot.get(key, 0)),
+            "spent": int((player or {}).get("price") or 0),
+            "player": (player or {}).get("name"),
+        })
+
+    # Whatever could not reach a native slot is flex-bound, richest first.
+    leftovers = [p for queue in by_position.values() for p in queue]
+    flex = next((row for row in out if row["slot"] == "FLEX"), None)
+    if flex is not None and leftovers and not flex["player"]:
+        best = max(leftovers, key=lambda p: p.get("price") or 0)
+        flex["player"] = best.get("name")
+        flex["spent"] = int(best.get("price") or 0)
+        flex["position"] = best.get("position")
+
+    return out
+
+
+def _strategy_view(advisory, roster: list[dict[str, Any]] | None = None
+                   ) -> dict[str, Any] | None:
     """The declared plan, and how far tonight has drifted from it.
 
     The one thing a surface must not do with this block is present it beside the
@@ -278,6 +453,15 @@ def _strategy_view(advisory) -> dict[str, Any] | None:
 
     return {
         "archetype": read.archetype,
+        # The plan as declared: one entry per starting slot, with what landed in
+        # it. Empty for a plan written before slots existed, in which case
+        # `positions` below is all there is.
+        "slots": _slot_view(read, roster or []),
+        # Positions we still owe a starter and cannot fill: the tier is empty, or
+        # everything left in it is beyond our ceiling. This is the half of a
+        # failing plan that money cannot fix, and it drives the verdict — see
+        # `advice/strategy.unfillable`.
+        "beyond_supply": [p.value for p in read.beyond_supply],
         "budget": read.budget,
         "planned_total": read.planned_total,
         "bench_reserve": read.bench_reserve,

@@ -18,11 +18,12 @@ and knowing that at pick 60 is the whole point of having written one down.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ffa.config.strategy import StrategyPreset
 from ffa.domain import projections as proj
-from ffa.domain.enums import Position
+from ffa.domain.enums import Position, RosterSlot
+from typing import Mapping
 from ffa.domain.models import DraftState
 
 # How far off plan a position has to be before it is worth a line. Below this it
@@ -91,6 +92,16 @@ class StrategyRead:
     unknown_prices: int = 0
 
     positions: tuple[PositionAdherence, ...] = ()
+    # The plan as it was actually declared: dollars per starting slot, keyed
+    # "QB", "RB1", ... "FLEX". Carried verbatim rather than recomputed - it is
+    # the one number here that was typed rather than derived, and `positions`
+    # above is its sum. Empty for a plan written before slots existed.
+    budget_by_slot: Mapping[str, int] = field(default_factory=dict)
+    # Positions with a starting slot we still owe and nothing left to fill it
+    # with — either the tier is empty or every survivor is beyond our ceiling.
+    # A plan can run out of players as well as money, and only the money was
+    # ever measured. See `unfillable`.
+    beyond_supply: tuple[Position, ...] = ()
 
     max_on_one_player: int = 0
     biggest_buy: int = 0
@@ -157,6 +168,74 @@ def _spend_by_position(state: DraftState, book, team_id: int) -> dict[Position, 
     return out
 
 
+def unfillable(state: DraftState, book, *, scarcity=None, market=None
+               ) -> tuple[Position, ...]:
+    """Positions with a starting slot we must fill and nothing left to fill it.
+
+    **A plan can fail two ways and only one of them was measured.** `shortfall`
+    catches the money running out. This catches the players running out — a
+    plan that still earmarks $22 for a flex spot is not on track when every
+    startable player left there is beyond our ceiling, however healthy the
+    arithmetic looks.
+
+    Two failures, both counted:
+
+    - nothing startable left at all, so the slot cannot be filled by anyone;
+    - stock left, but none of it inside our own ceiling. This is
+      `Squeeze.priced_out`, asked here without waiting for a squeeze to exist:
+      being outbid by the whole room and simply being poor look identical from
+      the plan's side, and both mean the same slot goes unfilled.
+
+    Native slots only. A flex opening is answered by whichever position fills it,
+    and counting it against three of them would report one hole three times.
+    """
+    league = state.league
+    if league is None or book is None or not len(book):
+        return ()
+
+    from ffa.advice.market import inflated_value, market_state
+    from ffa.advice.scarcity import scarcity_by_position
+
+    if scarcity is None:
+        scarcity = scarcity_by_position(state, book)
+    if market is None:
+        market = market_state(state, book)
+
+    me = league.my_team_id
+    ceiling = proj.max_legal_bid(state, me)
+    gaps = proj.starter_gaps(state, me)
+    taken = {p.ref.key for p in state.sold_players()}
+
+    out: list[Position] = []
+    for position, stock in scarcity.items():
+        try:
+            slot = RosterSlot(position.value)
+        except ValueError:                  # pragma: no cover - every Position maps
+            continue
+        if gaps.get(slot, 0) <= 0:
+            continue                        # nothing to fill here
+
+        supply = stock.elite + stock.startable
+        if supply <= 0:
+            out.append(position)
+            continue
+
+        # Only the startable tier counts. A bench body technically fills the
+        # slot and does not fill the *plan*, which is what this is about.
+        rows = sorted(
+            (r for r in book.by_position(position) if r.key not in taken),
+            key=lambda r: -(book.value(r.key) or 0),
+        )[:supply]
+        affordable = sum(
+            1 for r in rows
+            if (inflated_value(book, r.key, market) or book.value(r.key) or 0) <= ceiling
+        )
+        if affordable <= 0:
+            out.append(position)
+
+    return tuple(out)
+
+
 def strategy_read(
     state: DraftState, book, preset: StrategyPreset | None
 ) -> StrategyRead | None:
@@ -174,17 +253,23 @@ def strategy_read(
     spent_by_position = _spend_by_position(state, book, me)
     open_slots = proj.open_slots_by_pos(state, me)
 
+    # Read through `by_position`, never the stored field: when the plan is
+    # declared per slot - which is how `ffa strategy init` writes it now - the
+    # positional totals are the sum of those slots and are not in the file at
+    # all. FLEX contributes to no position, by design; it has none.
+    planned_by_position = preset.by_position
+
     positions = tuple(
         PositionAdherence(
             position=position,
-            planned=preset.budget_by_position.get(position, 0),
+            planned=planned_by_position.get(position, 0),
             spent=spent_by_position.get(position, 0),
             open_slots=open_slots.get(position, 0),
         )
         # Every position we planned for or spent at. A position with neither is
         # not a silent omission, it is genuinely not part of this draft for us.
         for position in Position
-        if preset.budget_by_position.get(position) or spent_by_position.get(position)
+        if planned_by_position.get(position) or spent_by_position.get(position)
     )
 
     prices = [
@@ -202,6 +287,8 @@ def strategy_read(
         remaining=proj.remaining_budget(state, me),
         unknown_prices=proj.unknown_price_count(state, me),
         positions=positions,
+        budget_by_slot=dict(preset.budget_by_slot),
+        beyond_supply=unfillable(state, book),
         max_on_one_player=preset.max_on_one_player,
         biggest_buy=max(prices, default=0),
     )

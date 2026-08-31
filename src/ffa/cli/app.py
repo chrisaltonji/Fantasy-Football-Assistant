@@ -17,11 +17,17 @@ from ffa.cli.repl import run_repl
 from ffa.config.identity import seats
 from ffa.config.loader import DEFAULT_CONFIG_PATH, load_config, load_credentials
 from ffa.config.schema import ConfigError, LeagueConfig
-from ffa.domain.events import DraftInitialized, TeamSeed
+from ffa.domain.events import (
+    DraftInitialized,
+    PlayerNominated,
+    PlayerSold,
+    TeamSeed,
+)
 from ffa.dossier.schema import DossierError
 from ffa.domain.models import LeagueSnapshot
 from ffa.domain.reducers import replay
 from ffa.ingest.manual.errors import CommandError
+from ffa.ingest.source import BidObservation
 from ffa.reference.loader import ReferenceError, load_reference
 from ffa.state.journal import JournalError
 from ffa.state.recovery import RUNS_DIR, load_run, make_draft_id, latest_run, run_dir
@@ -394,6 +400,48 @@ def cmd_data_validate(args: argparse.Namespace) -> int:
     return 0 if report.rows else 1
 
 
+def _assist_factory(args, config, store, book, precedent, seats_map, directory):
+    """Build the callable `run_repl` uses to start an assistant, or None.
+
+    Returns a factory rather than a session because the runner posts onto the
+    loop's inbox, which does not exist until the loop starts.
+
+    The key is required here: `--assist` is an explicit request for the thing
+    it pays for, and starting silently without one would look like an assistant
+    that simply never had anything to say.
+    """
+    if not getattr(args, "assist", False):
+        return None
+
+    from ffa.assist.client import ClaudeClient
+    from ffa.assist.session import build_session
+    from ffa.config.loader import load_assist_credentials
+    from ffa.view.model import build_view
+
+    creds = load_assist_credentials(required=True)
+    client = ClaudeClient(creds.api_key)
+
+    def factory(inbox):
+        return build_session(
+            complete=client.complete, inbox=inbox, league=config,
+            # No `assist=` here on purpose. This view is what the *agents*
+            # read, and feeding an agent the previous agent's output through the
+            # board would blur the one line this package exists to keep: the
+            # board is arithmetic. Cross-agent reads go through the ReadLog,
+            # where they are labelled.
+            build_view=lambda: build_view(
+                store.state, book, precedent=precedent, seats=seats_map,
+                strategy=config.strategy,
+            ),
+            run_dir=directory,
+            dossiers=_load_dossiers(config, args.dossiers),
+            precedent=precedent, seats=seats_map,
+            reference=book, cap_dollars=args.assist_budget,
+        )
+
+    return factory
+
+
 def cmd_draft(args: argparse.Namespace) -> int:
     config = load_config(args.config)
 
@@ -429,10 +477,13 @@ def cmd_draft(args: argparse.Namespace) -> int:
     seats_map = seats(config)
 
     try:
+        book = load_book(config)
         return run_repl(
             store, stdin=sys.stdin, stdout=sys.stdout,
-            book=load_book(config), source=source,
+            book=book, source=source,
             precedent=precedent, seats=seats_map,
+            assist_factory=_assist_factory(
+                args, config, store, book, precedent, seats_map, directory),
             # Read from config, not the journal: a plan is an intention, and
             # revising it mid-draft is a legitimate thing to do.
             strategy=config.strategy,
@@ -599,7 +650,10 @@ def cmd_sim(args: argparse.Namespace) -> int:
         faults=profile,
         human_team=config.my_team_id if args.against_me else None,
     )
-    source = SimSource(sim)
+    # The ladder exists only to give the tick agent something to read. Off
+    # otherwise, so a plain `ffa sim` puts exactly what it always did on the
+    # queue and every existing sim test sees the stream it always saw.
+    source = SimSource(sim, bids=bool(args.assist))
 
     print(f"simulating {draft_id}")
     print(f"  seed     {args.seed}")
@@ -607,17 +661,166 @@ def cmd_sim(args: argparse.Namespace) -> int:
     print(f"  seat     {'you bid manually' if args.against_me else 'bots fill every seat'}")
 
     store = DraftStore.create(directory, init)
+    assist = _sim_assist(args, config, store, directory) if args.assist else None
     try:
-        for event in source.events():
-            store.dispatch(event)
+        stream = source.events_with_bids() if assist is not None else source.events()
+        for item in stream:
+            # A `BidObservation` is not an event and never reaches the store.
+            # The live loop makes exactly this split in `_TaggingQueue`; making
+            # it here too is what stops the two disagreeing about ground truth.
+            if isinstance(item, BidObservation):
+                assist.observe(item)
+                continue
+            store.dispatch(item)
+            if assist is not None:
+                assist.step(item)
         state = store.state
     finally:
         store.close()
+
+    if assist is not None:
+        print()
+        print(assist.session.summary())
+        report = assist.session.timing_report()
+        if report:
+            print()
+            print(report)
 
     print(f"\n{source.status().detail}")
     print(f"journal  {directory / 'events.jsonl'}")
     _print_sim_summary(state, sim)
     return 0
+
+
+def _sim_assist(args, config, store, directory):
+    """An assistant for a simulated draft. Same code path, no ESPN.
+
+    This is the acceptance test the plan asks for: real nominations against the
+    real API, and an actual invoice rather than an estimate of one. Cap it with
+    `--assist-budget` — at 50c it mutes after roughly fifteen reads, which is
+    enough to see whether they are any good before paying for 180.
+    """
+    import queue as _queue
+
+    from ffa.assist.client import ClaudeClient
+    from ffa.assist.session import build_session
+    from ffa.config.loader import load_assist_credentials
+    from ffa.view.model import build_view
+
+    creds = load_assist_credentials(required=True)
+    client = ClaudeClient(creds.api_key)
+    book = load_book(config)
+    precedent = _load_precedent(
+        config,
+        getattr(args, "precedent", None) or Path("data/manager_precedent.json"),
+    )
+    seats_map = seats(config)
+
+    session = build_session(
+        complete=client.complete, inbox=_queue.Queue(), league=config,
+        build_view=lambda: build_view(
+            store.state, book, precedent=precedent, seats=seats_map,
+            strategy=config.strategy,
+        ),
+        run_dir=directory, dossiers=_load_dossiers(config, args.dossiers),
+        precedent=precedent, seats=seats_map, reference=book,
+        cap_dollars=args.assist_budget,
+    )
+    print(session.banner())
+    return _SimAssist(session, store, book, config.strategy)
+
+
+class _SimAssist:
+    """Drives every agent through a simulated draft, and waits for each read.
+
+    **Waiting is deliberate, and only right here.** A live draft must never
+    block on a read — that is the entire point of `runner.py`, and the unit
+    tests cover it. But a simulator dispatches a whole draft in well under a
+    second, so without waiting every read would be superseded before it landed
+    and the run would prove nothing except that supersede works. Waiting turns
+    this into what it is for: real reads, in order, against the real API, with a
+    real invoice at the end.
+
+    It calls the REPL's own trigger functions rather than reimplementing them.
+    That is the whole point of the rehearsal — firing the agents by a different
+    route would be rehearsing something the draft does not do.
+    """
+
+    # Long enough for the slowest profile, short enough that one wedged call
+    # cannot hold a rehearsal open indefinitely.
+    WAIT = 60
+
+    def __init__(self, session, store, book, strategy) -> None:
+        from ffa.cli.repl import _Bidding
+
+        self.session = session
+        self.store = store
+        self.book = book
+        self.strategy = strategy
+        self.bidding = _Bidding()
+
+    def observe(self, observation) -> None:
+        """One price move off the synthetic ladder, then a tick if warranted."""
+        from ffa.cli.repl import _maybe_tick
+
+        if self.session.runner.muted:
+            return
+        if not self.bidding.observe(observation):
+            return
+        _maybe_tick(self.session, self.store, self.bidding)
+        self._drain(f"${observation.price}")
+
+    def step(self, event) -> None:
+        """One journal event, and whichever agents it triggers."""
+        from ffa.cli.repl import _maybe_assist, _maybe_narrator, _maybe_strategist
+
+        if self.session.runner.muted:
+            return
+
+        if isinstance(event, PlayerNominated):
+            _maybe_assist(self.session, self.store, self.book, [event],
+                          self.bidding, strategy=self.strategy)
+            self._drain(self._name(event))
+        elif isinstance(event, PlayerSold):
+            _maybe_strategist(self.session, self.store, self.book, [event],
+                              self.strategy)
+            _maybe_narrator(self.session, self.store, self.book, [event],
+                            self.strategy)
+            self._drain(self._name(event))
+
+    def _drain(self, label: str = "") -> None:
+        """Settle everything in flight, printing exactly what the REPL would show.
+
+        Drains on `in_flight` rather than on a fixed count because a trigger may
+        submit nothing at all — the Strategist is gated on a plan transition, the
+        tick on a slot — and waiting for a read that was never requested would
+        stall the whole run for `WAIT` seconds per pick.
+        """
+        from ffa.assist.runner import ASSIST
+        from ffa.cli.repl import _settle_assist
+
+        while self.session.runner.in_flight or not self.session.runner.inbox.empty():
+            try:
+                tag, outcome = self.session.runner.inbox.get(timeout=self.WAIT)
+            except Exception:  # noqa: BLE001 - a silent read, never a crash
+                return
+            if tag != ASSIST:
+                continue
+
+            shown: list[str] = []
+            _settle_assist(shown.append, self.session, outcome, self.bidding)
+            head = f"  {label or outcome.record.player_key} [{outcome.record.agent}]"
+            if shown:
+                print("\n" + head + "\n" + "\n".join(shown))
+            elif outcome.record.status != "ok":
+                print(f"\n{head}: {outcome.record.status} - {outcome.record.detail}")
+            if self.session.runner.muted:
+                print("\n! " + self.session.runner.muted_reason)
+                return
+
+    @staticmethod
+    def _name(event) -> str:
+        return getattr(getattr(event, "player", None), "name", "") or ""
 
 
 def _print_sim_summary(state, sim) -> int:
@@ -948,12 +1151,22 @@ def build_parser() -> argparse.ArgumentParser:
     draft.add_argument("--ignore-unmatched-teams", action="store_true",
                        help="start even if draft-room team names do not match "
                             "the config (picks for them may be misattributed)")
+    draft.add_argument("--dossiers", type=Path,
+        default=Path("data/dossiers.json"),
+        help="manager notes; most of what makes the cached prefix worth having")
+    draft.add_argument("--assist", action="store_true",
+        help="add model reads alongside the arithmetic (needs ANTHROPIC_API_KEY)")
+    draft.add_argument("--assist-budget", type=float, default=25.0,
+        metavar="DOLLARS", help="hard cap for one draft (default 25)")
     draft.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     draft.add_argument("--runs", type=Path, default=RUNS_DIR)
     draft.add_argument("--precedent", type=Path,
                        default=Path("data/manager_precedent.json"),
                        help="spending scripts from prior drafts; absent is fine")
     draft.set_defaults(func=cmd_draft)
+
+    from ffa.cli.night import add_parser as _night_parser
+    _night_parser(sub, default_config=DEFAULT_CONFIG_PATH, default_runs=RUNS_DIR)
 
     sim = sub.add_parser("sim", help="run a simulated auction (no ESPN needed)")
     sim.add_argument("--seed", type=int, default=0, help="reproduces a run exactly")
@@ -966,6 +1179,13 @@ def build_parser() -> argparse.ArgumentParser:
     sim.add_argument("--against-me", action="store_true",
                      help="leave your seat empty instead of filling it with a bot")
     sim.add_argument("--force", action="store_true", help="overwrite an existing run")
+    sim.add_argument("--dossiers", type=Path,
+        default=Path("data/dossiers.json"),
+        help="manager notes; most of what makes the cached prefix worth having")
+    sim.add_argument("--assist", action="store_true",
+        help="add model reads alongside the arithmetic (needs ANTHROPIC_API_KEY)")
+    sim.add_argument("--assist-budget", type=float, default=25.0,
+        metavar="DOLLARS", help="hard cap for one draft (default 25)")
     sim.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     sim.add_argument("--runs", type=Path, default=RUNS_DIR)
     sim.set_defaults(func=cmd_sim)

@@ -117,6 +117,33 @@ These expire. If you start seeing `401 Unauthorized`, re-copy them.
 
 ### Live, against the ESPN draft room
 
+One command on the night itself:
+
+```bash
+ffa night                    # preflight, dashboard, and the draft
+ffa night --check-only       # just the gates — run this an hour early
+ffa night --launch-chrome    # also start the debug Chrome and wait for the room
+```
+
+It refuses to start if a gate fails, because a draft begun without the reference
+sheet is worse than one begun two minutes later:
+
+```
+  [ok  ] config                     Trash House Fantasy Football — 12 teams, $200 each
+  [ok  ] your team                  3 christopher
+  [ok  ] auction values             352 players
+  [ok  ] draft plan                 declared
+  [ok  ] dossiers                   12 manager(s)
+  [ok  ] api key                    loaded
+  [FAIL] draft room                 Chrome is up, no draft room open
+```
+
+The dashboard is spawned pointed at **the run the draft just created** — it waits
+for it rather than resolving "latest", which is how a board ends up showing last
+week — and is stopped when you quit.
+
+The pieces still work on their own:
+
 ```bash
 python tools/draft_room_probe.py --launch   # one-time: a Chrome with a debug port
 # log into ESPN in that window and open your draft room, then:
@@ -224,6 +251,22 @@ tool says so rather than presenting a guess as a number.
 Runs live in `runs/<draft_id>/events.jsonl` — an append-only log that *is* the
 draft. It's plain JSON lines; you can read it, grep it, and hand it to anyone
 debugging a discrepancy.
+
+### Asking the assistant
+
+With `--assist` running, `ask` puts a question to it directly:
+
+```
+> ask who can still afford him
+thinking...
+
+[answer] Dave has $52 and two open back slots; nobody else above $30
+         still needs the position.
+```
+
+It answers in prose and quotes numbers the board already computed rather than
+working any out. It will tell you what a choice would cost. It will not tell you
+which one to make.
 
 ### Your auction values
 
@@ -558,9 +601,43 @@ Adding a web UI is one new `DraftStore` subscriber plus one new `EventSource`.
 2026-08-17. Never run it live for the first time on the day.
 
 Still ahead, and all of it product rather than plumbing: the dashboard
-(`docs/dashboard_requirements.md` is a full spec with no implementation) and the
-inference layer that reads `build_view()` beside the hot path rather than inside
-it.
+(`docs/dashboard_requirements.md` is a full spec with no implementation).
+
+---
+
+## The assistant
+
+Off unless you ask for it: `ffa draft --assist`, or `ffa sim --assist` to
+rehearse it against a simulated draft and get a real invoice rather than an
+estimate of one. Cap it with `--assist-budget`.
+
+Four agents share one cached prefix and one memory. Full design in
+[`docs/agents.md`](docs/agents.md).
+
+| Agent | Fires on | Says |
+|---|---|---|
+| **The Room** | a player is nominated | where each live rival plausibly stops, and what is worth noticing |
+| **The Room**, again | every ~5s while the bidding runs | what the last few seconds changed — nothing, most of the time |
+| **The Strategist** | your plan state changes | what the pick did to the plan, and options that would help |
+| **The Narrator** | the feed flags something notable | one sentence on why it mattered |
+| **The Analyst** | you type `ask ...` | a direct answer to a direct question |
+
+Two rules hold it in place, and both are mechanical rather than prompted:
+
+- **It never tells you what to do.** Not bid, not pass, not chase, not avoid.
+  `assist/guard.py` checks every reply after parsing and drops what breaks it.
+  The reason is placement: this text lands beside `max_advisable_bid`, which is
+  arithmetic, and anything printed next to a computed number inherits its
+  authority.
+- **It never contradicts arithmetic.** An estimate above a rival's
+  `max_legal_bid` describes money that does not exist, so it is dropped and
+  logged — never rewritten, because a corrected estimate is a fabrication
+  wearing the model's byline.
+
+Reads are written to `runs/<id>/assist.jsonl`, beside the journal and
+deliberately not part of it. `events.jsonl` is ground truth; that file is
+opinions. A draft run with `--assist` and one without produce a byte-identical
+journal, and there is a test that says so.
 
 ---
 

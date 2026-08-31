@@ -11,6 +11,15 @@ Two numbers that must not be confused:
 Threat assessment here is strictly **capacity**: can this rival afford him, and
 do they have somewhere to put him. Whether they *will* bid is inference and
 belongs to the Claude layer, which reads the dossiers.
+
+`advice/exposure.py` sits next to this and is worth reading against it, because
+it looks at first glance like the score this module refuses to produce. It is
+not. It answers "how much could this team commit at this position" from two
+computed facts — a legal ceiling and a count of unfilled starting slots — and it
+still says nothing about anybody's intent. The line has not moved: no `will_bid`,
+no `likelihood`, no number that claims to know a person. What changed is that
+"could" is now answered per position instead of once per team, because answering
+it once per team told you a rival's kicker was as dangerous as his receiver.
 """
 
 from __future__ import annotations

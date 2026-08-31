@@ -54,6 +54,7 @@ class StateReader:
         self._seats = seats
         self._lock = threading.Lock()
         self._stamp: tuple[int, float] | None = None
+        self._assist_stamp: tuple[int, float] | None = None
         self._cached: dict[str, Any] | None = None
         self.warnings: list[str] = []
 
@@ -61,12 +62,26 @@ class StateReader:
     def journal(self) -> Path:
         return self.run_dir / "events.jsonl"
 
-    def _fingerprint(self) -> tuple[int, float] | None:
+    @property
+    def sidecar(self) -> Path:
+        """The assistant's ledger. Read-only, and optional in every sense.
+
+        This is the closest the dashboard gets to inference: it reads what the
+        agents already said and renders it. It makes **no API calls** — a second
+        process holding a key and spending money behind a browser tab is a
+        different tool from a read-only board, and this stays the read-only one.
+        """
+        return self.run_dir / "assist.jsonl"
+
+    def _stat(self, path: Path) -> tuple[int, float] | None:
         try:
-            stat = self.journal.stat()
+            stat = path.stat()
         except OSError:
             return None
         return (stat.st_size, stat.st_mtime)
+
+    def _fingerprint(self) -> tuple[int, float] | None:
+        return self._stat(self.journal)
 
     def view(self) -> dict[str, Any]:
         from ffa.domain.reducers import replay
@@ -75,7 +90,14 @@ class StateReader:
 
         with self._lock:
             stamp = self._fingerprint()
-            if stamp is not None and stamp == self._stamp and self._cached is not None:
+            # Two files, two clocks. The sidecar grows on its own schedule — a
+            # read lands seconds after the pick that triggered it — so keying
+            # the cache on the journal alone would leave every read invisible
+            # until the *next* pick happened to invalidate it.
+            assist_stamp = self._stat(self.sidecar)
+            if (stamp is not None and stamp == self._stamp
+                    and assist_stamp == self._assist_stamp
+                    and self._cached is not None):
                 return self._cached
 
             if stamp is None:
@@ -99,13 +121,39 @@ class StateReader:
                 # view by journal fingerprint, so a 180-pick fold runs once per
                 # pick rather than once per poll.
                 events=events,
+                assist=self._assist_view(state),
             )
             if warnings:
                 view.setdefault("warnings", []).extend(warnings)
 
             self._stamp = stamp
+            self._assist_stamp = assist_stamp
             self._cached = view
             return view
+
+    def _assist_view(self, state) -> dict:
+        """Whatever the agents said, or `{}`.
+
+        Swallows everything on purpose. A corrupt sidecar, a missing module, an
+        `assist/` package that was never installed — none of it is a reason for
+        the board to stop rendering. The dashboard's job is the arithmetic, and
+        the arithmetic does not depend on any of this.
+        """
+        try:
+            from ffa.assist.context import ReadLog
+            from ffa.assist.view import assist_view
+
+            log = ReadLog.load(self.sidecar)
+            if not log.all():
+                return {}
+            # `nomination.ref.key`, the same path view/model.py uses. Reaching
+            # for a `player_key` attribute that does not exist would return ""
+            # forever and silently show no current read at all.
+            nomination = getattr(state, "current_nomination", None)
+            key = getattr(getattr(nomination, "ref", None), "key", "") or ""
+            return assist_view(log, player_key=key)
+        except Exception:  # noqa: BLE001 - never let inference break the board
+            return {}
 
 
 def make_handler(reader: StateReader, interval: float):

@@ -103,10 +103,24 @@ class _Watermarks:
     seen: bool = False
 
 
-def _plan_state(read) -> str | None:
-    """The three-word status the plan callout shows, as a comparable token."""
+def plan_state(read) -> str | None:
+    """The three-word status the plan callout shows, as a comparable token.
+
+    Public because the Strategist is asked to echo it back and `check_strategist`
+    compares the echo against it. Two computations of the same three words would
+    eventually disagree, and the disagreement would show up as the guard
+    rejecting correct replies — which reads like a model fault and is not one.
+    """
     if read is None:
         return None
+    # **Checked before the money, because it cannot be fixed with money.** A
+    # shortfall says the plan wants more than we hold, and holding out or
+    # spending less can still rescue it. A position with no affordable starter
+    # left is a slot the plan simply cannot fill, and no amount of budget
+    # discipline changes that — it is the sharper of the two failures and it
+    # used to read `on track`.
+    if read.beyond_supply:
+        return "time to move"
     if read.shortfall > 0:
         return "time to move"
     return "at risk" if read.slack < (read.bench_reserve or 0) else "on track"
@@ -275,7 +289,7 @@ def build_feed(
         if strategy is not None and getattr(strategy, "is_set", False):
             from ffa.advice.strategy import strategy_read
 
-            now = _plan_state(strategy_read(state, book, strategy))
+            now = plan_state(strategy_read(state, book, strategy))
             if now and marks.plan_state and now != marks.plan_state:
                 emit(event, "plan",
                      "high" if now == "time to move" else "normal",

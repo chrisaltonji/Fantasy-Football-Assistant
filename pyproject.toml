@@ -27,6 +27,13 @@ espn = [
     "playwright>=1.40",
 ]
 
+# The inference layer. Optional for the same reason: every number the tool
+# asserts is arithmetic over the journal and is exact without a key. `--assist`
+# adds judgement on top and nothing underneath.
+assist = [
+    "anthropic>=0.40",
+]
+
 [project.scripts]
 ffa = "ffa.cli.app:main"
 
@@ -43,3 +50,11 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+# Live tests cost money and need a key, so they never run by default — an
+# ordinary `pytest` on a laptop with a key in .env must not quietly bill for it.
+# Run them deliberately: `pytest -m live`.
+addopts = "-m 'not live'"
+markers = [
+    "live: hits the real Claude API. Needs ANTHROPIC_API_KEY and spends money.",
+]

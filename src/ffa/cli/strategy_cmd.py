@@ -36,6 +36,25 @@ def _load_book(config):
     return load_book(config)
 
 
+def _print_slots(preset) -> None:
+    """The plan as a lineup, in roster order, with a bar you can read at a glance.
+
+    Roster order rather than by size: these are the ten spots you have to fill,
+    and a list that reorders itself as you edit is one you have to re-find every
+    time you look at it. The bar is proportional to the largest slot, so the
+    *shape* of the plan - which is the only thing the archetype decides - is
+    visible without doing arithmetic on the numbers beside it.
+    """
+    slots = getattr(preset, "budget_by_slot", None)
+    if not slots:
+        return
+    widest = max(slots.values()) or 1
+    for key, dollars in slots.items():
+        bar = "#" * max(0, round(dollars / widest * 24))
+        note = "   flex money, pulled from RB/WR/TE" if key == "FLEX" else ""
+        print(f"      {key:<5} ${dollars:<4} {bar}{note}")
+
+
 def cmd_strategy_init(args: argparse.Namespace) -> int:
     config = load_config(args.path)
 
@@ -87,15 +106,14 @@ def cmd_strategy_init(args: argparse.Namespace) -> int:
           f"   (legal ceiling ${ceiling})")
     at_floor = " (the $1-per-slot floor)" if preset.bench_reserve == floor else ""
     print(f"  bench        ${preset.bench_reserve} held back{at_floor}")
-    print(f"  positions    ${preset.planned_total} across "
-          f"{len(preset.budget_by_position)}:")
-    for position, dollars in sorted(
-        preset.budget_by_position.items(), key=lambda kv: -kv[1]
-    ):
-        print(f"      {position.value:<5} ${dollars}")
+    print(f"  starters     ${preset.planned_total} across "
+          f"{len(preset.budget_by_slot)} slot(s):")
+    _print_slots(preset)
     print()
-    print("These come from the market's own shape, not from an opinion about "
-          "positions. Edit [strategy] in the config to make them yours.")
+    print("The split across positions comes from the market's own shape; the "
+          "split *within* a position comes from the archetype's concentration, "
+          "which is the only thing it has ever meant. Edit "
+          "[strategy.budget_by_slot] to make them yours.")
 
     if book.is_sample:
         print(
@@ -126,10 +144,13 @@ def cmd_strategy_show(args: argparse.Namespace) -> int:
         print(f"plan: {preset.archetype or 'custom'}   (no draft started yet)")
         print(f"  one player   at most ${preset.max_on_one_player}")
         print(f"  bench        ${preset.bench_reserve} held back")
-        for position, dollars in sorted(
-            preset.budget_by_position.items(), key=lambda kv: -kv[1]
-        ):
-            print(f"  {position.value:<5} ${dollars}")
+        _print_slots(preset)
+        if not preset.budget_by_slot:
+            # A plan declared before slots existed. Positions are all it has.
+            for position, dollars in sorted(
+                preset.by_position.items(), key=lambda kv: -kv[1]
+            ):
+                print(f"  {position.value:<5} ${dollars}")
         return 0
 
     events, warnings = load_run(directory)
