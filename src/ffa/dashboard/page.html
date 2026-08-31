@@ -261,11 +261,19 @@ body{
 .slot .sfill{position:absolute;left:0;top:2px;bottom:2px;border-radius:6px}
 .slot .stick{position:absolute;top:0;bottom:0;width:2px;background:var(--centre);z-index:2}
 .slot .sr{font:500 11px/1 var(--mono);text-align:right;color:var(--caption)}
-.slot.over .sr, .slot.over .sl{color:var(--rec)}
+.slot.under .sr, .slot.under .sl{color:var(--good)}
+.slot.warn  .sr, .slot.warn  .sl{color:var(--t-mid)}
+.slot.over  .sr, .slot.over  .sl{color:var(--t-max)}
 .who{grid-column:2/4;font:400 10.5px/1.3 var(--ui);color:var(--caption);margin:-1px 0 5px}
 .slotfoot{font:400 10.5px/1.5 var(--ui);color:var(--caption);
           border-top:1px solid var(--card-line);margin-top:11px;padding-top:8px}
 .slotfoot b{color:var(--label);font-weight:500}
+.slotkey{display:flex;gap:12px;margin-top:11px;font:500 10px/1 var(--ui)}
+.slotkey .kk{display:flex;align-items:center;gap:5px;color:var(--caption)}
+.slotkey .kk::before{content:"";width:9px;height:9px;border-radius:2px}
+.slotkey .good::before{background:var(--good)}
+.slotkey .warn::before{background:var(--t-mid)}
+.slotkey .bad::before{background:var(--t-max)}
 
 /* remaining players: counts, and names once a tier is nearly out */
 .remrow{display:grid;grid-template-columns:34px 62px 62px 1fr auto;gap:8px;
@@ -747,17 +755,25 @@ function renderPlan(v){
   // reading the figures beside it.
   const widest = Math.max(1, ...slots.map(r => Math.max(r.planned||0, r.spent||0)));
 
+  // Three states, and the middle one is the point: a few dollars over a spot's
+  // budget is a normal auction, not a broken plan. 10% is the line between
+  // "paid up" and "this needs an answer somewhere else".
+  const OVERPAY = 0.10;
+
   slots.forEach(r => {
     const planned = r.planned||0, spent = r.spent||0;
-    const over = spent > planned && planned > 0;
-    const row = el("div","slot" + (over?" over":"") + (r.player?"":" vacant"));
+    const over = planned > 0 && spent > planned * (1 + OVERPAY);
+    const warn = planned > 0 && spent > planned && !over;
+    const row = el("div","slot" + (over?" over":warn?" warn":spent>0?" under":"")
+                  + (r.player?"":" vacant"));
     row.appendChild(el("div","sl", r.slot));
 
     const track = el("div","strack");
     if(spent > 0){
       const fill = el("div","sfill");
       fill.style.width = Math.min(100, spent/widest*100) + "%";
-      fill.style.background = over ? "var(--rec)" : "var(--fill)";
+      fill.style.background = over ? "var(--t-max)"
+                            : warn ? "var(--t-mid)" : "var(--good)";
       track.appendChild(fill);
     }
     if(planned > 0){
@@ -772,10 +788,19 @@ function renderPlan(v){
     host.appendChild(row);
 
     if(r.player){
+      // Name the overspend in dollars either way - the colour says how much it
+      // matters, the number says how much it is.
+      const gap = spent - planned;
       host.appendChild(el("div","who",
-        r.player + (over ? ` · $${spent-planned} over` : "")));
+        r.player + (gap > 0 ? ` · $${gap} over` : gap < 0 ? ` · $${-gap} under` : "")));
     }
   });
+
+  const key = el("div","slotkey");
+  key.appendChild(el("span","kk good","at or under"));
+  key.appendChild(el("span","kk warn","up to 10% over"));
+  key.appendChild(el("span","kk bad","more than 10% over"));
+  host.appendChild(key);
 
   const foot = el("div","slotfoot");
   foot.appendChild(el("b",null,"The tick inside each bar is that spot's budget. "));
