@@ -126,7 +126,7 @@ def build_view(
         "strategy": _strategy_view(advisory, (me or {}).get("roster") or []),
         "market": _market_view(state, advisory),
         "recent_sales": _recent_sales(state, book, recent),
-        "scarcity": _scarcity_view(advisory),
+        "scarcity": _scarcity_view(advisory, state, book),
         "warnings": list(state.warnings) + list(getattr(book, "warnings", ())),
     }
     # Absent, not empty, when the assistant is off. An `"assist": {}` would make
@@ -161,11 +161,35 @@ def _reference_meta(book: Any) -> dict[str, Any] | None:
     }
 
 
-def _scarcity_view(advisory) -> dict[str, Any]:
+# How thin a tier gets before the count stops being the useful thing and the
+# names start being it. "RB: 2 startable" is worse than knowing which two.
+NAME_WHEN_UNDER = 6
+NAMES_SHOWN = 5
+
+
+def _remaining_names(state, book, position, limit: int) -> list[str]:
+    """The startable players left at a position, best first.
+
+    Only called when a tier is nearly out, because a list of twenty is a wall
+    and a list of two is the answer.
+    """
+    if book is None or not len(book) or limit <= 0:
+        return []
+    taken = {p.ref.key for p in state.sold_players()}
+    rows = sorted(
+        (r for r in book.by_position(position) if r.key not in taken),
+        key=lambda r: -(book.value(r.key) or 0),
+    )[:limit]
+    return [r.name for r in rows]
+
+
+def _scarcity_view(advisory, state=None, book=None) -> dict[str, Any]:
     if advisory is None:
         return {}
-    return {
-        position.value: {
+    out: dict[str, Any] = {}
+    for position, s in advisory.scarcity.items():
+        starters = s.elite + s.startable
+        row = {
             "elite": s.elite,
             "startable": s.startable,
             "bench": s.bench,
@@ -174,8 +198,14 @@ def _scarcity_view(advisory) -> dict[str, Any]:
             "top_value_remaining": s.top_value_remaining,
             "is_drying_up": s.is_drying_up,
         }
-        for position, s in advisory.scarcity.items()
-    }
+        # Names only once the tier is nearly out. A count answers "is there
+        # depth here"; once there is not, the question becomes "who" and a
+        # number cannot answer it.
+        if state is not None and 0 < starters < NAME_WHEN_UNDER:
+            row["names"] = _remaining_names(
+                state, book, position, min(starters, NAMES_SHOWN))
+        out[position.value] = row
+    return out
 
 
 def _exposure_scale(state: DraftState, book: Any, advisory: Any) -> dict:
@@ -424,6 +454,11 @@ def _strategy_view(advisory, roster: list[dict[str, Any]] | None = None
         # it. Empty for a plan written before slots existed, in which case
         # `positions` below is all there is.
         "slots": _slot_view(read, roster or []),
+        # Positions we still owe a starter and cannot fill: the tier is empty, or
+        # everything left in it is beyond our ceiling. This is the half of a
+        # failing plan that money cannot fix, and it drives the verdict — see
+        # `advice/strategy.unfillable`.
+        "beyond_supply": [p.value for p in read.beyond_supply],
         "budget": read.budget,
         "planned_total": read.planned_total,
         "bench_reserve": read.bench_reserve,

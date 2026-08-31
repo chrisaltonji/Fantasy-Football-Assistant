@@ -135,6 +135,12 @@ A pick has just landed. Assess the declared plan against where the draft now is.
 `verdict_echo` exactly. Do not re-derive it; if your reading disagrees with it,
 your reading is what is wrong, and the reply will be discarded.
 
+`beyond_supply` names positions where a starting slot is still owed and nothing
+left can fill it — the tier is empty, or every survivor is above our ceiling.
+When it is not empty the verdict is "time to move" for that reason and not a
+money one, and saying so is the most useful sentence available: a shortfall can
+be argued with by spending less, and this cannot be argued with at all.
+
 In `assessment`, say what has actually changed for this plan and why. In `moves`,
 give at most three concrete things that would help — a position to prioritise,
 money to free up, an allocation that no longer fits the board. These are options,

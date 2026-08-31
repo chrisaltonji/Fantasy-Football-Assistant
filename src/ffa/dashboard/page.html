@@ -267,15 +267,17 @@ body{
           border-top:1px solid var(--card-line);margin-top:11px;padding-top:8px}
 .slotfoot b{color:var(--label);font-weight:500}
 
-/* remaining players, two disjoint tiers on one scale */
-.rem{display:grid;grid-template-columns:34px 1fr;gap:9px;align-items:center;margin-top:8px}
-.rem .rp{font:600 11px/1 var(--mono);color:var(--label)}
-.rem .rbar{position:relative;height:13px;background:var(--track);border-radius:3px;
-           display:flex;overflow:hidden}
-.rem .relite{background:var(--t-max)}
-.rem .rstart{background:var(--t-low)}
-.rem.dry .rp{color:var(--t-max)}
-.rnums{font:500 10.5px/1.35 var(--mono);color:var(--caption);margin:3px 0 0 43px}
+/* remaining players: counts, and names once a tier is nearly out */
+.remrow{display:grid;grid-template-columns:34px 62px 62px 1fr auto;gap:8px;
+        align-items:baseline;margin-top:7px;font:500 11px/1.4 var(--mono)}
+.remrow .rp{font-weight:600;color:var(--label)}
+.remrow .rc{color:var(--caption)}
+.remrow .rt{color:var(--ink2)}
+.remrow .rd{color:var(--faint);font-size:10.5px}
+.remrow.dry .rp{color:var(--t-mid)}
+.remrow.dead .rp, .remrow.dead .rt{color:var(--t-max)}
+.rnames{font:400 10.5px/1.4 var(--ui);color:var(--caption);margin:2px 0 0 42px}
+.rnames.deadnote{color:var(--t-max)}
 .legend .youcap{font:400 9.5px/1 var(--ui);color:var(--caption);margin-left:6px}
 /* Live on the player up right now: a ring, so it reads on top of whatever
    intensity the money already put in the cell. */
@@ -788,38 +790,39 @@ function renderRunway(v, plan){
   const host = $("runway-body"); clear(host);
   const sc = v.scarcity||{};
   const squeeze = new Map((v.watchlist||[]).map(w=>[w.position,w]));
+  const short = new Set(((v.strategy||{}).beyond_supply)||[]);
   const keys = Object.keys(sc);
   if(!keys.length){ host.appendChild(el("div","empty","No reference file loaded.")); }
-
-  // One scale across every position, so RB's depth is comparable with TE's
-  // instead of each row filling its own bar.
-  const widest = Math.max(1, ...keys.map(k => (sc[k].elite||0) + (sc[k].startable||0)));
 
   keys.forEach(pos=>{
     const d = sc[pos];
     const elite = d.elite||0, other = d.startable||0, starters = elite + other;
     const demand = d.starting_demand||0;
-    const sq = squeeze.get(pos);
 
-    const row = el("div","rem" + (d.is_drying_up?" dry":""));
+    // A position we still owe a starter and cannot fill. It drives the plan's
+    // verdict, so it is the one thing on this panel that is not just a count.
+    const dead = short.has(pos);
+    const row = el("div","remrow" + (dead?" dead":"") + (d.is_drying_up?" dry":""));
     row.appendChild(el("div","rp",pos));
-    const bar = el("div","rbar");
-    if(elite){ const e = el("div","relite"); e.style.width = elite/widest*100+"%"; bar.appendChild(e); }
-    if(other){ const t = el("div","rstart"); t.style.width = other/widest*100+"%"; bar.appendChild(t); }
-    row.appendChild(bar);
+    // **The two tiers are disjoint**, so their sum is what answers "how many
+    // starters are left" and neither half does alone.
+    row.appendChild(el("div","rc", `${elite} elite`));
+    row.appendChild(el("div","rc", `${other} other`));
+    row.appendChild(el("div","rt", `${starters} startable`));
+    row.appendChild(el("div","rd", demand ? `${demand} needed` : ""));
     host.appendChild(row);
 
-    // **The two tiers are disjoint**, so their sum is what answers "how many
-    // starters are left" and neither half does on its own. Spelling the addition
-    // out is the whole point: `10 startable` on its own was read as the total.
-    host.appendChild(el("div","rnums",
-      `${elite} elite + ${other} other = ${starters} startable` +
-      (demand ? `  ·  ${demand} still to start league-wide` : "")));
-
-    if(sq){
-      // "Somebody misses out" is the reading; whether that somebody is you is
-      // the part that changes what you do next.
-      host.appendChild(el("div","rnums squeezenote",
+    if(d.names && d.names.length){
+      // Once a tier is nearly out the count stops being the useful thing.
+      host.appendChild(el("div","rnames", d.names.join(" · ")));
+    }
+    if(dead){
+      host.appendChild(el("div","rnames deadnote",
+        "nothing here you can still afford — the plan cannot fill this slot"));
+    }
+    const sq = squeeze.get(pos);
+    if(sq && !dead){
+      host.appendChild(el("div","rnames",
         sq.priced_out
           ? `${sq.contenders} still need one and none of the ${sq.supply} left is inside your $${sq.my_ceiling}.`
           : `${sq.supply} left, ${sq.contenders} still need one — ${sq.shortfall} go without${sq.mine?", and you are one of them":""}.`));
@@ -829,12 +832,11 @@ function renderRunway(v, plan){
   host.appendChild(el("div","slotfoot",
     "Elite is the top third of what this league starts at that position; the " +
     "rest of that top block is the other startable tier. They do not overlap, " +
-    "so add them. Everyone past that is a bench body and is not counted, and " +
-    "tiers rank over the whole pool — drafted or not — so a player's class " +
-    "never inflates as better ones come off the board."));
+    "so add them. Tiers rank over the whole pool — drafted or not — so a " +
+    "player's class never inflates as better ones come off the board, and the " +
+    "last man at a position is not promoted into it."));
 
-  // The footer stays what it was: who is on the clock. It is not about
-  // scarcity and it was not this panel's to take.
+  // The footer stays what it was: who is on the clock.
   const foot = $("runway-foot"); clear(foot);
   if(plan && plan.order_known && plan.on_the_clock){
     foot.appendChild(el("b",null,"on the clock "));

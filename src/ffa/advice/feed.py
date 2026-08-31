@@ -113,6 +113,14 @@ def plan_state(read) -> str | None:
     """
     if read is None:
         return None
+    # **Checked before the money, because it cannot be fixed with money.** A
+    # shortfall says the plan wants more than we hold, and holding out or
+    # spending less can still rescue it. A position with no affordable starter
+    # left is a slot the plan simply cannot fill, and no amount of budget
+    # discipline changes that — it is the sharper of the two failures and it
+    # used to read `on track`.
+    if read.beyond_supply:
+        return "time to move"
     if read.shortfall > 0:
         return "time to move"
     return "at risk" if read.slack < (read.bench_reserve or 0) else "on track"
