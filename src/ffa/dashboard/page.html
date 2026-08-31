@@ -797,7 +797,9 @@ function renderRunway(v, plan){
   keys.forEach(pos=>{
     const d = sc[pos];
     const elite = d.elite||0, other = d.startable||0, starters = elite + other;
-    const demand = d.starting_demand||0;
+    // **Still open, not what the league starts.** "12 needed" never moved all
+    // draft; once every team has a quarterback the honest number is 0.
+    const demand = d.open_demand||0;
 
     // A position we still owe a starter and cannot fill. It drives the plan's
     // verdict, so it is the one thing on this panel that is not just a count.
@@ -809,7 +811,8 @@ function renderRunway(v, plan){
     row.appendChild(el("div","rc", `${elite} elite`));
     row.appendChild(el("div","rc", `${other} other`));
     row.appendChild(el("div","rt", `${starters} startable`));
-    row.appendChild(el("div","rd", demand ? `${demand} needed` : ""));
+    row.appendChild(el("div","rd",
+      demand ? `${demand} still needed` : "everyone has one"));
     host.appendChild(row);
 
     if(d.names && d.names.length){

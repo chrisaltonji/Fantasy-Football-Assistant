@@ -40,6 +40,48 @@ def starting_demand(league, position: Position) -> int:
     return int(round(per_team * league.team_count))
 
 
+def open_demand(state: DraftState, gaps_by_team=None) -> Mapping[Position, int]:
+    """Starting slots still unfilled across the league, per position.
+
+    The moving half of demand. `starting_demand` says what the league starts and
+    never changes, because the tiers are cut against it and a boundary that
+    slid as the draft went on would promote a player into "startable" for no
+    reason but that better ones were taken. This says how many of those slots
+    are still open, which is what a reader means by "how many are still needed".
+
+    Flex openings are split evenly across the eligible positions, exactly as
+    `_flex_share` splits the static demand — one open flex slot is a third of a
+    need at running back, receiver and tight end rather than a whole one at each.
+
+    Gaps are hoisted rather than asked per position: `starter_gaps` walks a
+    roster, so asking it once per position turns twelve cheap calls into
+    seventy-two identical ones, and this runs on every fold of the journal.
+    """
+    from ffa.domain import projections as proj
+
+    league = state.league
+    if league is None:
+        return {}
+
+    if gaps_by_team is None:
+        gaps_by_team = {t: proj.starter_gaps(state, t) for t in state.teams}
+
+    flex_open = sum(g.get(RosterSlot.FLEX, 0) for g in gaps_by_team.values())
+    eligible = [p for p in league.flex_positions]
+    share = (flex_open / len(eligible)) if eligible else 0.0
+
+    out: dict[Position, int] = {}
+    for position in Position:
+        try:
+            slot = RosterSlot(position.value)
+        except ValueError:              # pragma: no cover - every Position maps
+            continue
+        native = sum(g.get(slot, 0) for g in gaps_by_team.values())
+        extra = share if position in eligible else 0.0
+        out[position] = int(round(native + extra))
+    return out
+
+
 def scarcity_by_position(
     state: DraftState, book: PlayerBook
 ) -> Mapping[Position, PositionScarcity]:
@@ -49,6 +91,8 @@ def scarcity_by_position(
         return {}
 
     taken = {p.ref.key for p in state.sold_players()}
+    # One walk per team, shared by every position below.
+    still_open = open_demand(state)
     out: dict[Position, PositionScarcity] = {}
 
     for position in Position:
@@ -82,6 +126,7 @@ def scarcity_by_position(
             bench=bench,
             total_remaining=elite + startable + bench,
             starting_demand=demand,
+            open_demand=still_open.get(position, 0),
             top_value_remaining=top_remaining,
         )
 

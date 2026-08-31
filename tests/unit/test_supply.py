@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from ffa.advice.feed import plan_state
+from ffa.advice.scarcity import open_demand, scarcity_by_position, starting_demand
 from ffa.advice.strategy import strategy_read, unfillable
 from ffa.config.strategy import StrategyPreset
 from ffa.domain.enums import Position, Provenance, RosterSlot
@@ -211,3 +212,54 @@ def test_a_healthy_plan_is_unchanged_by_the_new_check():
 def test_no_plan_still_means_no_verdict():
     assert plan_state(None) is None
     assert strategy_read(start(), book_of(FULL), StrategyPreset()) is None
+
+
+# --- demand that moves --------------------------------------------------------
+
+
+def test_demand_starts_at_what_the_league_starts():
+    """Nothing is filled yet, so every starting slot is still open."""
+    state = start()
+    assert open_demand(state)[Position.QB] == 12 == starting_demand(LEAGUE, Position.QB)
+
+
+def test_demand_falls_as_slots_fill():
+    """**The number that never moved.** `starting_demand` is what the league
+    starts and is static by design - it cuts the tiers. This is how many of those
+    slots are still open, and once everybody has a quarterback it is zero."""
+    state = start()
+    for team in range(1, 13):
+        state = buy(state, f"QB{team}", Position.QB, team, 5, team)
+
+    assert open_demand(state)[Position.QB] == 0
+    # And the static one is untouched, because the tiers depend on it.
+    assert starting_demand(LEAGUE, Position.QB) == 12
+
+
+def test_the_tiers_do_not_move_when_demand_does():
+    """A boundary that slid as slots filled would promote a player into
+    "startable" for no reason except that better ones were drafted."""
+    book = book_of(FULL)
+    state = start()
+    before = scarcity_by_position(state, book)[Position.QB].starting_demand
+    for team in range(1, 13):
+        state = buy(state, f"QB{team}", Position.QB, team, 5, team)
+    after = scarcity_by_position(state, book)[Position.QB]
+
+    assert after.starting_demand == before
+    assert after.open_demand == 0
+
+
+def test_a_flex_opening_is_split_across_the_positions_that_could_fill_it():
+    """One open flex slot is a third of a need at each eligible position, not a
+    whole one at each - the same split `starting_demand` already uses."""
+    state = start()
+    demand = open_demand(state)
+
+    # 12 flex slots open, three eligible positions -> 4 apiece, on top of native.
+    assert demand[Position.RB] == 12 * 2 + 4
+    assert demand[Position.WR] == 12 * 3 + 4
+    assert demand[Position.TE] == 12 * 1 + 4
+    # A quarterback can never fill the flex, so none of it reaches him.
+    assert demand[Position.QB] == 12
+

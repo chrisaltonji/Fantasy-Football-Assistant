@@ -195,6 +195,9 @@ def _scarcity_view(advisory, state=None, book=None) -> dict[str, Any]:
             "bench": s.bench,
             "total_remaining": s.total_remaining,
             "starting_demand": s.starting_demand,
+            # The moving half: starting slots still unfilled league-wide.
+            # 0 once everybody has one, however many the league starts.
+            "open_demand": s.open_demand,
             "top_value_remaining": s.top_value_remaining,
             "is_drying_up": s.is_drying_up,
         }

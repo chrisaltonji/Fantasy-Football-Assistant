@@ -42,7 +42,15 @@ class PositionScarcity:
     startable: int = 0
     bench: int = 0
     total_remaining: int = 0
+    # What the league starts here in total, filled or not. **Static on purpose**:
+    # it defines the tier boundaries, and a demand that shrank as slots filled
+    # would promote players into "startable" simply because better ones were
+    # drafted. See `starting_demand`.
     starting_demand: int = 0
+    # How many of those starting slots are **still open**, right now, across the
+    # league. This is the number that answers "does anybody still need one" —
+    # once every team has a quarterback it is 0, however many the league starts.
+    open_demand: int = 0
     top_value_remaining: int = 0
 
     @property
